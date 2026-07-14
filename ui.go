@@ -2461,6 +2461,16 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.MessagePopupScrollOffset = 0
 			m.app.AttachmentCursorMode = false
 			m.app.AttachmentSelectedIndex = 0
+			// Auto-jump to attachment cursor mode on the first image attachment.
+			msgObj := m.app.Messages[m.app.MessageSelectedIndex]
+			vAtts := viewableAttachments(msgObj)
+			for i, att := range vAtts {
+				if isImageAttachment(att) {
+					m.app.AttachmentCursorMode = true
+					m.app.AttachmentSelectedIndex = i
+					return m, m.checkAndTriggerPreviewDownload()
+				}
+			}
 		}
 		return m, nil
 
