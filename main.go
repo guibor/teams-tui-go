@@ -376,6 +376,134 @@ func downloadFileCmd(clientID, fileURL, destPath string) tea.Cmd {
 	}
 }
 
+// downloadAndOpenImagesCmd downloads all image attachments in a message and opens
+// them together with the configured image viewer. selectedAtt is the attachment the
+// user pressed Enter on; allAtts is the full list of viewable attachments for that
+// message. imageViewer is the command string from config (e.g. "sxiv" or "feh").
+// Supports sxiv/nsxiv (-n INDEX), feh (--start-at PATH), imv (-n PATH),
+// and generic viewers (selected image put first in the args list).
+func downloadAndOpenImagesCmd(clientID string, selectedAtt MessageAttachment, allAtts []MessageAttachment, imageViewer string) tea.Cmd {
+	return func() tea.Msg {
+		token, err := GetValidTokenSilent(clientID)
+		if err != nil {
+			return MsgImagesOpened{Err: err}
+		}
+
+		// Collect only the image attachments from allAtts.
+		var imageAtts []MessageAttachment
+		selectedImageIndex := -1
+		for _, a := range allAtts {
+			if isImageAttachment(a) {
+				if a.ID == selectedAtt.ID {
+					selectedImageIndex = len(imageAtts)
+				}
+				imageAtts = append(imageAtts, a)
+			}
+		}
+		// Fallback: if selected wasn't found (e.g. duplicate IDs), treat it as sole image.
+		if selectedImageIndex == -1 {
+			selectedImageIndex = len(imageAtts)
+			imageAtts = append(imageAtts, selectedAtt)
+		}
+
+		// Download all images to the downloads dir.
+		downloadsDir := getDownloadsDir()
+		var savedPaths []string
+		var selectedPath string
+		for i, img := range imageAtts {
+			name := "image"
+			if img.Name != nil && *img.Name != "" {
+				name = *img.Name
+			}
+			path := filepath.Join(downloadsDir, name)
+
+			// Download only if the URL is present.
+			if img.ContentURL != nil && *img.ContentURL != "" {
+				if dlErr := DownloadFile(token, *img.ContentURL, path); dlErr != nil {
+					if i == selectedImageIndex {
+						// Cannot download the selected image — abort with error.
+						return MsgImagesOpened{Err: dlErr}
+					}
+					// Non-selected image failed — skip it silently.
+					continue
+				}
+			}
+			savedPaths = append(savedPaths, path)
+			if i == selectedImageIndex {
+				selectedPath = path
+			}
+		}
+
+		if len(savedPaths) == 0 {
+			return MsgImagesOpened{Err: fmt.Errorf("no images could be downloaded")}
+		}
+
+		// Recalculate selected index within the actually saved paths.
+		newSelectedIdx := -1
+		for idx, p := range savedPaths {
+			if p == selectedPath {
+				newSelectedIdx = idx
+				break
+			}
+		}
+
+		// Build the viewer command args.
+		parts := strings.Fields(imageViewer)
+		if len(parts) == 0 {
+			return MsgImagesOpened{Err: fmt.Errorf("empty image_viewer command")}
+		}
+		viewerExe := parts[0]
+		viewerBase := filepath.Base(viewerExe)
+		extraArgs := parts[1:]
+
+		var args []string
+		switch viewerBase {
+		case "sxiv", "nsxiv":
+			// sxiv/nsxiv: -n INDEX (1-based) to start at a specific image.
+			if newSelectedIdx != -1 {
+				args = append(extraArgs, "-n", fmt.Sprintf("%d", newSelectedIdx+1))
+			} else {
+				args = extraArgs
+			}
+			args = append(args, savedPaths...)
+		case "feh":
+			// feh: --start-at PATH to start at a specific file.
+			if selectedPath != "" {
+				args = append(extraArgs, "--start-at", selectedPath)
+			} else {
+				args = extraArgs
+			}
+			args = append(args, savedPaths...)
+		case "imv":
+			// imv: -n PATH to start at a specific file.
+			if selectedPath != "" {
+				args = append(extraArgs, "-n", selectedPath)
+			} else {
+				args = extraArgs
+			}
+			args = append(args, savedPaths...)
+		default:
+			// Generic viewer: put the selected image first, rest follow.
+			var reordered []string
+			if selectedPath != "" {
+				reordered = append(reordered, selectedPath)
+			}
+			for idx, p := range savedPaths {
+				if idx != newSelectedIdx {
+					reordered = append(reordered, p)
+				}
+			}
+			args = append(extraArgs, reordered...)
+		}
+
+		cmd := exec.Command(viewerExe, args...)
+		if startErr := cmd.Start(); startErr != nil {
+			return MsgImagesOpened{Err: startErr}
+		}
+		return MsgImagesOpened{SelectedPath: selectedPath, TotalImages: len(savedPaths)}
+	}
+}
+
 // loadTeamsChannelsCmd fetches the list of joined Teams with their channels.
 // Requires Team.ReadBasic.All + Channel.ReadBasic.All scopes; returns MsgTeamsChannelsLoaded.
 func loadTeamsChannelsCmd(clientID string) tea.Cmd {
@@ -651,6 +779,7 @@ func main() {
 	app.ChannelMsgRefreshMin = ResolveChannelMsgRefreshMin()
 	app.ExternalEditor = ResolveExternalEditor()
 	app.BrowserCommand = ResolveBrowserCommand()
+	app.ImageViewer = ResolveImageViewer()
 	app.YoutrackCommand = ResolveYoutrackCommand()
 	app.GitlabCommand = ResolveGitlabCommand()
 	if cfg := LoadConfig(); cfg != nil {

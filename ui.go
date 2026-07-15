@@ -154,6 +154,13 @@ type MsgFileDownloaded struct {
 	Err      error
 }
 
+// MsgImagesOpened is sent when a batch image download+open has completed.
+type MsgImagesOpened struct {
+	SelectedPath string
+	TotalImages  int
+	Err          error
+}
+
 // MsgPreviewFinished is sent when a terminal image preview has finished.
 type MsgPreviewFinished struct {
 	Err error
@@ -1288,6 +1295,18 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SetStatus("Download failed: "+msg.Err.Error(), 5*time.Second)
 		}
 
+	// ── Images opened with image viewer ─────────────────────────
+	case MsgImagesOpened:
+		if msg.Err == nil {
+			statusMsg := "Opened in image viewer: " + msg.SelectedPath
+			if msg.TotalImages > 1 {
+				statusMsg = fmt.Sprintf("Opened %d images in viewer (selected: %s)", msg.TotalImages, filepath.Base(msg.SelectedPath))
+			}
+			m.app.SetStatus(statusMsg, 6*time.Second)
+		} else {
+			m.app.SetStatus("Image viewer error: "+msg.Err.Error(), 5*time.Second)
+		}
+
 	case MsgPreviewDownloaded:
 		if msg.Err != nil {
 			m.app.SetStatus("Preview error: "+msg.Err.Error(), 3*time.Second)
@@ -2214,7 +2233,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	case "enter":
 		if m.app.AttachmentCursorMode {
-			// Download/open selected attachment as xdg-open.
+			// Download/open selected attachment.
 			if m.app.MessageSelectedIndex < len(m.app.Messages) {
 				msgObj := m.app.Messages[m.app.MessageSelectedIndex]
 				vAtts := viewableAttachments(msgObj)
@@ -2227,6 +2246,13 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 						if att.Name != nil && *att.Name != "" {
 							name = *att.Name
 						}
+						// If this is an image and image_viewer is configured, use the
+						// batch image viewer path (downloads all images in the message).
+						if isImageAttachment(att) && m.app.ImageViewer != "" {
+							m.app.SetStatus("Downloading images for viewer...", 0)
+							return m, downloadAndOpenImagesCmd(m.clientID, att, vAtts, m.app.ImageViewer)
+						}
+						// Fallback: single-file download + default opener.
 						destPath := filepath.Join(getDownloadsDir(), name)
 						m.app.SetStatus("Downloading: "+name+" ...", 0)
 						return m, downloadFileCmd(m.clientID, *att.ContentURL, destPath)

@@ -177,6 +177,7 @@ type App struct {
 	ChannelMsgRefreshMin  int
 	ExternalEditor        string // command/path for the external editor
 	BrowserCommand        string // command to open URLs
+	ImageViewer           string // command to open images (empty = use default file opener)
 	YoutrackCommand       string // command to open YouTrack URLs
 	GitlabCommand         string // command to open GitLab URLs
 

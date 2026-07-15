@@ -179,6 +179,7 @@ type Config struct {
 	SqliteEnabled          *bool `json:"sqlite_enabled,omitempty"`
 	ExternalEditor         *string `json:"external_editor,omitempty"`
 	BrowserCommand         *string `json:"browser_command,omitempty"`
+	ImageViewer            *string `json:"image_viewer,omitempty"`
 	YoutrackCommand        *string `json:"youtrack_command,omitempty"`
 	GitlabCommand          *string `json:"gitlab_command,omitempty"`
 }
@@ -348,6 +349,11 @@ func InitConfig() {
 	if cfg.BrowserCommand == nil {
 		cmd := "xdg-open"
 		cfg.BrowserCommand = &cmd
+		modified = true
+	}
+	if cfg.ImageViewer == nil {
+		v := ""
+		cfg.ImageViewer = &v
 		modified = true
 	}
 
@@ -557,6 +563,17 @@ func ResolveBrowserCommand() string {
 		return *cfg.BrowserCommand
 	}
 	return "xdg-open"
+}
+
+// ResolveImageViewer returns the image viewer command, using precedence:
+//  1. config.json -> image_viewer
+//  2. Default ("") — empty means fall back to the default file opener
+func ResolveImageViewer() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ImageViewer != nil {
+		return *cfg.ImageViewer
+	}
+	return ""
 }
 
 // ResolveYoutrackCommand returns the youtrack command, using precedence:

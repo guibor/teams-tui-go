@@ -173,6 +173,21 @@ Configure the commands used to open URLs when pressing `o` on a message or from 
   - `youtrack_command`: The optional command to open YouTrack URLs (default: `"yt-tui"`, but you can specify e.g. `"youtrack-cli"` or `"yt-cli"`). If a URL contains `"youtrack"`, this command is executed. Useful with tools like [yt-tui](https://github.com/nospor/yt-tui).
   - `gitlab_command`: The optional command to open GitLab URLs (default: `"gitlab-tui"`). If a URL contains `"gitlab"` (for example, merge requests, pipelines, or jobs), this command is executed. Useful with tools like [gitlab-tui](https://github.com/nospor/gitlab-tui).
 
+### Image Viewer
+Configure a dedicated image viewer used when pressing `Enter` on an image attachment (inside the `v` popup with `Tab` to enter attachment cursor mode).
+When set, **all** image attachments from the current message are downloaded and loaded into the viewer together, automatically starting at the selected one.
+
+  ```json
+  {
+    "image_viewer": "sxiv"
+  }
+  ```
+  - `image_viewer`: The command or executable to open image attachments (e.g. `"sxiv"`, `"nsxiv"`, `"feh"`, `"imv"`, or any viewer). If empty or not set (the default), images fall back to the regular single-file opener (`xdg-open` / `open`). When set, pressing `Enter` on an image attachment downloads **all** image attachments in that message and loads them all into the viewer, automatically starting at the selected one. Viewer-specific start-index flags are handled automatically:
+    - **`sxiv`** / **`nsxiv`**: uses `-n INDEX` (1-based).
+    - **`feh`**: uses `--start-at PATH`.
+    - **`imv`**: uses `-n PATH`.
+    - **Other viewers**: the selected image is passed first in the argument list.
+
 ### Chat Icon Themes
 You can configure the style of chat type indicators in the sidebar using `~/.config/teams-tui-go/config.json`:
 
