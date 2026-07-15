@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.2.1] - 2026-07-15
+
+### Features
+
+- **Add image_viewer config option for batch image attachment opening** - ([bddb42a](https://github.com/nospor/teams-tui-go/commit/bddb42aa37f5c0f86704de787a45109c773656f1))
+
+
+> When image_viewer is set (e.g. "sxiv", "feh", "imv"), pressing Enter on
+> an image attachment in attachment cursor mode downloads all image
+> attachments from that message and opens them together in the configured
+> viewer, starting at the selected one.
+> 
+> Viewer-specific start flags are handled automatically:
+> - sxiv/nsxiv: -n INDEX (1-based)
+> - feh: --start-at PATH
+> - imv: -n PATH
+> - generic: selected image passed first
+> 
+>  Falls back to xdg-open single-file behaviour when image_viewer is
+> empty.
+
+
+
+### Other
+
+- **Auto-focus first image attachment when pressing v** - ([015e52a](https://github.com/nospor/teams-tui-go/commit/015e52a57684027f8a5e5e60e312081ae732f0ff))
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.0 [skip ci]** - ([abef84a](https://github.com/nospor/teams-tui-go/commit/abef84aec889e6035a6f67b6870164ddc7be8f75))
+
+
+
 ## [1.2.0] - 2026-07-07
 
 ### Features
