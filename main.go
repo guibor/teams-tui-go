@@ -411,10 +411,7 @@ func downloadAndOpenImagesCmd(clientID string, selectedAtt MessageAttachment, al
 		var savedPaths []string
 		var selectedPath string
 		for i, img := range imageAtts {
-			name := "image"
-			if img.Name != nil && *img.Name != "" {
-				name = *img.Name
-			}
+			name := getAttachmentSavedName(img, "image")
 			path := filepath.Join(downloadsDir, name)
 
 			// Download only if the URL is present.

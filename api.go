@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	stdhtml "html"
@@ -139,6 +141,54 @@ func sanitizeFilename(s string) string {
 		return r
 	}, s)
 }
+
+// getAttachmentSavedName returns a safe, collision-resistant filename for saving or downloading
+// an attachment, embedding the attachment's ID or a unique hash to prevent files (like pasted "image.png")
+// from overwriting each other.
+func getAttachmentSavedName(att MessageAttachment, defaultName string) string {
+	name := defaultName
+	if name == "" {
+		name = "attachment"
+	}
+	if att.Name != nil && *att.Name != "" {
+		name = *att.Name
+	}
+
+	// Determine unique ID string to append
+	var idStr string
+	if att.ID != "" {
+		idStr = sanitizeFilename(att.ID)
+		idStr = strings.TrimSpace(idStr)
+	} else if att.ContentURL != nil && *att.ContentURL != "" {
+		h := sha256.Sum256([]byte(*att.ContentURL))
+		idStr = hex.EncodeToString(h[:])[:8]
+	}
+
+	if len(idStr) > 24 {
+		idStr = idStr[:24]
+	}
+	idStr = strings.Trim(idStr, "_- ")
+
+	if idStr == "" {
+		return name
+	}
+
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	if stem == "" {
+		stem = defaultName
+		if stem == "" {
+			stem = "attachment"
+		}
+	}
+
+	if strings.HasSuffix(stem, "_"+idStr) || strings.HasSuffix(stem, "-"+idStr) {
+		return stem + ext
+	}
+
+	return fmt.Sprintf("%s_%s%s", stem, idStr, ext)
+}
+
 
 func ExtractInlineImages(htmlContent string) []MessageAttachment {
 	if htmlContent == "" {

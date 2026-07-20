@@ -2242,10 +2242,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 					if !m.app.Features.FilePreview {
 						m.app.SetStatus("File preview disabled — enable 'file_preview_enabled' in config.json", 5*time.Second)
 					} else if att.ContentURL != nil && *att.ContentURL != "" {
-						name := "attachment"
-						if att.Name != nil && *att.Name != "" {
-							name = *att.Name
-						}
+						name := getAttachmentSavedName(att, "attachment")
 						// If this is an image and image_viewer is configured, use the
 						// batch image viewer path (downloads all images in the message).
 						if isImageAttachment(att) && m.app.ImageViewer != "" {

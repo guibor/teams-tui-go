@@ -395,5 +395,74 @@ func TestFilterMessageAttachments(t *testing.T) {
 	}
 }
 
+func TestGetAttachmentSavedName(t *testing.T) {
+	strPtr := func(s string) *string { return &s }
+
+	tests := []struct {
+		name        string
+		att         MessageAttachment
+		defaultName string
+		expected    string
+	}{
+		{
+			name: "Pasted image with ID and extension",
+			att: MessageAttachment{
+				ID:   "inline-img-1",
+				Name: strPtr("image.png"),
+			},
+			defaultName: "image",
+			expected:    "image_inline-img-1.png",
+		},
+		{
+			name: "Attachment with custom name and numeric ID",
+			att: MessageAttachment{
+				ID:   "123",
+				Name: strPtr("screenshot.jpg"),
+			},
+			defaultName: "image",
+			expected:    "screenshot_123.jpg",
+		},
+		{
+			name: "Attachment with nil name using default name and ID",
+			att: MessageAttachment{
+				ID: "att-456",
+			},
+			defaultName: "attachment",
+			expected:    "attachment_att-456",
+		},
+		{
+			name: "Stem already has ID suffix",
+			att: MessageAttachment{
+				ID:   "123",
+				Name: strPtr("image_123.png"),
+			},
+			defaultName: "image",
+			expected:    "image_123.png",
+		},
+		{
+			name: "No ID but has ContentURL",
+			att: MessageAttachment{
+				Name:       strPtr("file.txt"),
+				ContentURL: strPtr("https://example.com/file.txt"),
+			},
+			defaultName: "attachment",
+			// URL sha256 prefix will be appended
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := getAttachmentSavedName(tt.att, tt.defaultName)
+			if tt.expected != "" && got != tt.expected {
+				t.Errorf("getAttachmentSavedName() = %q, expected %q", got, tt.expected)
+			}
+			if tt.expected == "" && got == "file.txt" {
+				t.Errorf("getAttachmentSavedName() expected unique hash appended, got %q", got)
+			}
+		})
+	}
+}
+
+
 
 
