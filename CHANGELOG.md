@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.2.2] - 2026-07-20
+
+### Features
+
+- *(attachments)* **Append attachment ID to saved filenames to prevent collisions** - ([e21801a](https://github.com/nospor/teams-tui-go/commit/e21801a4df2f382844d2b5619a68fbd3cb8aa00d))
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.1 [skip ci]** - ([0fb4da9](https://github.com/nospor/teams-tui-go/commit/0fb4da91fc513c41479114649325e3cf71d28c1f))
+
+
+
 ## [1.2.1] - 2026-07-15
 
 ### Features
