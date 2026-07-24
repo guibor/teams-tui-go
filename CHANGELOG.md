@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.2.3] - 2026-07-24
+
+### Features
+
+- *(search)* **Add 'g' shortcut to jump to message in normal view & optimize TUI rendering** - ([fa68cf6](https://github.com/nospor/teams-tui-go/commit/fa68cf6e1a0cd2816195e3044f8b8e220d382171))
+
+
+> - Implement 'g' key in search popup to merge loaded history, select, and
+> scroll-jump to the target message in normal view.
+> - Fix channel messages refresh cache overwrite to merge paginated
+> results instead of overwriting.
+> - Cache word-wrapped message lines on `Message` struct to avoid
+> rendering slowdowns (O(N) layout rendering bottleneck in
+> `renderMessages`).
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.2 [skip ci]** - ([77da5a4](https://github.com/nospor/teams-tui-go/commit/77da5a406cd9ae30d93c6c9a43e6e337da2792d8))
+
+
+
 ## [1.2.2] - 2026-07-20
 
 ### Features
