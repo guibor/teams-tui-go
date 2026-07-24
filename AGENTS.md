@@ -84,7 +84,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates via OAuth2 D
   - Activated by `/` in normal mode, which opens a beautiful, responsive fullscreen-budgeted modal overlay popup (`SearchPopupMode`) so the main chat view remains completely responsive and lag-free.
   - Pressing `Enter` in the search textinput submits the query, focuses the results navigation list, and triggers background recursive loading of older messages directly into a separate `HistoryMessages` cache (updating `HistoryNextLink`) using an `IsSearch` flag to separate background loads from main chat lists.
   - Matching messages are dynamically parsed with surrounding context window messages (`search_context_limit`, default 3) before and after, automatically deduplicated, sorted chronologically, and drawn with high-contrast gap indicators (`─── [gap in history] ───`) for breaks in conversation flow.
-  - In navigation mode, `j`/`k` scroll results, `y` yanks the selected message body, and `u` extracts/selection-copies URLs.
+  - In navigation mode, `j`/`k` scroll results, `y` yanks the selected message body, `u` extracts/selection-copies URLs, and `g` jumps to the selected message in the normal chat view (merging paged search history and setting selection/scrolling focus).
   - History cache, query, selected result index, and viewport scroll offsets are fully preserved and persisted *per chat* on close/reopen, avoiding redundant downloads and maintaining independent search states when switching between chats.
   - Main chat viewport offsets and snap-to-bottom values are preserved and restored cleanly when entering and exiting search popup mode.
 - **Chat Search & Open Popup**:
@@ -141,6 +141,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates via OAuth2 D
 8. **Silent Failures**: Background refresh errors return `nil` from `tea.Cmd` functions (Bubble Tea ignores nil messages).
 9. **Feature Gates**: Check `m.app.Features.XxxEnabled` (not `ResolveFeatureXxx()`) inside the Bubble Tea event loop. Features are resolved once at startup into `app.Features` to avoid repeated file I/O per keypress.
 10. **Dynamic Scopes**: Always pass `BuildScopes()` to `StartDeviceFlow` and `RefreshAccessToken`. Never hard-code the scope string.
+11. **Rendering Performance Optimization**: When rendering long lists of items in the TUI (e.g., rendering hundreds of messages in `m.app.Messages`), avoid running expensive operations like HTML-to-text parsing and Lipgloss-based `wordWrap` dynamically inside the loop in `View()`. Instead, use cache fields directly on the structs (e.g. `WrappedLinesCached` on `Message` struct) to compute and store wrapped text once, invalidating only when the terminal width or search query changes.
 
 ---
 

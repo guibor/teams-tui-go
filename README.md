@@ -374,6 +374,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `y`          | Copy (yank) message text (in Message Mode)                |
 | `u`          | Copy (yank) URL from message (in Message Mode / History Search) |
 | `o`          | Open URL from message (in Message Mode / History Search / URL list) |
+| `g`          | Go to/jump to message in normal view (in History Search results) |
 | `d`          | Delete selected message (in Message Mode)                 |
 | `e`          | Edit selected message (in Message Mode)                   |
 | `a`          | Answer (reply) to selected message (in Message Mode)      |

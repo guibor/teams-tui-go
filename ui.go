@@ -1352,12 +1352,34 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SelectedChannelID = ""
 		} else {
 			// Cache messages and next link
-			m.app.CachedMessages[msg.ChannelID] = msg.Messages
-			m.app.CachedNextLink[msg.ChannelID] = msg.NextLink
-			if m.app.Features.SqliteEnabled {
-				go SaveMessages(msg.ChannelID, msg.Messages)
-				if msg.NextLink != "" {
-					go SaveNextLink(msg.ChannelID, msg.NextLink)
+			if len(msg.Messages) > 0 {
+				// Merge into the existing cache rather than overwriting it.
+				existing := m.app.CachedMessages[msg.ChannelID]
+				if len(existing) == 0 {
+					m.app.CachedMessages[msg.ChannelID] = msg.Messages
+				} else {
+					idxMap := make(map[string]int, len(existing))
+					for i, em := range existing {
+						idxMap[em.ID] = i
+					}
+					for _, nm := range msg.Messages {
+						if idx, ok := idxMap[nm.ID]; ok {
+							existing[idx] = nm
+						} else {
+							existing = append(existing, nm)
+						}
+					}
+					sort.Slice(existing, func(i, j int) bool {
+						return existing[i].CreatedDateTime > existing[j].CreatedDateTime
+					})
+					m.app.CachedMessages[msg.ChannelID] = existing
+				}
+				m.app.CachedNextLink[msg.ChannelID] = msg.NextLink
+				if m.app.Features.SqliteEnabled {
+					go SaveMessages(msg.ChannelID, msg.Messages)
+					if msg.NextLink != "" {
+						go SaveNextLink(msg.ChannelID, msg.NextLink)
+					}
 				}
 			}
 
@@ -1371,8 +1393,10 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				msg.ChannelID == m.app.SelectedChannelID)
 
 			if isActiveChannel {
-				m.app.Messages = msg.Messages
-				m.app.NextLink = msg.NextLink
+				prev := m.app.Messages
+				if !messagesEqual(prev, msg.Messages) {
+					m.app.SetMessages(msg.Messages, msg.NextLink)
+				}
 				m.app.SetLoadingMessages(false)
 			}
 
@@ -3650,35 +3674,6 @@ func (m Model) renderMessages(w, h int) string {
 			prevTime = time.Time{}
 		}
 
-		// Render body.
-		body := msg.GetPlainText()
-		if m.app.SearchActive && m.app.SearchQuery != "" {
-			body = highlightQuery(body, m.app.SearchQuery)
-		}
-
-		if msg.Subject != "" {
-			subjText := msg.Subject
-			if m.app.SearchActive && m.app.SearchQuery != "" {
-				subjText = highlightQuery(subjText, m.app.SearchQuery)
-			}
-			subjStyled := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render(subjText)
-			if body != "" {
-				body = subjStyled + "\n" + body
-			} else {
-				body = subjStyled
-			}
-		}
-
-		// Add reactions.
-		reactionsStr := renderReactions(msg.Reactions)
-		if reactionsStr != "" {
-			if body != "" {
-				body += "\n" + reactionsStr
-			} else {
-				body = reactionsStr
-			}
-		}
-
 		// Replies from others (or replies in chats when not ours) are left-indented.
 		// In channels, replies are always right-aligned, so they do not have left indentation.
 		replyIndent := ""
@@ -3686,7 +3681,7 @@ func (m Model) renderMessages(w, h int) string {
 			replyIndent = "    " // 4 spaces aligning under "↳ "
 		}
 
-		msgLines := wordWrap(body, maxW-len(replyIndent))
+		msgLines := m.getWrappedMessageLines(&msgs[i], maxW-len(replyIndent), m.app.SearchQuery, m.app.SearchActive)
 		padding := 0
 		if alignRight {
 			maxMsgW := 0
@@ -3870,6 +3865,49 @@ func wordWrap(s string, maxW int) []string {
 	for i := range lines {
 		lines[i] = strings.TrimRight(lines[i], " ")
 	}
+	return lines
+}
+
+func (m Model) getWrappedMessageLines(msg *Message, maxW int, searchQuery string, searchActive bool) []string {
+	queryKey := ""
+	if searchActive {
+		queryKey = searchQuery
+	}
+	if msg.WrappedWidthCached == maxW && msg.WrappedQueryCached == queryKey && len(msg.WrappedLinesCached) > 0 {
+		return msg.WrappedLinesCached
+	}
+
+	body := msg.GetPlainText()
+	if searchActive && searchQuery != "" {
+		body = highlightQuery(body, searchQuery)
+	}
+
+	if msg.Subject != "" {
+		subjText := msg.Subject
+		if searchActive && searchQuery != "" {
+			subjText = highlightQuery(subjText, searchQuery)
+		}
+		subjStyled := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render(subjText)
+		if body != "" {
+			body = subjStyled + "\n" + body
+		} else {
+			body = subjStyled
+		}
+	}
+
+	reactionsStr := renderReactions(msg.Reactions)
+	if reactionsStr != "" {
+		if body != "" {
+			body += "\n" + reactionsStr
+		} else {
+			body = reactionsStr
+		}
+	}
+
+	lines := wordWrap(body, maxW)
+	msg.WrappedWidthCached = maxW
+	msg.WrappedQueryCached = queryKey
+	msg.WrappedLinesCached = lines
 	return lines
 }
 
@@ -4636,7 +4674,7 @@ func (m Model) renderSearchPopup(w, h int) string {
 	title := titleStyle.Render(titleText)
 
 	instructions := lipgloss.NewStyle().Foreground(colDimGray).Render(
-		" j/k: Nav | y: Yank | u: URL | o: Open URL | Enter: Expand | /: Edit | Esc: Close",
+		" j/k: Nav | g: Go to msg | y: Yank | u: URL | o: Open URL | Enter: Expand | /: Edit | Esc: Close",
 	)
 
 	var list strings.Builder
@@ -4915,6 +4953,49 @@ func (m Model) handleSearchPopupNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.searchInput.Focus()
 		m.saveSearchState()
 		return m, textinput.Blink
+
+	case "g":
+		if len(m.app.SearchPopupResults) > 0 && m.app.SearchPopupSelectedIndex < len(m.app.SearchPopupResults) {
+			item := m.app.SearchPopupResults[m.app.SearchPopupSelectedIndex]
+			convID := m.activeConversationID()
+			if convID != "" {
+				// 1. Close search mode
+				m.app.SearchPopupMode = false
+				m.app.SearchMode = false
+				m.app.SetSearchLoadingMessages(false)
+				m.saveSearchState()
+
+				// 2. Merge all history messages fetched during search/history navigation into the main message list
+				if hist, ok := m.app.HistoryMessages[convID]; ok && len(hist) > 0 {
+					m.app.Messages = mergeHistoryMessages(m.app.Messages, hist)
+					m.app.CachedMessages[convID] = m.app.Messages
+				}
+				if link, ok := m.app.HistoryNextLink[convID]; ok && link != "" {
+					m.app.NextLink = link
+					m.app.CachedNextLink[convID] = link
+				}
+
+				// 3. Find the message index in the merged messages list
+				targetIdx := -1
+				for i, msg := range m.app.Messages {
+					if msg.ID == item.Message.ID {
+						targetIdx = i
+						break
+					}
+				}
+
+				// 4. Activate selection mode and jump to that message
+				if targetIdx != -1 {
+					m.app.MessageSelectionMode = true
+					m.app.MessageSelectedIndex = targetIdx
+					m.app.PendingScrollID = item.Message.ID
+					m.app.SnapToBottom = false
+					m.app.SetStatus("Jumped to message in normal view.", 3*time.Second)
+				}
+			}
+		}
+		return m, nil
+
 
 	case "y":
 		if len(m.app.SearchPopupResults) > 0 && m.app.SearchPopupSelectedIndex < len(m.app.SearchPopupResults) {
@@ -5999,6 +6080,7 @@ func (m Model) getHelpContentLines() []string {
 			{"y", "Yank selected message"},
 			{"u", "Extract URLs"},
 			{"o", "Open URLs"},
+			{"g", "Go to message in normal view"},
 			{"ESC", "Close search popup"},
 		}},
 		{"Chat Search (c)", [][2]string{
