@@ -1765,7 +1765,15 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 
 	switch msg.String() {
-	case "q", "ctrl+c":
+	case "ctrl+c":
+		return m, tea.Quit
+
+	case "q":
+		if m.hasActiveConversation() {
+			m = m.leaveActiveConversation()
+			m.app.SetStatus("Dashboard", 2*time.Second)
+			return m, nil
+		}
 		return m, tea.Quit
 
 	case "alt+<":
@@ -1957,14 +1965,8 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.SearchQuery = ""
 			m.app.SetStatus("Highlights cleared.", 3*time.Second)
 		} else {
-			m.app.SelectedIndex = -1
-			m.channelSelectedIndex = -1
-			m.app.SelectedChannelTeamID = ""
-			m.app.SelectedChannelID = ""
-			m.app.Messages = nil
-			m.app.NextLink = ""
-			m.app.SetLoadingMessages(false)
-			m.app.SetStatus("💤 Entered sleep mode. No chat active.", 3*time.Second)
+			m = m.leaveActiveConversation()
+			m.app.SetStatus("Dashboard", 2*time.Second)
 		}
 
 	case "K", "pgup":
@@ -3211,16 +3213,7 @@ func (m Model) View() string {
 // renderRightPanel renders the messages panel (with optional input area).
 func (m Model) renderRightPanel(w, h int) string {
 	if m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0 {
-		idleMsg := "💤 Sleep Mode\n\nNo chat selected. Polling is paused.\n\nPress 'j' or 'k' to select a chat\nand resume polling."
-		msgContent := lipgloss.Place(w, h-2, lipgloss.Center, lipgloss.Center,
-			lipgloss.NewStyle().Foreground(colDimGray).Align(lipgloss.Center).Render(idleMsg),
-		)
-		return normalBorder.Width(w).Height(h).
-			BorderForeground(colDimGray).
-			Render(lipgloss.JoinVertical(lipgloss.Left,
-				lipgloss.NewStyle().Foreground(colDimGray).Render("Idle"),
-				msgContent,
-			))
+		return m.renderDashboard(w, h)
 	}
 
 	if !m.app.InputMode {
@@ -6702,9 +6695,10 @@ func (m Model) getHelpContentLines() []string {
 			{"h", "Toggle hide/unhide channel (channels only)"},
 			{"p", "Presence status of chat participants (chats only, feature: presence_enabled)"},
 			{"n", "Cycle notification mode"},
-			{"ESC", "Enter sleep / idle mode (stop polling)"},
+			{"ESC", "Leave the current conversation for the dashboard"},
 			{"?", "Show this help"},
-			{"q / Ctrl+C", "Quit"},
+			{"q", "Leave conversation; press again on dashboard to quit"},
+			{"Ctrl+C", "Quit immediately"},
 		}},
 		{"Message Selection (m)", [][2]string{
 			{"j / k", "Navigate messages"},

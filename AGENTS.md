@@ -96,11 +96,12 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - `isUnread(chat)` compares latest message time with server viewpoint and local read state
 - `markRead()` only triggers automatic read state when `mark_read_on_open` is enabled. Normal-mode `r` and `u` explicitly call the Graph read/unread actions; an explicit unread is protected from auto-read until the user leaves and reopens that chat.
   - **Reactions Read Tracking**: `lastReadReactions` maps chat ID to a set of unique reaction keys (`messageID:reactorNameOrID:reactionType`). Any reaction from another user that is not in this map is considered unread, causing the reaction's actual emoji prefix (e.g. `❤️`, `👍`, `😆`, etc.) to be displayed on the chat in the sidebar and trigger desktop notifications if the app is blurred or not active.
-- **Focus Tracking & Sleep/Idle Mode**:
-  - Terminal focus reporting enabled via `\x1b[?1004h`; `tea.FocusMsg`/`BlurMsg` update `focused` state.
-  - The 3-second message polling for the active chat is automatically paused when the window is blurred (unfocused) or when manually entering sleep mode.
-  - Pressing `Esc` in normal mode manually triggers sleep/idle mode, which de-selects the active chat (`SelectedIndex = -1`, `channelSelectedIndex = -1`), clears messages from memory, pauses active polling, and shows a sleep placeholder screen on the right.
-  - Navigating back to a chat/channel or refocusing the window instantly wakes up the polling and pulls the latest messages.
+- **Focus Tracking & Dashboard Mode**:
+	- Terminal focus reporting enabled via `\x1b[?1004h`; `tea.FocusMsg`/`BlurMsg` update `focused` state.
+	- The 3-second message polling for the active chat is automatically paused when the window is blurred or no conversation is selected.
+	- `leaveActiveConversation()` in `dashboard.go` clears chat/channel identity and transient conversation state while retaining sidebar data and filters.
+	- Pressing `q` or `Esc` in normal mode leaves the current conversation and shows the dashboard. A second `q` from the dashboard quits; `Ctrl+C` always quits immediately.
+	- `rebuildChatList()` must preserve `SelectedIndex == -1`, and navigating to a chat/channel resumes polling and pulls the latest messages.
 - Background tasks issued as Bubble Tea `Cmd` functions returning typed messages (`MsgChatsLoaded`, `MsgMessagesLoaded`, `MsgTick`, `MsgSendDone`)
 - **Search Architecture**:
   - Activated by `/` in normal mode, which opens a beautiful, responsive fullscreen-budgeted modal overlay popup (`SearchPopupMode`) so the main chat view remains completely responsive and lag-free.

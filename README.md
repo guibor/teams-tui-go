@@ -435,7 +435,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `PgUp` / `K` | Scroll messages up                                        |
 | `PgDn` / `J` | Scroll messages down                                      |
 | `/`          | Open search input (in Normal Mode)                        |
-| `Esc`        | Clear active search, or enter sleep/idle mode (Normal Mode) |
+| `Esc`        | Clear active search, or leave conversation for dashboard   |
 | `c`          | Open chat search / chat creation popup                    |
 | `F`          | Filter chats by read state, type, favorite, and text      |
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
@@ -472,7 +472,8 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `p`          | Show presence status of sender (`presence_enabled`)       |
 | `i`          | Show profile info of sender (`user_profile_enabled`)      |
 | `1-6`        | Send reaction (in Reaction Mode)                          |
-| `q`          | Quit                                                      |
+| `q`          | Leave conversation for dashboard; press again to quit     |
+| `Ctrl+C`     | Quit immediately                                           |
 
 ### Chat List Filter
 
