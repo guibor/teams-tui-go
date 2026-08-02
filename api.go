@@ -76,6 +76,7 @@ type Message struct {
 	WrappedWidthCached      int                 `json:"-"`
 	WrappedQueryCached      string              `json:"-"`
 	WrappedLinesCached      []string            `json:"-"`
+	WrappedLinesRTLCached   []bool              `json:"-"`
 	// IsReply is set in-process (not from JSON) for Teams channel thread replies.
 	IsReply   bool   `json:"-"`
 	ReplyToID string `json:"-"` // ID of the root message this is a reply to

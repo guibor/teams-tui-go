@@ -2,8 +2,8 @@
 
 ---
 
-> [!CAUTION]
-> **Never run git write commands** (`git commit`, `git push`, `git tag`, `git rebase`, `git merge`, `git reset`, `git stash`, etc.) unless the user **explicitly requests** it. Only read-only git commands (`git status`, `git diff`, `git log`) may be run freely.
+> [!IMPORTANT]
+> After completing and validating a user-requested change, commit it and push the current branch to `origin` by default unless the user explicitly says not to. Do not perform destructive history operations such as `git reset`, force-push, or history rewriting without a separate explicit request.
 
 ---
 
@@ -57,6 +57,8 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - Bubble Tea `Model` struct implementing `Init()`, `Update()`, `View()`
 - Layout: 30% chat list (left) | 70% messages (right) | status bar (3 lines, bottom)
 - Uses `CachedDisplayName` from `Chat` struct — **do not compute display names here**
+- **Bidirectional rendering**: `bidi.go` converts ANSI-styled logical text to visual terminal-cell order after wrapping. It uses UAX #9 levels, preserves grapheme clusters, SGR styles, and OSC 8 links, and returns the paragraph direction so Hebrew-first lines can be right-aligned. Keep API, clipboard, editing, and export text in logical order; apply bidi conversion only at display boundaries.
+- Normal-mode `M-<` / `M->` jump to the first / last item in the active chat or channel section and then use the regular selection-loading path.
 - Stable chat ordering maintained in `stableChatOrder []string` (list of chat IDs)
   - Only changes when a new message arrives (chat → position 0) or a brand-new chat is added
   - On every API refresh the display list is **rebuilt** from `stableChatOrder`
@@ -159,7 +161,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 8. **Silent Failures**: Background refresh errors return `nil` from `tea.Cmd` functions (Bubble Tea ignores nil messages).
 9. **Feature Gates**: Check `m.app.Features.XxxEnabled` (not `ResolveFeatureXxx()`) inside the Bubble Tea event loop. Features are resolved once at startup into `app.Features` to avoid repeated file I/O per keypress.
 10. **Dynamic Scopes**: Always pass `BuildScopes()` to `StartDeviceFlow` and `RefreshAccessToken`. Never hard-code the scope string.
-11. **Rendering Performance Optimization**: When rendering long lists of items in the TUI (e.g., rendering hundreds of messages in `m.app.Messages`), avoid running expensive operations like HTML-to-text parsing and Lipgloss-based `wordWrap` dynamically inside the loop in `View()`. Instead, use cache fields directly on the structs (e.g. `WrappedLinesCached` on `Message` struct) to compute and store wrapped text once, invalidating only when the terminal width or search query changes.
+11. **Rendering Performance Optimization**: When rendering long lists of items in the TUI (e.g., rendering hundreds of messages in `m.app.Messages`), avoid running expensive operations like HTML-to-text parsing, Lipgloss-based `wordWrap`, or Unicode bidi resolution dynamically inside the loop in `View()`. Instead, use cache fields directly on the structs (`WrappedLinesCached` and `WrappedLinesRTLCached` on `Message`) to compute and store wrapped visual text and alignment once, invalidating only when the terminal width or search query changes.
 
 ---
 

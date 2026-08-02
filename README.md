@@ -11,6 +11,7 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 🔐 External token command or OAuth2 Device Code Flow — integrate with an existing credential owner without copying refresh tokens
 - 💬 List all your Teams chats (1:1, group, meetings) with computed display names
 - 📨 View messages in any chat with HTML-to-text rendering (images, attachments, emoji, **bold**, *italic*, ~~strikethrough~~, `code`, lists)
+- 🔤 Mixed Hebrew/English rendering for grid terminals, with ANSI styles and hyperlinks preserved and Hebrew-first lines aligned right
 - ❤️ Message Interactions — view and add reactions (Heart, Like, Laugh, etc.) to any message
 - 🔗 Clickable, Extractable & Openable URLs — links are clickable in supported terminals, can be extracted/copied via the `u` key, and opened in your browser/app via the `o` key
 - ✏️ Message Management — send, edit, and delete messages (includes multi-line support)
@@ -302,6 +303,21 @@ Each feature is disabled by default and requires an additional Graph API permiss
 | `teams_channels_enabled` | `false` | `Team.ReadBasic.All` + `Channel.ReadBasic.All` + `ChannelMessage.Read.All` *(admin consent)* + `ChannelMessage.Send` + `ChannelMessage.ReadWrite` | Teams channels appear in the sidebar below chats; navigate with `j`/`k`. Supports background polling, activity sorting, unread dots, and hidden channels (`h` key). |
 | `channel_mentions_enabled` | `false` | `TeamMember.Read.All` | Enables autocomplete suggestion dropdown list of team members in Teams channels when typing `@` mentions. |
 
+When `TEAMS_TUI_GO_TOKEN_COMMAND` is configured, the external provider owns
+authentication and the built-in `token.json` cache is not used. Feature flags
+still expose the corresponding UI, but the provider's Graph token must already
+carry the listed permission.
+
+### Bidirectional Text
+
+Most grid terminals place Unicode code points strictly from left to right. The
+message, search, and detail views therefore apply Unicode bidirectional
+reordering after logical line wrapping. An English-first mixed line remains
+left-to-right while its Hebrew runs display correctly; a Hebrew-first line is
+also aligned to the right edge. ANSI styling, OSC 8 links, emoji sequences, and
+combining marks remain attached to their original grapheme clusters. Copy,
+edit, and Markdown export paths retain logical text order.
+
 See [AZURE_SETUP.md](AZURE_SETUP.md) for full permission setup instructions.
 
 ---
@@ -408,6 +424,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | ------------ | --------------------------------------------------------- |
 | `↑` / `k`    | Move up in list (within active section)                   |
 | `↓` / `j`    | Move down in list (within active section)                 |
+| `M-<` / `M->`| Jump to first / last item in the active section            |
 | `Tab`        | Switch between Chats & Channels sections (in Normal Mode) |
 | `PgUp` / `K` | Scroll messages up                                        |
 | `PgDn` / `J` | Scroll messages down                                      |

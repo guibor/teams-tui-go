@@ -1,8 +1,9 @@
 module github.com/nospor/teams-tui-go
 
-go 1.25.0
+go 1.25.4
 
 require (
+	github.com/SCKelemen/unicode v1.1.1
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
@@ -10,6 +11,7 @@ require (
 	github.com/gen2brain/beeep v0.11.2
 	github.com/joho/godotenv v1.5.1
 	github.com/muesli/termenv v0.16.0
+	github.com/rivo/uniseg v0.4.7
 	golang.org/x/net v0.53.0
 	golang.org/x/term v0.42.0
 	golang.org/x/text v0.36.0
@@ -41,7 +43,6 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sergeymakinen/go-bmp v1.0.0 // indirect
 	github.com/sergeymakinen/go-ico v1.0.0-beta.0 // indirect
 	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect

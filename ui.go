@@ -1744,6 +1744,24 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		return m, tea.Quit
 
+	case "alt+<":
+		if m.channelSelectedIndex >= 0 {
+			if len(m.allChannels()) > 0 {
+				m.channelSelectedIndex = 0
+			}
+		} else if len(m.app.Chats) > 0 {
+			m.app.SelectedIndex = 0
+		}
+
+	case "alt+>":
+		if m.channelSelectedIndex >= 0 {
+			if channels := m.allChannels(); len(channels) > 0 {
+				m.channelSelectedIndex = len(channels) - 1
+			}
+		} else if len(m.app.Chats) > 0 {
+			m.app.SelectedIndex = len(m.app.Chats) - 1
+		}
+
 	case "j", "down":
 		if m.channelSelectedIndex >= 0 {
 			// Channel section: wrap around at the bottom.
@@ -3320,6 +3338,7 @@ func (m Model) renderRightPanel(w, h int) string {
 		if len([]rune(preview)) > maxPrev {
 			preview = string([]rune(preview)[:maxPrev]) + "…"
 		}
+		preview, _ = bidiVisualLine(preview)
 		sender := ""
 		if ref.From != nil && ref.From.User != nil && ref.From.User.DisplayName != nil {
 			sender = *ref.From.User.DisplayName
@@ -3327,6 +3346,7 @@ func (m Model) renderRightPanel(w, h int) string {
 				sender = "Me"
 			}
 		}
+		sender, _ = bidiVisualLine(sender)
 		bar := lipgloss.NewStyle().Foreground(lipgloss.Color("#4A90D9")).Bold(true).Render("▎")
 		name := lipgloss.NewStyle().Foreground(lipgloss.Color("#7EC8E3")).Bold(true).Render(sender)
 		text := lipgloss.NewStyle().Foreground(lipgloss.Color("#6C7A89")).Render(": " + preview)
@@ -3925,6 +3945,7 @@ func (m Model) renderChatList(w, h int) string {
 		if c.CachedDisplayName != nil {
 			displayName = *c.CachedDisplayName
 		}
+		displayName, _ = bidiVisualLine(displayName)
 
 		unread := m.isUnread(c)
 		reactionEmoji := m.getLatestUnreadReactionEmoji(c)
@@ -4043,8 +4064,9 @@ func (m Model) renderChatList(w, h int) string {
 					iconStyle = iconStyle.Bold(true)
 					nameStyle = lipgloss.NewStyle().Foreground(colWhite).Bold(true)
 				}
+				channelName, _ := bidiVisualLine(entry.teamName + " » " + entry.channelName)
 				labelStr := selectionMarker + unreadMarker + iconStyle.Render("#") + " " +
-					nameStyle.Render(entry.teamName+" » "+entry.channelName)
+					nameStyle.Render(channelName)
 				rowStyle := lipgloss.NewStyle().MaxWidth(w)
 				if selected {
 					rowStyle = rowStyle.Background(colDarkGray).Width(w)
@@ -4135,9 +4157,11 @@ func (m Model) renderMessages(w, h int) string {
 			if m.app.SearchActive && m.app.SearchQuery != "" {
 				senderName = highlightQuery(senderName, m.app.SearchQuery)
 			}
+			senderName, senderIsRTL := bidiVisualLine(senderName)
+			headerAlignRight := alignRight || senderIsRTL
 
 			if msg.IsReply {
-				if alignRight {
+				if headerAlignRight {
 					// Right-aligned reply.
 					color := lipgloss.Color("#5F87AF") // others reply color (blueish)
 					if m.isOwn(msg) {
@@ -4155,9 +4179,13 @@ func (m Model) renderMessages(w, h int) string {
 					header = replyPrefix + lipgloss.NewStyle().Foreground(color).Render(senderName+" "+dateStr)
 				}
 			} else {
-				if alignRight {
+				if headerAlignRight {
 					// Right-aligned main thread message.
-					h := lipgloss.NewStyle().Foreground(colGreen).Render(dateStr + " " + senderName)
+					color := colCyan
+					if m.isOwn(msg) {
+						color = colGreen
+					}
+					h := lipgloss.NewStyle().Foreground(color).Render(dateStr + " " + senderName)
 					header = padLeft(h, w)
 				} else {
 					// Left-aligned main thread message.
@@ -4186,29 +4214,20 @@ func (m Model) renderMessages(w, h int) string {
 			replyIndent = "    " // 4 spaces aligning under "↳ "
 		}
 
-		msgLines := m.getWrappedMessageLines(&msgs[i], maxW-len(replyIndent), m.app.SearchQuery, m.app.SearchActive)
-		padding := 0
-		if alignRight {
-			maxMsgW := 0
-			for _, l := range msgLines {
-				lw := lipgloss.Width(l)
-				if lw > maxMsgW {
-					maxMsgW = lw
-				}
-			}
-			padding = w - maxMsgW
-			if padding < 0 {
-				padding = 0
-			}
-		}
-
-		padStr := strings.Repeat(" ", padding)
+		msgLines, msgLinesRTL := m.getWrappedMessageLines(&msgs[i], maxW-len(replyIndent), m.app.SearchQuery, m.app.SearchActive)
 		isSelected := m.app.MessageSelectionMode && (start+i == m.app.MessageSelectedIndex)
 		if isSelected {
 			selectedStartLine = len(lines)
 		}
-		for _, line := range msgLines {
-			content := replyIndent + padStr + line
+		for lineIndex, line := range msgLines {
+			lineIsRTL := msgLinesRTL[lineIndex]
+			content := replyIndent + line
+			if alignRight || lineIsRTL {
+				padding := w - lipgloss.Width(content)
+				if padding > 0 {
+					content = strings.Repeat(" ", padding) + content
+				}
+			}
 			if isSelected {
 				content = lipgloss.NewStyle().
 					Background(colDarkGray).
@@ -4373,13 +4392,14 @@ func wordWrap(s string, maxW int) []string {
 	return lines
 }
 
-func (m Model) getWrappedMessageLines(msg *Message, maxW int, searchQuery string, searchActive bool) []string {
+func (m Model) getWrappedMessageLines(msg *Message, maxW int, searchQuery string, searchActive bool) ([]string, []bool) {
 	queryKey := ""
 	if searchActive {
 		queryKey = searchQuery
 	}
-	if msg.WrappedWidthCached == maxW && msg.WrappedQueryCached == queryKey && len(msg.WrappedLinesCached) > 0 {
-		return msg.WrappedLinesCached
+	if msg.WrappedWidthCached == maxW && msg.WrappedQueryCached == queryKey && len(msg.WrappedLinesCached) > 0 &&
+		len(msg.WrappedLinesRTLCached) == len(msg.WrappedLinesCached) {
+		return msg.WrappedLinesCached, msg.WrappedLinesRTLCached
 	}
 
 	body := msg.GetPlainText()
@@ -4410,10 +4430,15 @@ func (m Model) getWrappedMessageLines(msg *Message, maxW int, searchQuery string
 	}
 
 	lines := wordWrap(body, maxW)
+	rtlLines := make([]bool, len(lines))
+	for i, line := range lines {
+		lines[i], rtlLines[i] = bidiVisualLine(line)
+	}
 	msg.WrappedWidthCached = maxW
 	msg.WrappedQueryCached = queryKey
 	msg.WrappedLinesCached = lines
-	return lines
+	msg.WrappedLinesRTLCached = rtlLines
+	return lines, rtlLines
 }
 
 // updateScroll recalculates scroll bounds after messages change.
@@ -5218,12 +5243,12 @@ func (m Model) renderSearchPopup(w, h int) string {
 			displayName = "Chat"
 		}
 	}
-
 	titleStyle := lipgloss.NewStyle().Foreground(colYellow).Bold(true)
 	titleText := "Search History (Enter to search)"
 	if m.app.SearchQuery != "" {
 		titleText = fmt.Sprintf("Search History: %s | Results for '%s'", displayName, m.app.SearchQuery)
 	}
+	titleText, _ = bidiVisualLine(titleText)
 	title := titleStyle.Render(titleText)
 
 	instructions := lipgloss.NewStyle().Foreground(colDimGray).Render(
@@ -5364,6 +5389,7 @@ func (m Model) renderSearchPopup(w, h int) string {
 				if item.IsMatch {
 					senderName = highlightQuery(senderName, m.app.SearchQuery)
 				}
+				senderName, _ = bidiVisualLine(senderName)
 				header = lipgloss.NewStyle().Foreground(colCyan).Render(prefix + senderName + " " + dateStr)
 			}
 
@@ -5395,12 +5421,17 @@ func (m Model) renderSearchPopup(w, h int) string {
 
 			var itemLines []string
 			itemLines = append(itemLines, header)
-			for _, bl := range bodyLines {
+			for _, logicalLine := range bodyLines {
+				bl, lineIsRTL := bidiVisualLine(logicalLine)
+				lineText := "    " + bl
+				if lineIsRTL {
+					lineText = padLeft(bl, bodyW+4)
+				}
 				lineStyle := lipgloss.NewStyle()
 				if isSelected {
 					lineStyle = lineStyle.Background(colDarkGray)
 				}
-				itemLines = append(itemLines, lineStyle.Render("    "+bl))
+				itemLines = append(itemLines, lineStyle.Render(lineText))
 			}
 
 			// Check if we have space to draw this item (or if it's the very first item we must draw it)
@@ -6150,6 +6181,7 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 				if item.LocalChat.CachedDisplayName != nil {
 					chatName = *item.LocalChat.CachedDisplayName
 				}
+				chatName, _ = bidiVisualLine(chatName)
 				tag := lipgloss.NewStyle().Foreground(colGreen).Render("[Local Chat]")
 				lineStr := fmt.Sprintf("%s %s %s", prefix, chatName, tag)
 				if isSelected {
@@ -6160,6 +6192,8 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 			case UserSearchItemChannel:
 				chanName := item.Channel.channelName
 				teamName := item.Channel.teamName
+				chanName, _ = bidiVisualLine(chanName)
+				teamName, _ = bidiVisualLine(teamName)
 				tag := lipgloss.NewStyle().Foreground(colCyan).Render("[Channel]")
 				lineStr := fmt.Sprintf("%s %s > %s %s", prefix, teamName, chanName, tag)
 				if isSelected {
@@ -6246,6 +6280,7 @@ func (m Model) renderMessagePopup(w, h int) string {
 			sender = "Me"
 		}
 	}
+	sender, _ = bidiVisualLine(sender)
 
 	msgTime, _ := time.Parse(time.RFC3339Nano, msg.CreatedDateTime)
 	msgTime = msgTime.Local()
@@ -6306,7 +6341,8 @@ func (m Model) renderMessagePopup(w, h int) string {
 		lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render("Date: ") + timeStr,
 	}
 	if msg.Subject != "" {
-		headerLines = append(headerLines, lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render("Subject: ")+msg.Subject)
+		subject, _ := bidiVisualLine(msg.Subject)
+		headerLines = append(headerLines, lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render("Subject: ")+subject)
 	}
 	headerLines = append(headerLines, "")
 
@@ -6326,6 +6362,7 @@ func (m Model) renderMessagePopup(w, h int) string {
 			if att.Name != nil && *att.Name != "" {
 				name = *att.Name
 			}
+			name, _ = bidiVisualLine(name)
 			contentType := ""
 			if att.ContentType != nil && *att.ContentType != "" {
 				contentType = fmt.Sprintf(" (%s)", *att.ContentType)
@@ -6375,6 +6412,7 @@ func (m Model) renderMessagePopup(w, h int) string {
 			namesStr := strings.Join(names, ", ")
 			wrappedReactors := wordWrap(namesStr, reactorsW)
 			for i, wrLine := range wrappedReactors {
+				wrLine, _ = bidiVisualLine(wrLine)
 				if i == 0 {
 					reactionsLines = append(reactionsLines, fmt.Sprintf("  %s %s", emoji, wrLine))
 				} else {
@@ -6403,6 +6441,13 @@ func (m Model) renderMessagePopup(w, h int) string {
 	var wrappedBody []string
 	if body != "" {
 		wrappedBody = wordWrap(body, contentW)
+		for i, line := range wrappedBody {
+			visual, lineIsRTL := bidiVisualLine(line)
+			if lineIsRTL {
+				visual = padLeft(visual, contentW)
+			}
+			wrappedBody[i] = visual
+		}
 	}
 
 	var bodyLines []string
@@ -6591,6 +6636,7 @@ func (m Model) getHelpContentLines() []string {
 		{"Navigation", [][2]string{
 			{"j / ↓", "Navigate list down (within section)"},
 			{"k / ↑", "Navigate list up (within section)"},
+			{"M-< / M->", "Jump to first / last item in the active section"},
 			{"Tab", "Switch between Chats & Channels"},
 			{"m", "Enter message selection mode"},
 			{"i", "Compose new message"},
