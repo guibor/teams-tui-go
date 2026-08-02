@@ -45,11 +45,36 @@ func threadActions() []threadAction {
 
 func teamsDesktopURL(webURL string) string {
 	parsed, err := url.Parse(strings.TrimSpace(webURL))
-	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !strings.EqualFold(parsed.Hostname(), "teams.microsoft.com") {
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !isTeamsWebHost(parsed.Hostname()) {
 		return ""
 	}
 	parsed.Scheme = "msteams"
 	return parsed.String()
+}
+
+func isTeamsWebHost(host string) bool {
+	return strings.EqualFold(host, "teams.microsoft.com") ||
+		strings.EqualFold(host, "teams.cloud.microsoft")
+}
+
+// teamsWebURL bypasses the /l launcher endpoint, which can dispatch the
+// msteams:// protocol, and routes the same opaque target through Teams web.
+func teamsWebURL(webURL string) string {
+	raw := strings.TrimSpace(webURL)
+	parsed, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !isTeamsWebHost(parsed.Hostname()) {
+		return raw
+	}
+	if strings.HasPrefix(parsed.Fragment, "/l/") || !strings.HasPrefix(parsed.EscapedPath(), "/l/") {
+		return raw
+	}
+
+	origin := &url.URL{Scheme: parsed.Scheme, Host: parsed.Host, Path: "/"}
+	route := parsed.EscapedPath()
+	if parsed.RawQuery != "" {
+		route += "?" + parsed.RawQuery
+	}
+	return origin.String() + "#" + route
 }
 
 func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
@@ -72,7 +97,7 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 			return m, nil
 		}
 		m.app.SetStatus("Opening chat in browser...", 0)
-		return m, openURLCmd(chatURL, m.app.BrowserCommand, m.app.YoutrackCommand, m.app.GitlabCommand)
+		return m, openURLCmd(teamsWebURL(chatURL), m.app.BrowserCommand, m.app.YoutrackCommand, m.app.GitlabCommand)
 
 	case threadActionOpenTeams:
 		deepLink := teamsDesktopURL(chatURL)

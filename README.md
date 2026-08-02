@@ -441,7 +441,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
 | `a`          | Open actions for the selected chat                         |
 | `f`          | Toggle ★ favourite on selected chat (chats only)          |
-| `o`          | Open selected chat in the configured browser              |
+| `o`          | Open selected chat directly in Teams web in the configured browser |
 | `O`          | Open selected chat in the Teams desktop client            |
 | `r`          | Mark selected chat read (Normal Mode)                     |
 | `u`          | Mark selected chat unread (Normal Mode)                   |
@@ -517,7 +517,7 @@ navigate with `j`/`k` and run it with `Enter`.
 
 | Action key | Action                                      |
 | ---------- | ------------------------------------------- |
-| `o` / `O`  | Open in browser / Teams desktop             |
+| `o` / `O`  | Open directly in Teams web / Teams desktop  |
 | `r` / `u`  | Mark read / unread                          |
 | `f`        | Toggle favorite                             |
 | `c`        | Capture in the dated Markdown thread list   |

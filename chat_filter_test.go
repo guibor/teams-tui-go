@@ -83,6 +83,23 @@ func TestTeamsDesktopURLUsesOfficialScheme(t *testing.T) {
 	}
 }
 
+func TestTeamsWebURLBypassesLauncherWithoutChangingOpaqueTarget(t *testing.T) {
+	got := teamsWebURL(" https://teams.microsoft.com/l/chat/19%3Ameeting_NjQ%40thread.v2/conversations?tenantId=abc&groupId=def ")
+	want := "https://teams.microsoft.com/#/l/chat/19%3Ameeting_NjQ%40thread.v2/conversations?tenantId=abc&groupId=def"
+	if got != want {
+		t.Fatalf("web URL = %q, want %q", got, want)
+	}
+	if got := teamsWebURL("https://teams.cloud.microsoft/l/chat/example/conversations"); got != "https://teams.cloud.microsoft/#/l/chat/example/conversations" {
+		t.Fatalf("new Teams host web URL = %q", got)
+	}
+	if got := teamsWebURL("https://teams.microsoft.com/#/l/chat/example/conversations"); got != "https://teams.microsoft.com/#/l/chat/example/conversations" {
+		t.Fatalf("existing web route changed to %q", got)
+	}
+	if got := teamsWebURL("https://example.com/l/chat/example"); got != "https://example.com/l/chat/example" {
+		t.Fatalf("non-Teams URL changed to %q", got)
+	}
+}
+
 func TestThreadActionMenuCapturesSelectedChat(t *testing.T) {
 	app := NewApp()
 	title := "Capture me"
