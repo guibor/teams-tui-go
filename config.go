@@ -145,8 +145,6 @@ func SaveFilepickerSettings(sortBy string, sortOrder string, currentDirectory st
 	return os.WriteFile(filepath.Join(dir, "filepicker_settings.json"), data, 0o600)
 }
 
-
-
 const appDirName = "teams-tui-go"
 
 // defaultClientID is the Microsoft Teams client ID fallback.
@@ -161,22 +159,24 @@ type Config struct {
 	MessageLimit            *int              `json:"message_limit,omitempty"`
 	SearchContextLimit      *int              `json:"search_context_limit,omitempty"`
 	ChatLimit               *int              `json:"chat_limit,omitempty"`
+	MarkReadOnOpen          *bool             `json:"mark_read_on_open,omitempty"`
+	ExportDirectory         *string           `json:"export_directory,omitempty"`
 	ChatIconTheme           *string           `json:"chat_icon_theme,omitempty"`
 	CustomChatIcons         map[string]string `json:"custom_chat_icons,omitempty"`
 
 	// Optional feature flags — each defaults to false (disabled).
 	// When enabled, the corresponding Graph API permission must be granted
 	// in the Azure app registration and the cached token refreshed.
-	FilePreviewEnabled    *bool `json:"file_preview_enabled,omitempty"`    // requires Files.Read
-	FilePreviewInTerminal *bool `json:"file_preview_in_terminal,omitempty"` // show image in terminal if file_preview_enabled is true
-	FileUploadEnabled     *bool `json:"file_upload_enabled,omitempty"`     // requires Files.ReadWrite
-	PresenceEnabled       *bool `json:"presence_enabled,omitempty"`        // requires Presence.Read.All
-	UserProfileEnabled    *bool `json:"user_profile_enabled,omitempty"`   // requires User.ReadBasic.All
-	UserProfileExtended   *bool `json:"user_profile_extended,omitempty"`  // requires User.Read.All (admin consent)
-	TeamsChannelsEnabled  *bool `json:"teams_channels_enabled,omitempty"` // requires Team.ReadBasic.All + Channel.ReadBasic.All + ChannelMessage.Read.All + ChannelMessage.Send + ChannelMessage.ReadWrite
-	ChannelMentionsEnabled *bool `json:"channel_mentions_enabled,omitempty"` // requires TeamMember.Read.All to load members for autocomplete in channels
-	ChannelMsgRefreshMin   *int  `json:"channel_msg_refresh_min,omitempty"`
-	SqliteEnabled          *bool `json:"sqlite_enabled,omitempty"`
+	FilePreviewEnabled     *bool   `json:"file_preview_enabled,omitempty"`     // requires Files.Read
+	FilePreviewInTerminal  *bool   `json:"file_preview_in_terminal,omitempty"` // show image in terminal if file_preview_enabled is true
+	FileUploadEnabled      *bool   `json:"file_upload_enabled,omitempty"`      // requires Files.ReadWrite
+	PresenceEnabled        *bool   `json:"presence_enabled,omitempty"`         // requires Presence.Read.All
+	UserProfileEnabled     *bool   `json:"user_profile_enabled,omitempty"`     // requires User.ReadBasic.All
+	UserProfileExtended    *bool   `json:"user_profile_extended,omitempty"`    // requires User.Read.All (admin consent)
+	TeamsChannelsEnabled   *bool   `json:"teams_channels_enabled,omitempty"`   // requires Team.ReadBasic.All + Channel.ReadBasic.All + ChannelMessage.Read.All + ChannelMessage.Send + ChannelMessage.ReadWrite
+	ChannelMentionsEnabled *bool   `json:"channel_mentions_enabled,omitempty"` // requires TeamMember.Read.All to load members for autocomplete in channels
+	ChannelMsgRefreshMin   *int    `json:"channel_msg_refresh_min,omitempty"`
+	SqliteEnabled          *bool   `json:"sqlite_enabled,omitempty"`
 	ExternalEditor         *string `json:"external_editor,omitempty"`
 	BrowserCommand         *string `json:"browser_command,omitempty"`
 	ImageViewer            *string `json:"image_viewer,omitempty"`
@@ -186,9 +186,13 @@ type Config struct {
 
 // GetAppDir returns ~/.config/teams-tui-go/, creating it if necessary.
 func GetAppDir() (string, error) {
-	base, err := os.UserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("could not determine config dir: %w", err)
+	base := os.Getenv("XDG_CONFIG_HOME")
+	if base == "" {
+		var err error
+		base, err = os.UserConfigDir()
+		if err != nil {
+			return "", fmt.Errorf("could not determine config dir: %w", err)
+		}
 	}
 	dir := filepath.Join(base, appDirName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -199,9 +203,13 @@ func GetAppDir() (string, error) {
 
 // GetCacheDir returns ~/.cache/teams-tui-go/, creating it if necessary.
 func GetCacheDir() (string, error) {
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return "", fmt.Errorf("could not determine cache dir: %w", err)
+	base := os.Getenv("XDG_CACHE_HOME")
+	if base == "" {
+		var err error
+		base, err = os.UserCacheDir()
+		if err != nil {
+			return "", fmt.Errorf("could not determine cache dir: %w", err)
+		}
 	}
 	dir := filepath.Join(base, appDirName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -283,6 +291,16 @@ func InitConfig() {
 	if cfg.ChatLimit == nil {
 		limit := 50
 		cfg.ChatLimit = &limit
+		modified = true
+	}
+	if cfg.MarkReadOnOpen == nil {
+		v := false
+		cfg.MarkReadOnOpen = &v
+		modified = true
+	}
+	if cfg.ExportDirectory == nil {
+		dir := "~/Downloads"
+		cfg.ExportDirectory = &dir
 		modified = true
 	}
 	if cfg.ChatIconTheme == nil {
@@ -434,6 +452,22 @@ func ResolveChatLimit() int {
 		return limit
 	}
 	return 50
+}
+
+// ResolveMarkReadOnOpen returns whether selecting or focusing a chat should
+// immediately mark it read. It defaults to false so navigation is non-destructive.
+func ResolveMarkReadOnOpen() bool {
+	cfg := LoadConfig()
+	return cfg != nil && cfg.MarkReadOnOpen != nil && *cfg.MarkReadOnOpen
+}
+
+// ResolveExportDirectory returns the directory used for full-thread Markdown exports.
+func ResolveExportDirectory() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ExportDirectory != nil && *cfg.ExportDirectory != "" {
+		return *cfg.ExportDirectory
+	}
+	return "~/Downloads"
 }
 
 // ResolveChannelMsgRefreshMin returns the channel messages refresh interval in minutes.
@@ -597,4 +631,3 @@ func ResolveGitlabCommand() string {
 	}
 	return ""
 }
-

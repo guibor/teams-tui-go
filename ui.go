@@ -13,12 +13,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/atotto/clipboard"
-	"github.com/nospor/teams-tui-go/filepicker"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gen2brain/beeep"
+	"github.com/nospor/teams-tui-go/filepicker"
 	"regexp"
 )
 
@@ -66,6 +66,20 @@ type MsgFileAttached struct {
 	ContentType string
 	Data        []byte
 	Err         error
+}
+
+// MsgChatReadStateChanged reports an explicit read/unread request.
+type MsgChatReadStateChanged struct {
+	ChatID string
+	Unread bool
+	Err    error
+}
+
+// MsgThreadExported reports completion of a full-history Markdown export.
+type MsgThreadExported struct {
+	Path  string
+	Count int
+	Err   error
 }
 
 // MsgMessagesLoaded is sent when messages for a specific chat have loaded.
@@ -126,7 +140,6 @@ type MsgBackgroundMessagesLoaded struct {
 type MsgPollReactionsLoaded struct {
 	Results map[string][]Message
 }
-
 
 // MsgPresenceLoaded is sent when a user's presence status has been fetched.
 type MsgPresenceLoaded struct {
@@ -246,6 +259,9 @@ type Model struct {
 
 	// Track last-read message IDs per chat to avoid redundant API calls.
 	lastReadMsgID map[string]string
+	// Explicitly unread chats are protected from auto-read until the user
+	// navigates away and opens them again.
+	manuallyUnread map[string]bool
 
 	// Track whether a chat list load is in progress.
 	loadingChats bool
@@ -287,7 +303,6 @@ type Model struct {
 
 	// originalChannelIndex maps channel ID to its original index in its team's channel list when loaded.
 	originalChannelIndex map[string]int
-
 
 	// Channel sidebar navigation (used when teams_channels_enabled).
 	// channelSelectedIndex is an index into the flat list returned by allChannels().
@@ -356,6 +371,7 @@ func NewModel(app *App, clientID, userID string) Model {
 		lastMsgID:            make(map[string]string),
 		lastMsgTime:          make(map[string]time.Time),
 		lastReadMsgID:        make(map[string]string),
+		manuallyUnread:       make(map[string]bool),
 		lastReadReactions:    make(map[string]map[string]bool),
 		reactionsInitialized: make(map[string]bool),
 		notifiedReactions:    make(map[string]map[string]bool),
@@ -605,10 +621,10 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 					}
 				}
 
-				if isOwnMsg || isActiveChat {
+				if isOwnMsg || (isActiveChat && m.app.MarkReadOnOpen) {
 					m.lastReadMsgID[c.ID] = newID
 					m.promoteChat(c.ID)
-					if isActiveChat {
+					if isActiveChat && m.app.MarkReadOnOpen {
 						go MarkChatAsRead(func() string {
 							t, _ := GetValidTokenSilent(m.clientID)
 							return t
@@ -951,9 +967,9 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 							m.promoteChat(chat.ID)
 
 							isOwnMsg := m.isOwn(latestMsg)
-							if isOwnMsg || m.focused {
+							if isOwnMsg || (m.focused && m.app.MarkReadOnOpen) {
 								m.lastReadMsgID[chat.ID] = newLastID
-								if m.focused {
+								if m.focused && m.app.MarkReadOnOpen {
 									go MarkChatAsRead(func() string {
 										t, _ := GetValidTokenSilent(m.clientID)
 										return t
@@ -1161,6 +1177,37 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 
 	case tea.BlurMsg:
 		m.focused = false
+
+	// ── Explicit chat read state ─────────────────────────────────────────
+	case MsgChatReadStateChanged:
+		if msg.Err != nil {
+			action := "read"
+			if msg.Unread {
+				action = "unread"
+			}
+			m.app.SetStatus("Could not mark chat "+action+": "+msg.Err.Error(), 6*time.Second)
+			break
+		}
+		if msg.Unread {
+			m.lastReadMsgID[msg.ChatID] = ""
+			m.manuallyUnread[msg.ChatID] = true
+			m.app.SetStatus("Marked chat unread", 3*time.Second)
+		} else {
+			delete(m.manuallyUnread, msg.ChatID)
+			if latestID := m.lastMsgID[msg.ChatID]; latestID != "" {
+				m.lastReadMsgID[msg.ChatID] = latestID
+			}
+			m.markReactionsRead(msg.ChatID)
+			m.app.SetStatus("Marked chat read", 3*time.Second)
+		}
+
+	// ── Full-thread Markdown export ──────────────────────────────────────
+	case MsgThreadExported:
+		if msg.Err != nil {
+			m.app.SetStatus("Export failed: "+msg.Err.Error(), 7*time.Second)
+		} else {
+			m.app.SetStatus(fmt.Sprintf("Exported %d messages to %s", msg.Count, msg.Path), 8*time.Second)
+		}
 
 	// ── Message send result ───────────────────────────────────────────────
 	case MsgSendDone:
@@ -1406,7 +1453,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				prevID, ok := m.lastMsgID[msg.ChannelID]
 				newTime, _ := time.Parse(time.RFC3339Nano, newest.CreatedDateTime)
 
-				if isActiveChannel && m.focused {
+				if isActiveChannel && m.focused && m.app.MarkReadOnOpen {
 					m.lastMsgID[msg.ChannelID] = newest.ID
 					m.lastMsgTime[msg.ChannelID] = newTime
 					m.lastReadMsgID[msg.ChannelID] = newest.ID
@@ -1427,10 +1474,13 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 							m.notify(senderName, newest)
 						}
 					} else if !ok || m.lastMsgTime[msg.ChannelID].IsZero() {
-						// First time loading for channel in this session, mark as read
+						// First load establishes the latest message. Only mark it read
+						// when read-on-open is enabled or it was sent by us.
 						m.lastMsgID[msg.ChannelID] = newest.ID
 						m.lastMsgTime[msg.ChannelID] = newTime
-						m.lastReadMsgID[msg.ChannelID] = newest.ID
+						if m.isOwn(newest) || (isActiveChannel && m.focused && m.app.MarkReadOnOpen) {
+							m.lastReadMsgID[msg.ChannelID] = newest.ID
+						}
 					}
 				}
 			}
@@ -1696,6 +1746,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.SelectedChannelID = ""
 			m.app.SnapToBottom = true
 			if chat := m.app.GetSelectedChat(); chat != nil {
+				delete(m.manuallyUnread, chat.ID)
 				m = m.markRead()
 				return m.loadChatMessages(chat.ID, m.app.SelectedIndex)
 			}
@@ -1874,6 +1925,50 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		}
 
+	case "r":
+		if m.channelSelectedIndex >= 0 {
+			if entry := m.activeChannelEntry(); entry != nil {
+				latestID := m.lastMsgID[entry.channelID]
+				if latestID == "" && len(m.app.Messages) > 0 {
+					latestID = m.app.Messages[0].ID
+				}
+				if latestID != "" {
+					m.lastReadMsgID[entry.channelID] = latestID
+					delete(m.manuallyUnread, entry.channelID)
+					m.app.SetStatus("Marked channel read locally", 3*time.Second)
+				}
+			}
+			break
+		}
+		if chat := m.app.GetSelectedChat(); chat != nil {
+			m.app.SetStatus("Marking chat read...", 0)
+			return m, setChatReadStateCmd(m.clientID, chat.ID, m.userID, false)
+		}
+
+	case "u":
+		if m.channelSelectedIndex >= 0 {
+			if entry := m.activeChannelEntry(); entry != nil {
+				m.lastReadMsgID[entry.channelID] = ""
+				m.manuallyUnread[entry.channelID] = true
+				m.app.SetStatus("Marked channel unread locally", 3*time.Second)
+			}
+			break
+		}
+		if chat := m.app.GetSelectedChat(); chat != nil {
+			m.app.SetStatus("Marking chat unread...", 0)
+			return m, setChatReadStateCmd(m.clientID, chat.ID, m.userID, true)
+		}
+
+	case "E":
+		if m.channelSelectedIndex >= 0 {
+			m.app.SetStatus("Full Markdown export currently supports chats", 5*time.Second)
+			break
+		}
+		if chat := m.app.GetSelectedChat(); chat != nil {
+			m.app.SetStatus("Exporting complete chat history...", 0)
+			return m, exportChatMarkdownCmd(m.clientID, *chat, m.app.ExportDirectory)
+		}
+
 	case "p":
 		// Show presence popup for chats (requires presence_enabled feature).
 		if !m.app.Features.Presence {
@@ -1979,6 +2074,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.app.SearchQuery = ""
 		m.app.SnapToBottom = true
 		if chat := m.app.GetSelectedChat(); chat != nil {
+			delete(m.manuallyUnread, chat.ID)
 			m = m.markRead()
 			return m.loadChatMessages(chat.ID, m.app.SelectedIndex)
 		}
@@ -2998,7 +3094,7 @@ func (m Model) renderRightPanel(w, h int) string {
 	}
 
 	if !m.app.InputMode {
-		title := "Messages (i:compose, m:select, K/J:scroll, /:search, ?:help, ESC:sleep mode)"
+		title := "Messages (i:compose, m:select, r/u:read state, E:export, K/J:scroll, /:search, ?:help)"
 		if m.channelSelectedIndex >= 0 {
 			chans := m.allChannels()
 			if m.channelSelectedIndex < len(chans) {
@@ -3310,9 +3406,9 @@ func (m Model) activeConversationID() string {
 }
 
 func (m Model) renderChatList(w, h int) string {
-	titleText := "Chats (j/k: nav, c: find, f: ★ fav, q: quit)"
+	titleText := "Chats (j/k: nav, r/u: read state, E: export, f: ★ fav, q: quit)"
 	if m.app.Features.TeamsChannels {
-		titleText = "Chats (j/k: nav, Tab: switch, c: find, f: ★ fav, q: quit)"
+		titleText = "Chats (j/k: nav, Tab: switch, r/u: read state, E: export, q: quit)"
 	}
 	title := lipgloss.NewStyle().Foreground(colDimGray).Render(titleText)
 
@@ -3552,7 +3648,6 @@ func (m Model) renderChatList(w, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-
 // ---------------------------------------------------------------------------
 // Messages rendering
 // ---------------------------------------------------------------------------
@@ -3647,7 +3742,7 @@ func (m Model) renderMessages(w, h int) string {
 						color = lipgloss.Color("#5FAF87") // own reply color (greenish)
 					}
 					replyPrefix := lipgloss.NewStyle().Foreground(colDimGray).Render("  ↳ ")
-					header = replyPrefix + lipgloss.NewStyle().Foreground(color).Render(senderName + " " + dateStr)
+					header = replyPrefix + lipgloss.NewStyle().Foreground(color).Render(senderName+" "+dateStr)
 				}
 			} else {
 				if alignRight {
@@ -3955,13 +4050,16 @@ func messagesEqual(a, b []Message) bool {
 }
 
 func (m Model) markRead() Model {
-	if !m.focused {
+	if !m.focused || !m.app.MarkReadOnOpen {
 		return m
 	}
 	if m.channelSelectedIndex >= 0 {
 		chans := m.allChannels()
 		if m.channelSelectedIndex < len(chans) {
 			entry := chans[m.channelSelectedIndex]
+			if m.manuallyUnread[entry.channelID] {
+				return m
+			}
 			lastID := m.lastMsgID[entry.channelID]
 			if lastID == "" && len(m.app.Messages) > 0 {
 				lastID = m.app.Messages[0].ID
@@ -3975,6 +4073,9 @@ func (m Model) markRead() Model {
 
 	chat := m.app.GetSelectedChat()
 	if chat == nil {
+		return m
+	}
+	if m.manuallyUnread[chat.ID] {
 		return m
 	}
 
@@ -3991,32 +4092,40 @@ func (m Model) markRead() Model {
 		}(), chat.ID, m.userID)
 	}
 
+	m.markReactionsRead(chat.ID)
+
+	return m
+}
+
+func (m *Model) markReactionsRead(chatID string) {
 	// Mark reactions in the selected chat as read.
-	if m.lastReadReactions[chat.ID] == nil {
-		m.lastReadReactions[chat.ID] = make(map[string]bool)
+	if m.lastReadReactions[chatID] == nil {
+		m.lastReadReactions[chatID] = make(map[string]bool)
 	}
-	for _, msgObj := range m.app.Messages {
+	messages := m.app.CachedMessages[chatID]
+	if selected := m.app.GetSelectedChat(); selected != nil && selected.ID == chatID {
+		messages = m.app.Messages
+	}
+	for _, msgObj := range messages {
 		for _, rKey := range m.getReactionKeys(&msgObj) {
-			m.lastReadReactions[chat.ID][rKey] = true
+			m.lastReadReactions[chatID][rKey] = true
 		}
 	}
-	if hist, ok := m.app.HistoryMessages[chat.ID]; ok {
+	if hist, ok := m.app.HistoryMessages[chatID]; ok {
 		for _, msgObj := range hist {
 			for _, rKey := range m.getReactionKeys(&msgObj) {
-				m.lastReadReactions[chat.ID][rKey] = true
+				m.lastReadReactions[chatID][rKey] = true
 			}
 		}
 	}
 	for _, c := range m.latestChats {
-		if c.ID == chat.ID {
+		if c.ID == chatID {
 			for _, rKey := range m.getReactionKeys(c.LastMessagePreview) {
-				m.lastReadReactions[chat.ID][rKey] = true
+				m.lastReadReactions[chatID][rKey] = true
 			}
 			break
 		}
 	}
-
-	return m
 }
 
 func (m Model) isUnread(c Chat) bool {
@@ -4996,7 +5105,6 @@ func (m Model) handleSearchPopupNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-
 	case "y":
 		if len(m.app.SearchPopupResults) > 0 && m.app.SearchPopupSelectedIndex < len(m.app.SearchPopupResults) {
 			msgObj := m.app.SearchPopupResults[m.app.SearchPopupSelectedIndex].Message
@@ -5359,7 +5467,6 @@ func (m Model) updateCachedMessages(chatID string, msgs []Message) Model {
 	return m
 }
 
-
 type UserSearchItemType int
 
 const (
@@ -5583,7 +5690,7 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 		if m.app.UserSearchSelectedIndex < 0 {
 			m.app.UserSearchSelectedIndex = 0
 		}
- 
+
 		linesRendered := 0
 		for idx, item := range items {
 			isSelected := idx == m.app.UserSearchSelectedIndex
@@ -5591,7 +5698,7 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 			if isSelected {
 				prefix = "> "
 			}
- 
+
 			var line string
 			switch item.Type {
 			case UserSearchItemLocal:
@@ -5755,7 +5862,7 @@ func (m Model) renderMessagePopup(w, h int) string {
 		lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render("Date: ") + timeStr,
 	}
 	if msg.Subject != "" {
-		headerLines = append(headerLines, lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render("Subject: ") + msg.Subject)
+		headerLines = append(headerLines, lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render("Subject: ")+msg.Subject)
 	}
 	headerLines = append(headerLines, "")
 
@@ -6046,6 +6153,9 @@ func (m Model) getHelpContentLines() []string {
 			{"c", "Open chat search / open chat"},
 			{"/", "Search message history"},
 			{"f", "Toggle favourite (chats only)"},
+			{"r", "Mark selected chat read"},
+			{"u", "Mark selected chat unread"},
+			{"E", "Export complete chat history as Markdown"},
 			{"h", "Toggle hide/unhide channel (channels only)"},
 			{"p", "Presence status of chat participants (chats only, feature: presence_enabled)"},
 			{"n", "Cycle notification mode"},
@@ -6793,4 +6903,3 @@ func (m Model) renderFilePickerPopup(w, h int) string {
 		Width(w).Height(h).
 		Render(strings.Join(lines, "\n"))
 }
-

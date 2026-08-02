@@ -61,6 +61,12 @@ func TestInitConfig(t *testing.T) {
 	if cfg.ChatLimit == nil || *cfg.ChatLimit != 50 {
 		t.Errorf("expected chat limit 50, got %v", cfg.ChatLimit)
 	}
+	if cfg.MarkReadOnOpen == nil || *cfg.MarkReadOnOpen {
+		t.Errorf("expected mark read on open false, got %v", cfg.MarkReadOnOpen)
+	}
+	if cfg.ExportDirectory == nil || *cfg.ExportDirectory != "~/Downloads" {
+		t.Errorf("expected export directory ~/Downloads, got %v", cfg.ExportDirectory)
+	}
 	if cfg.ChannelMsgRefreshMin == nil || *cfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected channel message refresh min 2, got %v", cfg.ChannelMsgRefreshMin)
 	}
@@ -125,6 +131,12 @@ func TestInitConfig(t *testing.T) {
 	}
 	if updatedCfg.ChatLimit == nil || *updatedCfg.ChatLimit != 50 {
 		t.Errorf("expected default chat limit 50, got %v", updatedCfg.ChatLimit)
+	}
+	if updatedCfg.MarkReadOnOpen == nil || *updatedCfg.MarkReadOnOpen {
+		t.Errorf("expected default mark read on open false, got %v", updatedCfg.MarkReadOnOpen)
+	}
+	if updatedCfg.ExportDirectory == nil || *updatedCfg.ExportDirectory != "~/Downloads" {
+		t.Errorf("expected default export directory ~/Downloads, got %v", updatedCfg.ExportDirectory)
 	}
 	if updatedCfg.ChannelMsgRefreshMin == nil || *updatedCfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected default channel message refresh min 2, got %v", updatedCfg.ChannelMsgRefreshMin)
@@ -517,4 +529,3 @@ func TestResolveURLCommands(t *testing.T) {
 		t.Errorf("expected ResolveGitlabCommand to resolve to 'gitlab-cli', got %q", r)
 	}
 }
-

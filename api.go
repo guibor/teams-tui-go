@@ -45,6 +45,7 @@ type Chat struct {
 	ID                 string         `json:"id"`
 	Topic              *string        `json:"topic,omitempty"`
 	ChatType           string         `json:"chatType"`
+	WebURL             string         `json:"webUrl,omitempty"`
 	LastUpdated        *string        `json:"lastUpdatedDateTime,omitempty"`
 	Viewpoint          *ChatViewpoint `json:"viewpoint,omitempty"`
 	LastMessagePreview *Message       `json:"lastMessagePreview,omitempty"`
@@ -59,15 +60,16 @@ type ChatViewpoint struct {
 
 // Message represents a single message in a chat.
 type Message struct {
-	ID              string              `json:"id"`
-	CreatedDateTime string              `json:"createdDateTime"`
-	MessageType     string              `json:"messageType,omitempty"`
-	Subject         string              `json:"subject,omitempty"`
-	From            *MessageFrom        `json:"from,omitempty"`
-	Body            *MessageBody        `json:"body,omitempty"`
-	Attachments     []MessageAttachment `json:"attachments,omitempty"`
-	Reactions       []MessageReaction   `json:"reactions,omitempty"`
-	Mentions        []MessageMention    `json:"mentions,omitempty"`
+	ID                      string              `json:"id"`
+	CreatedDateTime         string              `json:"createdDateTime"`
+	MessageType             string              `json:"messageType,omitempty"`
+	Subject                 string              `json:"subject,omitempty"`
+	WebURL                  string              `json:"webUrl,omitempty"`
+	From                    *MessageFrom        `json:"from,omitempty"`
+	Body                    *MessageBody        `json:"body,omitempty"`
+	Attachments             []MessageAttachment `json:"attachments,omitempty"`
+	Reactions               []MessageReaction   `json:"reactions,omitempty"`
+	Mentions                []MessageMention    `json:"mentions,omitempty"`
 	PlainTextCached         *string             `json:"-"`
 	NormalizedTextCached    *string             `json:"-"`
 	NormalizedSubjectCached *string             `json:"-"`
@@ -192,7 +194,6 @@ func getAttachmentSavedName(att MessageAttachment, defaultName string) string {
 	return fmt.Sprintf("%s_%s%s", stem, idStr, ext)
 }
 
-
 func ExtractInlineImages(htmlContent string) []MessageAttachment {
 	if htmlContent == "" {
 		return nil
@@ -228,11 +229,11 @@ func ExtractInlineImages(htmlContent string) []MessageAttachment {
 						name += ".png"
 					}
 					contentType := "image/png"
-					
+
 					srcCopy := src
 					nameCopy := name
 					contentTypeCopy := contentType
-					
+
 					list = append(list, MessageAttachment{
 						ID:          fmt.Sprintf("inline-img-%d", imgCounter),
 						Name:        &nameCopy,
@@ -1359,27 +1360,43 @@ func DeleteChannelMessage(accessToken, teamID, channelID, messageID string) erro
 // MarkChatAsRead
 // ---------------------------------------------------------------------------
 
-// MarkChatAsRead marks the chat as read for the current user.
-// All errors are silently ignored so as not to disrupt the UX.
-func MarkChatAsRead(accessToken, chatID, userID string) {
-	// Fetch tenant ID.
-	body, err := graphGet(accessToken, "/organization")
-	if err != nil {
-		return
-	}
-	var org orgResponse
-	if err := json.Unmarshal(body, &org); err != nil || len(org.Value) == 0 {
-		return
-	}
-	tenantID := org.Value[0].ID
-
-	payload := map[string]any{
+// chatReadStatePayload builds the identity payload required by Graph's chat
+// read-state actions. The unread action marks the newest message unread when
+// lastMessageReadDateTime is omitted.
+func chatReadStatePayload(userID, tenantID string) map[string]any {
+	return map[string]any{
 		"user": map[string]string{
 			"id":       userID,
 			"tenantId": tenantID,
 		},
 	}
-	_ = graphPost(accessToken, "/chats/"+chatID+"/markChatReadForUser", payload)
+}
+
+// setChatReadState marks a chat read or unread for the current user.
+func setChatReadState(accessToken, chatID, userID string, unread bool) error {
+	tenantID, err := GetTenantID(accessToken)
+	if err != nil {
+		return fmt.Errorf("get tenant for chat read state: %w", err)
+	}
+	action := "markChatReadForUser"
+	if unread {
+		action = "markChatUnreadForUser"
+	}
+	return graphPost(
+		accessToken,
+		"/chats/"+chatID+"/"+action,
+		chatReadStatePayload(userID, tenantID),
+	)
+}
+
+// MarkChatAsRead marks the chat as read for the current user.
+func MarkChatAsRead(accessToken, chatID, userID string) error {
+	return setChatReadState(accessToken, chatID, userID, false)
+}
+
+// MarkChatAsUnread marks the newest message in the chat as unread for the current user.
+func MarkChatAsUnread(accessToken, chatID, userID string) error {
+	return setChatReadState(accessToken, chatID, userID, true)
 }
 
 // ---------------------------------------------------------------------------

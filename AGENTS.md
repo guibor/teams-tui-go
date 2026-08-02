@@ -26,7 +26,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates via OAuth2 D
 ### Configuration (`config.go`)
 - App data: `~/.config/teams-tui-go/` (via `GetAppDir()`)
 - Cache: `~/.cache/teams-tui-go/` (via `GetCacheDir()`)
-- Config struct: `ClientID *string`, `NotificationMode *NotificationMode`, `NotificationShowPreview *bool`, `NotificationPreviewLen *int`, `MessageLimit *int`, `SearchContextLimit *int`, `ChatLimit *int`, `ChatIconTheme *string`, `CustomChatIcons map[string]string`, `ExternalEditor *string`, plus six optional feature flags: `FilePreviewEnabled`, `PresenceEnabled`, `UserProfileEnabled`, `UserProfileExtended`, `TeamsChannelsEnabled`, `ChannelMentionsEnabled`
+- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), editor/browser commands, and optional feature flags.
 - `ResolveClientID()`, `ResolveMessageLimit()`, `ResolveSearchContextLimit()`, `ResolveChatLimit()`, and `ResolveExternalEditor()` implement the full precedence chain
 - `InitConfig()` is run at application startup to populate any missing configuration keys in `config.json` with their default values and persist them to disk. It defaults `ChatIconTheme` to `"unicode"` and all feature flags to `false`.
 - `BuildScopes()` assembles the OAuth2 scope string dynamically: always includes the four basic scopes (`User.Read Chat.ReadWrite offline_access`) and appends optional scopes for each enabled feature flag.
@@ -72,7 +72,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates via OAuth2 D
   - `lastMsgID` and `lastMsgTime` track latest content
   - `lastReadMsgID` tracks what was read locally in this session
   - `isUnread(chat)` compares latest message time with server viewpoint and local read state
-  - `markRead()` triggers `MarkChatAsRead` API on focus, selection change, or key press
+- `markRead()` only triggers automatic read state when `mark_read_on_open` is enabled. Normal-mode `r` and `u` explicitly call the Graph read/unread actions; an explicit unread is protected from auto-read until the user leaves and reopens that chat.
   - **Reactions Read Tracking**: `lastReadReactions` maps chat ID to a set of unique reaction keys (`messageID:reactorNameOrID:reactionType`). Any reaction from another user that is not in this map is considered unread, causing the reaction's actual emoji prefix (e.g. `❤️`, `👍`, `😆`, etc.) to be displayed on the chat in the sidebar and trigger desktop notifications if the app is blurred or not active.
 - **Focus Tracking & Sleep/Idle Mode**:
   - Terminal focus reporting enabled via `\x1b[?1004h`; `tea.FocusMsg`/`BlurMsg` update `focused` state.
@@ -119,6 +119,8 @@ Go-based terminal UI application for Microsoft Teams. Authenticates via OAuth2 D
   - Activated by `ctrl+g` in compose mode.
   - Temporarily saves the current textarea value to a temporary file, opens the configured editor (`ExternalEditor`), and updates the textarea value on success.
   - Uses Bubble Tea's `tea.ExecProcess` to pause the TUI while the editor executes in the terminal foreground, resuming when the editor process exits.
+- **Full Markdown Export**:
+  - Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.
 
 ### Main / Entry Point (`main.go`)
 - Startup: banner → auth → profile → chats (with expanded last message preview) → sort → init model → run

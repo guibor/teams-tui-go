@@ -120,6 +120,37 @@ func loadMoreMessagesCmd(clientID, nextLink string, conversationID string, isSea
 	}
 }
 
+// setChatReadStateCmd explicitly marks a chat read or unread in Microsoft Graph.
+func setChatReadStateCmd(clientID, chatID, userID string, unread bool) tea.Cmd {
+	return func() tea.Msg {
+		token, err := GetValidTokenSilent(clientID)
+		if err == nil {
+			if unread {
+				err = MarkChatAsUnread(token, chatID, userID)
+			} else {
+				err = MarkChatAsRead(token, chatID, userID)
+			}
+		}
+		return MsgChatReadStateChanged{ChatID: chatID, Unread: unread, Err: err}
+	}
+}
+
+// exportChatMarkdownCmd fetches every page for CHAT and writes a Markdown transcript.
+func exportChatMarkdownCmd(clientID string, chat Chat, directory string) tea.Cmd {
+	return func() tea.Msg {
+		token, err := GetValidTokenSilent(clientID)
+		if err != nil {
+			return MsgThreadExported{Err: err}
+		}
+		messages, err := GetAllChatMessages(token, chat.ID)
+		if err != nil {
+			return MsgThreadExported{Err: err}
+		}
+		path, err := ExportChatMarkdown(directory, chat, messages, time.Now())
+		return MsgThreadExported{Path: path, Count: len(messages), Err: err}
+	}
+}
+
 // searchUsersCmd searches the directory for users by name or email.
 func searchUsersCmd(clientID, query string) tea.Cmd {
 	return func() tea.Msg {
@@ -348,7 +379,6 @@ func loadChatPresenceCmd(clientID string, userIDs []string) tea.Cmd {
 		return MsgChatPresenceLoaded{Presences: p, Err: err}
 	}
 }
-
 
 // loadUserProfileCmd fetches the full profile for a user by their Azure AD user ID.
 // Requires User.ReadBasic.All (or User.Read.All for extended info); returns MsgUserProfileLoaded.
@@ -774,6 +804,8 @@ func main() {
 
 	// Load persisted notification mode and settings.
 	app.ChannelMsgRefreshMin = ResolveChannelMsgRefreshMin()
+	app.MarkReadOnOpen = ResolveMarkReadOnOpen()
+	app.ExportDirectory = ResolveExportDirectory()
 	app.ExternalEditor = ResolveExternalEditor()
 	app.BrowserCommand = ResolveBrowserCommand()
 	app.ImageViewer = ResolveImageViewer()
@@ -847,7 +879,6 @@ func main() {
 	// Load persisted favourites and apply them so favourites appear at the top on launch.
 	model.favourites = LoadFavourites()
 	model.unhiddenChannels = LoadUnhiddenChannels()
-
 
 	// Fetch any favourited chats that weren't returned by the regular API call
 	// (e.g. chats with very old activity that fell outside chat_limit).

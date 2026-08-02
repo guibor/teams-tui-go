@@ -26,6 +26,8 @@ Authenticates via **OAuth2 Device Code Flow** (no browser redirect needed), fetc
 - ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
 
 - 🔵 Unread Indicators — chats with new messages are marked with a dot (●) and bold text
+- 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread; merely moving over a chat does not mark it read by default
+- 📥 Full Markdown Export — press `E` to fetch every page of the selected chat and save a chronological Markdown transcript
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
 - ⬆️ New messages bubble chats to the top of the list
 - 📌 Stable chat ordering — order only changes when new messages arrive
@@ -128,6 +130,23 @@ Configure how many chats to load in the sidebar in `~/.config/teams-tui-go/confi
   }
   ```
   - `chat_limit`: The maximum number of chats to fetch and display (default: 50). Automatically makes paginated requests if needed. Capped at `100` to prevent API rate-limiting during member loading.
+
+### Read State and Markdown Exports
+
+Navigation is non-destructive by default. Select a chat and press `r` to mark
+it read or `u` to mark it unread. To restore the original mark-on-open behavior,
+set `mark_read_on_open` to `true`.
+
+Press `E` to fetch the complete selected chat, follow every Graph pagination
+link, and write a chronological Markdown transcript. Exports default to
+`~/Downloads`; change `export_directory` to use another location.
+
+  ```json
+  {
+    "mark_read_on_open": false,
+    "export_directory": "~/Downloads"
+  }
+  ```
 
 ### Search Context Limit
 Configure how many context messages (before and after each search match) to display in the search history popup in `~/.config/teams-tui-go/config.json`:
@@ -355,6 +374,9 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `Esc`        | Clear active search, or enter sleep/idle mode (Normal Mode) |
 | `c`          | Open chat search / chat creation popup                    |
 | `f`          | Toggle ★ favourite on selected chat (chats only)          |
+| `r`          | Mark selected chat read (Normal Mode)                     |
+| `u`          | Mark selected chat unread (Normal Mode)                   |
+| `E`          | Export complete selected chat as Markdown (Normal Mode)   |
 | `h`          | Toggle hide/unhide on selected channel (channels only)    |
 | `i`          | Enter compose mode                                        |
 | `Ctrl+V`     | Paste image from clipboard (in Compose Mode)              |
@@ -394,6 +416,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `~/.cache/teams-tui-go/token.json`             | OAuth2 access + refresh tokens      |
 | `~/.cache/teams-tui-go/profile.json`           | Cached user profile                 |
 | `~/.cache/teams-tui-go/teams-tui-go.db`       | SQLite database caching messages    |
+| `~/Downloads/*.md`                            | Complete chat exports by default    |
 
 ---
 

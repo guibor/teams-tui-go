@@ -106,6 +106,8 @@ type App struct {
 	NotificationMode           NotificationMode
 	NotificationShowPreview    bool
 	NotificationPreviewLen     int
+	MarkReadOnOpen             bool
+	ExportDirectory            string
 	VisualBellUntil            *time.Time
 	StatusUntil                *time.Time
 	SearchStatusUntil          *time.Time
