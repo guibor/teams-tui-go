@@ -764,6 +764,15 @@ func main() {
 		fmt.Printf("%s:%s\n", externalTokenCapability, authMode)
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--config-path" {
+		path, err := GetConfigPath()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Println(path)
+		return
+	}
 
 	if len(os.Args) >= 3 && os.Args[1] == "preview-image" {
 		previewImage(os.Args[2])
@@ -823,6 +832,9 @@ func main() {
 	app.MarkReadOnOpen = ResolveMarkReadOnOpen()
 	app.ExportDirectory = ResolveExportDirectory()
 	app.ThreadCaptureFile = ResolveThreadCaptureFile()
+	if configPath, err := GetConfigPath(); err == nil {
+		app.ConfigPath = configPath
+	}
 	app.ExternalEditor = ResolveExternalEditor()
 	app.BrowserCommand = ResolveBrowserCommand()
 	app.TeamsAppCommand = ResolveTeamsAppCommand()

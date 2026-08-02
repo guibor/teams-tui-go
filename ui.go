@@ -6811,6 +6811,9 @@ func (m Model) getHelpContentLines() []string {
 
 	// Optional features status
 	contentLines = append(contentLines, labelStyle.Render("Optional Features:"))
+	if m.app.ConfigPath != "" {
+		contentLines = append(contentLines, dimStyle.Render("  Config: "+m.app.ConfigPath))
+	}
 	featureState := func(enabled bool) string {
 		if enabled {
 			return lipgloss.NewStyle().Foreground(colGreen).Render("✓ enabled")
@@ -6823,7 +6826,10 @@ func (m Model) getHelpContentLines() []string {
 		fmt.Sprintf("  file_upload_enabled       %s", featureState(m.app.Features.FileUpload)),
 		fmt.Sprintf("  presence_enabled          %s", featureState(m.app.Features.Presence)),
 		fmt.Sprintf("  user_profile_enabled      %s", featureState(m.app.Features.UserProfile)),
+		fmt.Sprintf("  user_profile_extended     %s", featureState(m.app.Features.ProfileExtended)),
 		fmt.Sprintf("  teams_channels_enabled    %s", featureState(m.app.Features.TeamsChannels)),
+		fmt.Sprintf("  channel_mentions_enabled  %s", featureState(m.app.Features.ChannelMentions)),
+		fmt.Sprintf("  sqlite_enabled            %s", featureState(m.app.Features.SqliteEnabled)),
 	)
 	contentLines = append(contentLines, "")
 

@@ -223,6 +223,7 @@ type App struct {
 	ChannelReplyToID      string // root message ID when replying to a channel thread ("" = new root post)
 	ChannelMsgRefreshMin  int
 	ExternalEditor        string // command/path for the external editor
+	ConfigPath            string // effective config.json path for diagnostics
 	BrowserCommand        string // command to open URLs
 	TeamsAppCommand       string // command to open msteams:// desktop deep links
 	ImageViewer           string // command to open images (empty = use default file opener)

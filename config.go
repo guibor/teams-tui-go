@@ -188,21 +188,42 @@ type Config struct {
 	GitlabCommand          *string `json:"gitlab_command,omitempty"`
 }
 
-// GetAppDir returns ~/.config/teams-tui-go/, creating it if necessary.
+func selectConfigBaseDir(goos, xdg, home, native string) string {
+	if xdg != "" {
+		return xdg
+	}
+	if goos == "darwin" && home != "" {
+		return filepath.Join(home, ".config")
+	}
+	return native
+}
+
+// GetAppDir returns the portable config directory, creating it if necessary.
+// macOS intentionally uses ~/.config so direct and wrapper launches agree.
 func GetAppDir() (string, error) {
-	base := os.Getenv("XDG_CONFIG_HOME")
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	home, homeErr := os.UserHomeDir()
+	native, nativeErr := os.UserConfigDir()
+	base := selectConfigBaseDir(runtime.GOOS, xdg, home, native)
 	if base == "" {
-		var err error
-		base, err = os.UserConfigDir()
-		if err != nil {
-			return "", fmt.Errorf("could not determine config dir: %w", err)
+		if runtime.GOOS == "darwin" && homeErr != nil {
+			return "", fmt.Errorf("could not determine home dir: %w", homeErr)
 		}
+		return "", fmt.Errorf("could not determine config dir: %w", nativeErr)
 	}
 	dir := filepath.Join(base, appDirName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", fmt.Errorf("could not create config dir: %w", err)
 	}
 	return dir, nil
+}
+
+func GetConfigPath() (string, error) {
+	dir, err := GetAppDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "config.json"), nil
 }
 
 // GetCacheDir returns ~/.cache/teams-tui-go/, creating it if necessary.

@@ -7,6 +7,18 @@ import (
 	"testing"
 )
 
+func TestSelectConfigBaseDir(t *testing.T) {
+	if got := selectConfigBaseDir("darwin", "/custom", "/Users/test", "/Users/test/Library/Application Support"); got != "/custom" {
+		t.Fatalf("XDG config dir = %q, want /custom", got)
+	}
+	if got := selectConfigBaseDir("darwin", "", "/Users/test", "/Users/test/Library/Application Support"); got != "/Users/test/.config" {
+		t.Fatalf("macOS config dir = %q, want portable ~/.config path", got)
+	}
+	if got := selectConfigBaseDir("linux", "", "/home/test", "/home/test/.config"); got != "/home/test/.config" {
+		t.Fatalf("Linux config dir = %q, want native config path", got)
+	}
+}
+
 func TestInitConfig(t *testing.T) {
 	// Set XDG_CONFIG_HOME to a temporary directory to avoid writing to the user's actual config.
 	tmpDir, err := os.MkdirTemp("", "teams-tui-config-test")

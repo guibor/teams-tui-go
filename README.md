@@ -283,6 +283,10 @@ You can also completely override icons individually by defining a `"custom_chat_
 
 Each feature is disabled by default and requires an additional Graph API permission. Enable them in `~/.config/teams-tui-go/config.json` and **delete `~/.cache/teams-tui-go/token.json`** to force re-authentication with the new scopes:
 
+On macOS, direct and wrapped launches both use this portable `~/.config` path
+rather than `~/Library/Application Support`. Run `teams-tui-go --config-path`
+or open `?` help to confirm the effective file, then restart the TUI after edits.
+
 ```json
 {
   "sqlite_enabled": false,
