@@ -566,6 +566,15 @@ func loadChannelMessagesCmd(clientID, teamID, channelID string) tea.Cmd {
 
 // openExternalEditorCmd launches an external editor with the current content,
 // allowing the user to edit/compose or view a message, and returns MsgEditorFinished on exit.
+func buildExternalEditorCommand(editorCommand, filePath string) (*exec.Cmd, error) {
+	parts := strings.Fields(editorCommand)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty external_editor command")
+	}
+	args := append(append([]string{}, parts[1:]...), filePath)
+	return exec.Command(parts[0], args...), nil
+}
+
 func openExternalEditorCmd(currentText, editorCmd string, readOnly bool) tea.Cmd {
 	tmpFile, err := os.CreateTemp("", "teams-tui-msg-*.txt")
 	if err != nil {
@@ -584,7 +593,13 @@ func openExternalEditorCmd(currentText, editorCmd string, readOnly bool) tea.Cmd
 	}
 	tmpFile.Close()
 
-	c := exec.Command(editorCmd, tmpPath)
+	c, err := buildExternalEditorCommand(editorCmd, tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		return func() tea.Msg {
+			return MsgEditorFinished{Err: err}
+		}
+	}
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		defer os.Remove(tmpPath)
 		if err != nil {

@@ -488,13 +488,13 @@ func ResolveSearchContextLimit() int {
 // ResolveChatLimit returns the number of chats to fetch, using precedence:
 //  1. config.json -> chat_limit
 //  2. Default (50)
-//     Note: Capped at 100 to prevent API throttling during concurrent member fetching.
+//     Note: Capped at 200 to bound API work during concurrent member fetching.
 func ResolveChatLimit() int {
 	cfg := LoadConfig()
 	if cfg != nil && cfg.ChatLimit != nil && *cfg.ChatLimit > 0 {
 		limit := *cfg.ChatLimit
-		if limit > 100 {
-			return 100
+		if limit > 200 {
+			return 200
 		}
 		return limit
 	}

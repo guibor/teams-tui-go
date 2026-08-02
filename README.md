@@ -169,7 +169,7 @@ Configure how many chats to load in the sidebar in `~/.config/teams-tui-go/confi
     "chat_limit": 50
   }
   ```
-  - `chat_limit`: The maximum number of chats to fetch and display (default: 50). Automatically makes paginated requests if needed. Capped at `100` to prevent API rate-limiting during member loading.
+  - `chat_limit`: The maximum number of chats to fetch and display (default: 50). Automatically makes paginated requests if needed. Capped at `200` to bound member-loading work.
 
 ### Read State and Markdown Exports
 
@@ -224,10 +224,10 @@ Configure the external editor to open when pressing `Ctrl+g` in compose mode in 
 
   ```json
   {
-    "external_editor": "vim"
+    "external_editor": "/Users/mdf/bin/spaceclient @spacemacs --wait"
   }
   ```
-  - `external_editor`: The editor command or path to run (e.g. `"vim"`, `"neovim"`, `"nano"`). If empty/unspecified, it falls back to `$EDITOR`, then `$VISUAL`, and defaults to `"vim"`.
+  - `external_editor`: The editor command and optional arguments to run (e.g. `"vim"`, `"nvim -f"`, or `"/Users/mdf/bin/spaceclient @spacemacs --wait"`). The temporary message path is appended as the final argument. If empty/unspecified, it falls back to `$EDITOR`, then `$VISUAL`, and defaults to `"vim"`.
 
 ### URL Opening Commands
 Configure the commands used to open URLs when pressing `o` on a message or from the URL selection menu in `~/.config/teams-tui-go/config.json`:

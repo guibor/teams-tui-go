@@ -31,7 +31,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - App data: `~/.config/teams-tui-go/` (via `GetAppDir()`)
 - Cache: `~/.cache/teams-tui-go/` (via `GetCacheDir()`)
 - Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadCaptureFile *string` (default `~/Documents/teams-threads.md`), separate browser/Teams-app commands, and optional feature flags.
-- `ResolveClientID()`, `ResolveMessageLimit()`, `ResolveSearchContextLimit()`, `ResolveChatLimit()`, and `ResolveExternalEditor()` implement the full precedence chain
+- `ResolveClientID()`, `ResolveMessageLimit()`, `ResolveSearchContextLimit()`, `ResolveChatLimit()`, and `ResolveExternalEditor()` implement the full precedence chain. External-editor strings may contain simple whitespace-separated arguments; `buildExternalEditorCommand()` appends the temporary message path without invoking a shell.
 - `InitConfig()` is run at application startup to populate any missing configuration keys in `config.json` with their default values and persist them to disk. It defaults `ChatIconTheme` to `"unicode"` and all feature flags to `false`.
 - `BuildScopes()` assembles the OAuth2 scope string dynamically: always includes the four basic scopes (`User.Read Chat.ReadWrite offline_access`) and appends optional scopes for each enabled feature flag.
 - Six `ResolveFeatureXxx()` helpers (one per feature) read the config and return a bool, used by `BuildScopes()` and during startup to populate `App.Features`.
@@ -141,6 +141,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **External Editor Composing**:
   - Activated by `ctrl+g` in compose mode.
   - Temporarily saves the current textarea value to a temporary file, opens the configured editor (`ExternalEditor`), and updates the textarea value on success.
+  - Commands may include arguments, such as `spaceclient @spacemacs --wait`; the editor must remain running until editing is complete.
   - Uses Bubble Tea's `tea.ExecProcess` to pause the TUI while the editor executes in the terminal foreground, resuming when the editor process exits.
 - **Full Markdown Export**:
 	- Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.

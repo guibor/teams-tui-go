@@ -295,8 +295,8 @@ func TestResolveChatLimit(t *testing.T) {
 		t.Errorf("expected chat limit to be 72, got %d", resolved)
 	}
 
-	// Test capping limit at 100.
-	limit = 150
+	// Test capping limit at 200.
+	limit = 250
 	cfg = Config{
 		ChatLimit: &limit,
 	}
@@ -309,8 +309,8 @@ func TestResolveChatLimit(t *testing.T) {
 	}
 
 	resolved = ResolveChatLimit()
-	if resolved != 100 {
-		t.Errorf("expected chat limit to be capped at 100, got %d", resolved)
+	if resolved != 200 {
+		t.Errorf("expected chat limit to be capped at 200, got %d", resolved)
 	}
 }
 func TestBuildScopes(t *testing.T) {
