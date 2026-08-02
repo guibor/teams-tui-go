@@ -749,6 +749,11 @@ func loadInitialChatOrder(chats []Chat) ([]Chat, map[string]string, map[string]t
 var version = "dev"
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--auth-provider-capabilities" {
+		fmt.Printf("%s:%s\n", externalTokenCapability, authMode)
+		return
+	}
+
 	if len(os.Args) >= 3 && os.Args[1] == "preview-image" {
 		previewImage(os.Args[2])
 		os.Exit(0)

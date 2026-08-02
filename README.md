@@ -2,13 +2,13 @@
 
 A keyboard-driven terminal UI client for Microsoft Teams, written in Go.
 
-Authenticates via **OAuth2 Device Code Flow** (no browser redirect needed), fetches your chats and messages from the **Microsoft Graph API**, and displays them in a fast, minimal TUI.
+Authenticates through an external short-lived token provider or the built-in **OAuth2 Device Code Flow**, fetches your chats and messages from the **Microsoft Graph API**, and displays them in a fast, minimal TUI.
 
 ---
 
 ## Features
 
-- 🔐 OAuth2 Device Code Flow — authenticate with your Microsoft account, no browser redirect required
+- 🔐 External token command or OAuth2 Device Code Flow — integrate with an existing credential owner without copying refresh tokens
 - 💬 List all your Teams chats (1:1, group, meetings) with computed display names
 - 📨 View messages in any chat with HTML-to-text rendering (images, attachments, emoji, **bold**, *italic*, ~~strikethrough~~, `code`, lists)
 - ❤️ Message Interactions — view and add reactions (Heart, Like, Laugh, etc.) to any message
@@ -31,7 +31,7 @@ Authenticates via **OAuth2 Device Code Flow** (no browser redirect needed), fetc
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
 - ⬆️ New messages bubble chats to the top of the list
 - 📌 Stable chat ordering — order only changes when new messages arrive
-- 💾 Token persistence — only authenticate once; tokens refresh automatically
+- 💾 Provider-aware refresh — external credentials stay with their owner; built-in device-flow tokens refresh from the application cache
 
 **Optional features** (enable per-feature in `config.json`; see [AZURE_SETUP.md](AZURE_SETUP.md)):
 - 📎 **File Preview & Download** (`file_preview_enabled`) — Tab through attachments in the message popup and press Enter to download them to `~/Downloads/`
@@ -76,6 +76,42 @@ go install github.com/nospor/teams-tui-go@latest
 ---
 
 ## Configuration
+
+### External token provider
+
+Set `TEAMS_TUI_GO_TOKEN_COMMAND` to an executable path when another program
+owns Microsoft authentication. The command takes no arguments and must print
+one JSON object to stdout:
+
+```json
+{
+  "access_token": "short-lived-graph-token",
+  "expires_at": 1785686400
+}
+```
+
+`expires_at` is a Unix timestamp in seconds. The TUI caches this access token
+in memory until five minutes before expiry and then invokes the command again.
+It never receives or stores the provider's refresh token.
+
+When this variable is set, provider failure is fatal: the application does
+**not** fall back to device-code authentication. The command must be a single
+executable path, not a shell command with arguments.
+
+Installers can verify support without starting authentication:
+
+```bash
+teams-tui-go --auth-provider-capabilities
+# external-token-command-v1:auto
+```
+
+Packagers that must prohibit the built-in device flow can compile an
+external-only binary. Such a binary rejects both new device login and any old
+device-token cache when the external command is absent:
+
+```bash
+go build -ldflags="-X main.authMode=external-only" -o teams-tui-go .
+```
 
 ### Client ID (optional)
 
@@ -278,7 +314,10 @@ See [AZURE_SETUP.md](AZURE_SETUP.md) for full permission setup instructions.
 teams-tui-go
 ```
 
-On first run (or after token expiry) you will be prompted to visit a URL and enter a short code. Subsequent runs use the cached token (auto-refreshed).
+Without `TEAMS_TUI_GO_TOKEN_COMMAND`, first run prompts you to visit a URL and
+enter a short code; subsequent runs use the cached device-flow token. With an
+external provider, authentication and refresh behavior are owned entirely by
+that provider.
 
 ---
 
@@ -413,7 +452,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | --------------------------------------------- | ----------------------------------- |
 | `~/.config/teams-tui-go/config.json`           | Client ID, notification mode, limits |
 | `~/.config/teams-tui-go/favourites.json`       | Pinned/favourite chat IDs           |
-| `~/.cache/teams-tui-go/token.json`             | OAuth2 access + refresh tokens      |
+| `~/.cache/teams-tui-go/token.json`             | Built-in device-flow tokens; unused with an external provider |
 | `~/.cache/teams-tui-go/profile.json`           | Cached user profile                 |
 | `~/.cache/teams-tui-go/teams-tui-go.db`       | SQLite database caching messages    |
 | `~/Downloads/*.md`                            | Complete chat exports by default    |

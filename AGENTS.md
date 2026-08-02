@@ -9,16 +9,20 @@
 
 ## Project Overview
 
-Go-based terminal UI application for Microsoft Teams. Authenticates via OAuth2 Device Code Flow and displays chats and messages using the Microsoft Graph API. Built with the Bubble Tea TUI framework (MVU architecture).
+Go-based terminal UI application for Microsoft Teams. Authenticates through an external short-lived token provider or OAuth2 Device Code Flow and displays chats and messages using the Microsoft Graph API. Built with the Bubble Tea TUI framework (MVU architecture).
 
 ---
 
 ## Key Architecture
 
 ### Authentication (`auth.go`)
-- OAuth2 Device Code Flow with Microsoft Graph API
-- Tokens stored in `~/.cache/teams-tui-go/token.json`
-- Auto-refreshes expired tokens using `GetValidTokenSilent(clientID)`
+- External short-lived token provider via `TEAMS_TUI_GO_TOKEN_COMMAND`, with OAuth2 Device Code Flow only when no provider is configured
+- External provider responses contain only `access_token` and Unix-seconds `expires_at`; they are cached in memory and never written to disk
+- External provider failures are fatal and must never fall through to device code
+- `--auth-provider-capabilities` reports the provider protocol and build mode without starting authentication; MDF builds use `external-token-command-v1:external-only`
+- `-X main.authMode=external-only` prohibits both the device endpoint and cached device tokens when no external provider is configured
+- Built-in device-flow tokens are stored in `~/.cache/teams-tui-go/token.json`
+- Both providers resolve through `GetValidTokenSilent(clientID)`
 - Client ID loaded in order: `.env` → `config.json` → built-in default
 - **All background API calls must use `GetValidTokenSilent()`**, never the cached `accessToken` from startup
 - **Dynamic scopes**: `StartDeviceFlow(clientID, scopes string)` and `RefreshAccessToken(clientID, refreshToken, scopes string)` accept an explicit scope string. Both callers pass `BuildScopes()` so that any enabled feature flags are included in the token request. The old `scopes` constant has been removed.
@@ -136,7 +140,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates via OAuth2 D
 1. **Display Names**: Always pre-compute in `api.go → GetChats()` and read from `CachedDisplayName`. Never compute in `ui.go`.
 2. **User Filtering**: Done by name matching, not ID. IDs are per-chat base64 strings that vary.
 3. **Background Calls**: All API calls in the event loop use `loadMessagesCmd()`, `loadChatsCmd()`, etc. — they return `tea.Cmd` functions, never block.
-4. **Token Refresh**: Use `GetValidTokenSilent(clientID)` in all `tea.Cmd` functions, not the startup access token.
+4. **Token Refresh**: Use `GetValidTokenSilent(clientID)` in all `tea.Cmd` functions, not the startup access token. This preserves fail-closed external-provider behavior.
 5. **No Debug Output**: No `fmt.Printf` / `log.Printf` in production code paths.
 6. **Message Order**: API returns messages newest-first. The UI iterates in reverse to display newest at the bottom.
 7. **Stable Order**: `stableChatOrder` is the source of truth for display order. It is only mutated by `promoteChat()` and `mergeChats()`.

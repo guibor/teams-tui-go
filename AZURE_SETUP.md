@@ -1,6 +1,9 @@
 # Azure AD App Registration Setup
 
-This guide explains how to create your own Azure AD app registration so that teams-tui-go can authenticate with the Microsoft Graph API on your behalf.
+This guide explains how to create your own Azure AD app registration for the
+built-in device-code provider. It does not apply when
+`TEAMS_TUI_GO_TOKEN_COMMAND` delegates authentication to an existing credential
+owner; that provider is responsible for the required Graph scopes.
 
 > **Note**: The app ships with a built-in fallback client ID. You only need to follow this guide if you want to use your own app registration (recommended for production use).
 

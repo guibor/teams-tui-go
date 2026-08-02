@@ -7,14 +7,23 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
 const (
-	tenant = "common"
+	tenant                  = "common"
+	externalTokenCommandEnv = "TEAMS_TUI_GO_TOKEN_COMMAND"
+	externalTokenCapability = "external-token-command-v1"
+	externalOnlyAuthMode    = "external-only"
+	tokenRefreshBuffer      = 5 * time.Minute
 )
+
+// authMode is overridden by the MDF installer with -X main.authMode=external-only.
+var authMode = "auto"
 
 var (
 	deviceCodeURL = fmt.Sprintf("https://login.microsoftonline.com/%s/oauth2/v2.0/devicecode", tenant)
@@ -40,9 +49,73 @@ type TokenResponse struct {
 	ExpiresAt    int64   `json:"expires_at"`
 }
 
+// externalTokenResponse is the deliberately narrow protocol used by an
+// external credential owner. ExpiresAt is a Unix timestamp in seconds.
+type externalTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresAt   int64  `json:"expires_at"`
+}
+
+var externalTokenCache = struct {
+	sync.Mutex
+	command   string
+	token     string
+	expiresAt int64
+}{}
+
 // tokenErrorResponse is returned when token polling is not yet complete or fails.
 type tokenErrorResponse struct {
 	Error string `json:"error"`
+}
+
+func resetExternalTokenCache() {
+	externalTokenCache.Lock()
+	defer externalTokenCache.Unlock()
+	externalTokenCache.command = ""
+	externalTokenCache.token = ""
+	externalTokenCache.expiresAt = 0
+}
+
+// getExternalAccessToken asks the configured credential owner for a short-lived
+// Graph token. The command is an executable path with no arguments; it must
+// print one JSON externalTokenResponse to stdout.
+func getExternalAccessToken(command string) (string, error) {
+	externalTokenCache.Lock()
+	defer externalTokenCache.Unlock()
+
+	now := time.Now()
+	if externalTokenCache.command == command &&
+		externalTokenCache.token != "" &&
+		now.Add(tokenRefreshBuffer).Unix() < externalTokenCache.expiresAt {
+		return externalTokenCache.token, nil
+	}
+
+	output, err := exec.Command(command).Output()
+	if err != nil {
+		if exitError, ok := err.(*exec.ExitError); ok {
+			if detail := strings.TrimSpace(string(exitError.Stderr)); detail != "" {
+				return "", fmt.Errorf("external token command failed: %s", detail)
+			}
+		}
+		return "", fmt.Errorf("external token command failed: %w", err)
+	}
+
+	var response externalTokenResponse
+	if err := json.Unmarshal(output, &response); err != nil {
+		return "", fmt.Errorf("external token command returned invalid JSON: %w", err)
+	}
+	response.AccessToken = strings.TrimSpace(response.AccessToken)
+	if response.AccessToken == "" {
+		return "", fmt.Errorf("external token command returned an empty access token")
+	}
+	if now.Add(tokenRefreshBuffer).Unix() >= response.ExpiresAt {
+		return "", fmt.Errorf("external token command returned a stale access token")
+	}
+
+	externalTokenCache.command = command
+	externalTokenCache.token = response.AccessToken
+	externalTokenCache.expiresAt = response.ExpiresAt
+	return response.AccessToken, nil
 }
 
 // tokenFilePath returns the path to the cached token file.
@@ -203,6 +276,13 @@ func RefreshAccessToken(clientID, refreshToken, scopes string) (*TokenResponse, 
 // GetValidTokenSilent returns a valid access token from the cache, refreshing if necessary.
 // Returns an error if the token is expired and cannot be refreshed.
 func GetValidTokenSilent(clientID string) (string, error) {
+	if command := strings.TrimSpace(os.Getenv(externalTokenCommandEnv)); command != "" {
+		return getExternalAccessToken(command)
+	}
+	if authMode == externalOnlyAuthMode {
+		return "", fmt.Errorf("external token command is required by this build")
+	}
+
 	token, err := loadToken()
 	if err != nil {
 		return "", fmt.Errorf("could not load token: %w", err)
@@ -231,8 +311,15 @@ func GetValidTokenSilent(clientID string) (string, error) {
 // GetAccessToken returns a valid access token, running the full device code flow if needed.
 func GetAccessToken(clientID string) (string, error) {
 	// Try silent first.
-	if token, err := GetValidTokenSilent(clientID); err == nil {
-		return token, nil
+	accessToken, err := GetValidTokenSilent(clientID)
+	if err == nil {
+		return accessToken, nil
+	}
+	if strings.TrimSpace(os.Getenv(externalTokenCommandEnv)) != "" {
+		return "", fmt.Errorf("external authentication failed: %w", err)
+	}
+	if authMode == externalOnlyAuthMode {
+		return "", fmt.Errorf("external authentication required: %w", err)
 	}
 
 	// Full device code flow.
