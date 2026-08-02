@@ -47,6 +47,7 @@ type ChatListFilter struct {
 	ReadState      ChatReadFilter
 	ChatTypes      map[string]bool
 	FavouritesOnly bool
+	TodayOnly      bool
 }
 
 func newChatListFilter() ChatListFilter {
@@ -184,6 +185,8 @@ type App struct {
 	ChatFilterPopupMode        bool
 	ChatFilterInputMode        bool
 	ChatFilterSelectedIndex    int
+	ChatBookmarkPopupMode      bool
+	ChatBookmarkSelectedIndex  int
 	ActiveChatFilter           ChatListFilter
 	DraftChatFilter            ChatListFilter
 	AppStartTime               time.Time

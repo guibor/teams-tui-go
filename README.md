@@ -23,7 +23,8 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 😊 Emoticon Auto-replacement — popular text emoticons (like `:)`, `:D`, `<3`) are automatically converted to Unicode emojis
 - 🔍 Search History — search messages in any chat, recursively loading and indexing all conversation history in the background
 - 🔍 Chat Search & Open — filter locally loaded chats or open/start a 1:1 chat directly by entering a UPN/email (bypassing directory search)
-- 🧭 Chat List Filters — press `F` to combine unread/read state, chat type, favorites, and name/member text without making another Graph request
+- 🧭 Chat List Filters — press `F` to combine unread/read state, today's activity, chat type, favorites, and name/member text without making another Graph request
+- 🔖 Chat Bookmarks — use mu4e-style prefixes such as `bu` (unread), `bi` (inbox/all), `bt` (today), `bf` (favorites), `bd` (direct), `bg` (groups), and `bm` (meetings)
 - ⭐ Favourites — pin any chat to the top of the sidebar with `f`; favourites are sorted alphabetically and stay anchored regardless of activity
 - ↗️ Open in Teams — press `o` in normal mode to open the selected chat using Graph's native Teams URL and your configured browser/app command
 - ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
@@ -432,6 +433,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `Esc`        | Clear active search, or enter sleep/idle mode (Normal Mode) |
 | `c`          | Open chat search / chat creation popup                    |
 | `F`          | Filter chats by read state, type, favorite, and text      |
+| `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
 | `f`          | Toggle ★ favourite on selected chat (chats only)          |
 | `o`          | Open selected chat in Microsoft Teams (Normal Mode)       |
 | `r`          | Mark selected chat read (Normal Mode)                     |
@@ -473,6 +475,7 @@ an unread + group + favorites filter shows only chats matching all three.
 | Filter key       | Action                                             |
 | ---------------- | -------------------------------------------------- |
 | `u` / `r` / `a`  | Unread only / read only / all read states          |
+| `t`              | Toggle activity-today-only                         |
 | `1` / `g` / `m`  | Toggle 1:1 / group / meeting chat types            |
 | `f`              | Toggle favorites-only                              |
 | `/`              | Edit name, topic, member, or email text            |
@@ -480,6 +483,24 @@ an unread + group + favorites filter shows only chats matching all three.
 | `x`              | Clear the draft filter                             |
 | `Enter`          | Apply                                               |
 | `Esc`            | Cancel and retain the currently active filter      |
+
+### Chat Bookmarks
+
+Press `b` from normal mode and then a preset key. The popup also supports
+`j`/`k` and `Enter`. Presets replace the active `F` filter and remain entirely
+local; applying one does not issue a Graph list request.
+
+| Bookmark | Chats shown                         |
+| -------- | ----------------------------------- |
+| `bu`     | Unread                              |
+| `br`     | Read                                |
+| `bi`     | Inbox/all chats (clears filters)    |
+| `ba`     | All chats (alias for `bi`)          |
+| `bt`     | Activity on the current local day   |
+| `bf`     | Favorites                           |
+| `bd`     | Direct (1:1)                        |
+| `bg`     | Groups                              |
+| `bm`     | Meetings                            |
 
 ---
 

@@ -87,9 +87,9 @@ type MsgThreadExported struct {
 
 // MsgMessagesLoaded is sent when messages for a specific chat have loaded.
 type MsgMessagesLoaded struct {
-	ChatIndex int
-	Messages  []Message
-	NextLink  string
+	ChatID   string
+	Messages []Message
+	NextLink string
 }
 
 // MsgMoreMessagesLoaded is sent when older messages are loaded via pagination.
@@ -495,8 +495,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			if m.channelSelectedIndex < 0 && m.app.GetSelectedChat() != nil {
 				m.lastMessageRefresh = time.Now()
 				chat := m.app.GetSelectedChat()
-				idx := m.app.SelectedIndex
-				cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID, idx))
+				cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
 			} else if m.channelSelectedIndex >= 0 {
 				chans := m.allChannels()
 				if m.channelSelectedIndex < len(chans) {
@@ -733,7 +732,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 
 		// Refresh messages if selected chat is set.
 		if chat := m.app.GetSelectedChat(); chat != nil {
-			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID, m.app.SelectedIndex))
+			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
 		}
 
 	case MsgBackgroundMessagesLoaded:
@@ -845,50 +844,48 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		// Always update the cache for the chat that was loaded, even if the
 		// user has since switched away. This ensures that revisiting the chat
 		// later shows fresh data immediately.
-		// Retrieve the chat ID from the index at the time the load was issued.
-		if msg.ChatIndex >= 0 && msg.ChatIndex < len(m.app.Chats) {
-			loadedChatID := m.app.Chats[msg.ChatIndex].ID
-			if loadedChatID != "" {
-				m.app.ChatMessagesLoadedOnce[loadedChatID] = true
-				m.app.ChatCacheDirty[loadedChatID] = false
-				if len(msg.Messages) > 0 {
-					// Merge into the existing cache rather than overwriting it.
-					// A blind overwrite would discard older pages that were already
-					// loaded via pagination, and would also wipe pending edit patches.
-					existing := m.app.CachedMessages[loadedChatID]
-					if len(existing) == 0 {
-						m.app.CachedMessages[loadedChatID] = msg.Messages
-					} else {
-						// Update/add only the messages present in the new batch.
-						idxMap := make(map[string]int, len(existing))
-						for i, em := range existing {
-							idxMap[em.ID] = i
-						}
-						for _, nm := range msg.Messages {
-							if idx, ok := idxMap[nm.ID]; ok {
-								existing[idx] = nm
-							} else {
-								existing = append(existing, nm)
-							}
-						}
-						sort.Slice(existing, func(i, j int) bool {
-							return existing[i].CreatedDateTime > existing[j].CreatedDateTime
-						})
-						m.app.CachedMessages[loadedChatID] = existing
+		loadedChatID := msg.ChatID
+		if loadedChatID != "" {
+			m.app.ChatMessagesLoadedOnce[loadedChatID] = true
+			m.app.ChatCacheDirty[loadedChatID] = false
+			if len(msg.Messages) > 0 {
+				// Merge into the existing cache rather than overwriting it.
+				// A blind overwrite would discard older pages that were already
+				// loaded via pagination, and would also wipe pending edit patches.
+				existing := m.app.CachedMessages[loadedChatID]
+				if len(existing) == 0 {
+					m.app.CachedMessages[loadedChatID] = msg.Messages
+				} else {
+					// Update/add only the messages present in the new batch.
+					idxMap := make(map[string]int, len(existing))
+					for i, em := range existing {
+						idxMap[em.ID] = i
 					}
-					m.app.CachedNextLink[loadedChatID] = msg.NextLink
-					if m.app.Features.SqliteEnabled {
-						go SaveMessages(loadedChatID, msg.Messages)
-						if msg.NextLink != "" {
-							go SaveNextLink(loadedChatID, msg.NextLink)
+					for _, nm := range msg.Messages {
+						if idx, ok := idxMap[nm.ID]; ok {
+							existing[idx] = nm
+						} else {
+							existing = append(existing, nm)
 						}
+					}
+					sort.Slice(existing, func(i, j int) bool {
+						return existing[i].CreatedDateTime > existing[j].CreatedDateTime
+					})
+					m.app.CachedMessages[loadedChatID] = existing
+				}
+				m.app.CachedNextLink[loadedChatID] = msg.NextLink
+				if m.app.Features.SqliteEnabled {
+					go SaveMessages(loadedChatID, msg.Messages)
+					if msg.NextLink != "" {
+						go SaveNextLink(loadedChatID, msg.NextLink)
 					}
 				}
 			}
 		}
 		// Discard UI update if the selected chat changed since we issued the load,
 		// or if we're now viewing a Teams channel instead.
-		if msg.ChatIndex != m.app.SelectedIndex || m.channelSelectedIndex >= 0 {
+		selected := m.app.GetSelectedChat()
+		if selected == nil || selected.ID != loadedChatID || m.channelSelectedIndex >= 0 {
 			break
 		}
 		m.app.SetLoadingMessages(false)
@@ -1172,7 +1169,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SetLoadingMessages(true)
 			m.app.SnapToBottom = true
 
-			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID, m.app.SelectedIndex))
+			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
 		}
 
 	// ── Focus / Blur ─────────────────────────────────────────────────────
@@ -1189,7 +1186,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		} else if chat := m.app.GetSelectedChat(); chat != nil {
 			m.lastMessageRefresh = time.Now()
-			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID, m.app.SelectedIndex))
+			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
 		}
 
 	case tea.BlurMsg:
@@ -1227,7 +1224,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			} else if selected := m.app.GetSelectedChat(); selected != nil && selected.ID != previousChatID {
 				m.app.SnapToBottom = true
 				var loadCmd tea.Cmd
-				m, loadCmd = m.loadChatMessages(selected.ID, m.app.SelectedIndex)
+				m, loadCmd = m.loadChatMessages(selected.ID)
 				if loadCmd != nil {
 					cmds = append(cmds, loadCmd)
 				}
@@ -1259,7 +1256,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			} else if chat := m.app.GetSelectedChat(); chat != nil {
 				m.lastMessageRefresh = time.Now()
-				cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID, m.app.SelectedIndex))
+				cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
 			}
 		}
 
@@ -1694,6 +1691,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.ChatFilterPopupMode {
 		return m.handleChatFilterPopupKey(msg)
 	}
+	if m.app.ChatBookmarkPopupMode {
+		return m.handleChatBookmarkPopupKey(msg)
+	}
 	if m.app.HelpPopupMode {
 		return m.handleHelpPopupKey(msg)
 	}
@@ -1738,7 +1738,12 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.handleMessageSelectionModeKey(msg)
 	}
 
-	prevIdx := m.app.SelectedIndex
+	previousChatID := ""
+	if m.channelSelectedIndex < 0 {
+		if chat := m.app.GetSelectedChat(); chat != nil {
+			previousChatID = chat.ID
+		}
+	}
 
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -1812,7 +1817,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			if chat := m.app.GetSelectedChat(); chat != nil {
 				delete(m.manuallyUnread, chat.ID)
 				m = m.markRead()
-				return m.loadChatMessages(chat.ID, m.app.SelectedIndex)
+				return m.loadChatMessages(chat.ID)
 			}
 		} else {
 			// Currently in chats → switch to channels (go to first channel).
@@ -1869,6 +1874,11 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.app.ChatFilterPopupMode = true
 		m.chatFilterInput.SetValue(m.app.DraftChatFilter.Query)
 		m.chatFilterInput.Blur()
+		return m, nil
+
+	case "b":
+		m.app.ChatBookmarkPopupMode = true
+		m.app.ChatBookmarkSelectedIndex = 0
 		return m, nil
 
 	case "/":
@@ -2007,7 +2017,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				}
 				if selected.ID != toggledChatID {
 					m.app.SnapToBottom = true
-					return m.loadChatMessages(selected.ID, m.app.SelectedIndex)
+					return m.loadChatMessages(selected.ID)
 				}
 			}
 		}
@@ -2165,8 +2175,13 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// If chat selection changed, reload messages.
-	if m.app.SelectedIndex != prevIdx {
+	// The visible list can be rebuilt while retaining the same numeric index,
+	// so chat identity rather than position determines whether to reload.
+	selectedChatID := ""
+	if chat := m.app.GetSelectedChat(); chat != nil {
+		selectedChatID = chat.ID
+	}
+	if selectedChatID != previousChatID {
 		// Left channel mode when switching to a chat.
 		m.app.SelectedChannelTeamID = ""
 		m.app.SelectedChannelID = ""
@@ -2177,7 +2192,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if chat := m.app.GetSelectedChat(); chat != nil {
 			delete(m.manuallyUnread, chat.ID)
 			m = m.markRead()
-			return m.loadChatMessages(chat.ID, m.app.SelectedIndex)
+			return m.loadChatMessages(chat.ID)
 		}
 	}
 
@@ -3076,6 +3091,17 @@ func (m Model) View() string {
 		}
 		modal := m.renderChatFilterPopup(popupW, popupH)
 		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
+	} else if m.app.ChatBookmarkPopupMode {
+		popupW := m.width * 45 / 100
+		popupH := m.height * 70 / 100
+		if popupW < 42 {
+			popupW = 42
+		}
+		if popupH < 17 {
+			popupH = 17
+		}
+		modal := m.renderChatBookmarkPopup(popupW, popupH)
+		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 	} else if m.app.HelpPopupMode {
 		popupW := m.width * 70 / 100
 		popupH := m.height * 85 / 100
@@ -3548,6 +3574,7 @@ func chatFilterIsActive(filter ChatListFilter) bool {
 	return strings.TrimSpace(filter.Query) != "" ||
 		(filter.ReadState != "" && filter.ReadState != ChatReadAll) ||
 		filter.FavouritesOnly ||
+		filter.TodayOnly ||
 		len(filter.ChatTypes) > 0
 }
 
@@ -3582,6 +3609,9 @@ func chatFilterSummary(filter ChatListFilter) string {
 	if filter.FavouritesOnly {
 		parts = append(parts, "favorites")
 	}
+	if filter.TodayOnly {
+		parts = append(parts, "today")
+	}
 	if query := strings.TrimSpace(filter.Query); query != "" {
 		parts = append(parts, fmt.Sprintf("%q", query))
 	}
@@ -3610,6 +3640,9 @@ func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
 	if len(filter.ChatTypes) > 0 && !filter.ChatTypes[chat.ChatType] {
 		return false
 	}
+	if filter.TodayOnly && !chatHasActivityOn(chat, time.Now().Local()) {
+		return false
+	}
 
 	query := strings.ToLower(strings.TrimSpace(filter.Query))
 	if query == "" {
@@ -3633,8 +3666,25 @@ func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
 	return strings.Contains(strings.ToLower(strings.Join(searchable, "\n")), query)
 }
 
+func chatHasActivityOn(chat Chat, day time.Time) bool {
+	activity := ""
+	if chat.LastMessagePreview != nil {
+		activity = chat.LastMessagePreview.CreatedDateTime
+	}
+	if activity == "" && chat.LastUpdated != nil {
+		activity = *chat.LastUpdated
+	}
+	when, err := time.Parse(time.RFC3339Nano, activity)
+	if err != nil {
+		return false
+	}
+	when = when.In(day.Location())
+	return when.Year() == day.Year() && when.YearDay() == day.YearDay()
+}
+
 const (
 	chatFilterReadRow = iota
+	chatFilterTodayRow
 	chatFilterOneOnOneRow
 	chatFilterGroupRow
 	chatFilterMeetingRow
@@ -3655,6 +3705,8 @@ func (m Model) toggleDraftChatFilterRow(row int) Model {
 		default:
 			filter.ReadState = ChatReadAll
 		}
+	case chatFilterTodayRow:
+		filter.TodayOnly = !filter.TodayOnly
 	case chatFilterOneOnOneRow:
 		toggleChatTypeFilter(&filter, "oneOnOne")
 	case chatFilterGroupRow:
@@ -3723,7 +3775,7 @@ func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	}
 	if selected != nil && selected.ID != previousChatID {
 		m.app.SnapToBottom = true
-		return m.loadChatMessages(selected.ID, m.app.SelectedIndex)
+		return m.loadChatMessages(selected.ID)
 	}
 	return m, nil
 }
@@ -3774,6 +3826,9 @@ func (m Model) handleChatFilterPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "a":
 		m.app.DraftChatFilter.ReadState = ChatReadAll
 		m.app.ChatFilterSelectedIndex = chatFilterReadRow
+	case "t":
+		m.app.DraftChatFilter.TodayOnly = !m.app.DraftChatFilter.TodayOnly
+		m.app.ChatFilterSelectedIndex = chatFilterTodayRow
 	case "1":
 		toggleChatTypeFilter(&m.app.DraftChatFilter, "oneOnOne")
 		m.app.ChatFilterSelectedIndex = chatFilterOneOnOneRow
@@ -3809,6 +3864,7 @@ func (m Model) renderChatFilterPopup(w, h int) string {
 	filter := m.app.DraftChatFilter
 	rows := []string{
 		fmt.Sprintf("Read state          %s", chatReadFilterLabel(filter.ReadState)),
+		fmt.Sprintf("%s Activity today", filterCheckbox(filter.TodayOnly)),
 		fmt.Sprintf("%s 1:1 chats", filterCheckbox(filter.ChatTypes["oneOnOne"])),
 		fmt.Sprintf("%s Group chats", filterCheckbox(filter.ChatTypes["group"])),
 		fmt.Sprintf("%s Meeting chats", filterCheckbox(filter.ChatTypes["meeting"])),
@@ -3840,7 +3896,7 @@ func (m Model) renderChatFilterPopup(w, h int) string {
 	}
 	lines = append(lines,
 		"",
-		lipgloss.NewStyle().Foreground(colDimGray).Render("u/r/a read state · 1/g/m/f toggle · / edit text"),
+		lipgloss.NewStyle().Foreground(colDimGray).Render("u/r/a read state · t/1/g/m/f toggle · / edit text"),
 		lipgloss.NewStyle().Foreground(colDimGray).Render("Space toggle · Enter apply · x clear · Esc cancel"),
 	)
 
@@ -4830,7 +4886,8 @@ func (m Model) rebuildChatList() Model {
 		}
 	}
 	if previousIndex < 0 {
-		previousIndex = 0
+		m.app.SelectedIndex = -1
+		return m
 	}
 	if previousIndex >= len(visibleChats) {
 		previousIndex = len(visibleChats) - 1
@@ -6106,7 +6163,7 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.app.UserSearchPopupMode = false
 				m.app.UserSearchMode = false
 				m.app.SnapToBottom = true
-				return m.loadChatMessages(targetID, idx)
+				return m.loadChatMessages(targetID)
 			}
 		} else if item.Type == UserSearchItemChannel {
 			chans := m.allChannels()
@@ -6643,6 +6700,7 @@ func (m Model) getHelpContentLines() []string {
 			{"c", "Open chat search / open chat"},
 			{"/", "Search message history"},
 			{"F", "Filter chat list by state, type, favorite, or text"},
+			{"b", "Open mu4e-style chat bookmarks (bu unread, bi inbox)"},
 			{"f", "Toggle favourite (chats only)"},
 			{"o", "Open selected chat in Microsoft Teams"},
 			{"r", "Mark selected chat read"},
@@ -6695,11 +6753,19 @@ func (m Model) getHelpContentLines() []string {
 			{"j / k", "Navigate filter characteristics"},
 			{"Space", "Cycle/toggle selected characteristic"},
 			{"u / r / a", "Unread only / read only / all states"},
-			{"1 / g / m / f", "Toggle 1:1 / group / meeting / favorites"},
+			{"t / 1 / g / m / f", "Toggle today / 1:1 / group / meeting / favorites"},
 			{"/", "Edit name, topic, member, or email text"},
 			{"x", "Clear all filter characteristics"},
 			{"Enter", "Apply filter"},
 			{"ESC", "Cancel without changing active filter"},
+		}},
+		{"Chat Bookmarks (b)", [][2]string{
+			{"bu / br", "Unread / read chats"},
+			{"bi / ba", "Inbox / all chats (clear filters)"},
+			{"bt / bf", "Today's activity / favorites"},
+			{"bd / bg / bm", "Direct / group / meeting chats"},
+			{"j / k / Enter", "Navigate and apply a preset"},
+			{"ESC", "Cancel"},
 		}},
 		{"Composing Messages", [][2]string{
 			{"Type", "Write message (Alt+Enter for newline)"},
@@ -7296,7 +7362,7 @@ func (m Model) rebuildMentionSuggestions() Model {
 	return m
 }
 
-func (m Model) loadChatMessages(chatID string, chatIndex int) (Model, tea.Cmd) {
+func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 	m.lastMessageRefresh = time.Now()
 	// 1. Check in-memory cache first if it has been fully loaded once in this session.
 	if m.app.ChatMessagesLoadedOnce[chatID] {
@@ -7306,7 +7372,7 @@ func (m Model) loadChatMessages(chatID string, chatIndex int) (Model, tea.Cmd) {
 			m.app.SnapToBottom = true
 			if m.app.ChatCacheDirty[chatID] {
 				m.app.SetLoadingMessages(true)
-				return m, loadMessagesCmd(m.clientID, chatID, chatIndex)
+				return m, loadMessagesCmd(m.clientID, chatID)
 			}
 			m.app.SetLoadingMessages(false)
 			return m, nil
@@ -7327,7 +7393,7 @@ func (m Model) loadChatMessages(chatID string, chatIndex int) (Model, tea.Cmd) {
 			m.app.SnapToBottom = true
 			m.app.ChatMessagesLoadedOnce[chatID] = true
 			// Still fetch the latest messages in the background to update the DB and cache!
-			return m, loadMessagesCmd(m.clientID, chatID, chatIndex)
+			return m, loadMessagesCmd(m.clientID, chatID)
 		}
 	}
 
@@ -7343,7 +7409,7 @@ func (m Model) loadChatMessages(chatID string, chatIndex int) (Model, tea.Cmd) {
 		m.app.SetLoadingMessages(true)
 		m.app.SnapToBottom = true
 	}
-	return m, loadMessagesCmd(m.clientID, chatID, chatIndex)
+	return m, loadMessagesCmd(m.clientID, chatID)
 }
 
 func (m Model) loadChannelMessages(teamID string, channelID string) (Model, tea.Cmd) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -238,5 +239,97 @@ func TestReadStateChangeImmediatelyReappliesUnreadFilter(t *testing.T) {
 	}
 	if selected := app.GetSelectedChat(); selected == nil || selected.ID != second.ID {
 		t.Fatalf("selection did not move to remaining unread chat: %#v", selected)
+	}
+}
+
+func TestChatBookmarkPrefixAppliesUnreadAndInboxPresets(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	model := NewModel(app, "client", "user")
+	unread := Chat{
+		ID:                 "unread",
+		ChatType:           "oneOnOne",
+		CachedDisplayName:  filterTestString("Unread chat"),
+		LastMessagePreview: filterTestMessage("message-1", "Someone else"),
+	}
+	read := Chat{
+		ID:                 "read",
+		ChatType:           "group",
+		CachedDisplayName:  filterTestString("Read chat"),
+		LastMessagePreview: filterTestMessage("message-2", "Someone else"),
+	}
+	model.latestChats = []Chat{read, unread}
+	model.stableChatOrder = []string{read.ID, unread.ID}
+	model.lastMsgID[read.ID] = "message-2"
+	model.lastMsgID[unread.ID] = "message-1"
+	model.lastReadMsgID[read.ID] = "message-2"
+	model = model.rebuildChatList()
+
+	model, _ = model.handleNormalModeKey(filterTestKey('b'))
+	if !app.ChatBookmarkPopupMode {
+		t.Fatal("b did not open bookmark presets")
+	}
+	model, _ = model.handleChatBookmarkPopupKey(filterTestKey('u'))
+	if app.ActiveChatFilter.ReadState != ChatReadUnread {
+		t.Fatalf("bu read filter is %q, want unread", app.ActiveChatFilter.ReadState)
+	}
+	if len(app.Chats) != 1 || app.Chats[0].ID != unread.ID {
+		t.Fatalf("bu showed unexpected chats: %#v", app.Chats)
+	}
+
+	model, _ = model.handleNormalModeKey(filterTestKey('b'))
+	model, _ = model.handleChatBookmarkPopupKey(filterTestKey('i'))
+	if chatFilterIsActive(app.ActiveChatFilter) {
+		t.Fatalf("bi left an active filter: %#v", app.ActiveChatFilter)
+	}
+	if len(app.Chats) != 2 {
+		t.Fatalf("bi showed %d chats, want 2", len(app.Chats))
+	}
+}
+
+func TestTodayBookmarkUsesLocalCalendarDay(t *testing.T) {
+	location := time.FixedZone("IDT", 3*60*60)
+	day := time.Date(2026, 8, 2, 10, 0, 0, 0, location)
+	previousUTCDate := Chat{LastMessagePreview: &Message{CreatedDateTime: "2026-08-01T22:30:00Z"}}
+	previousLocalDate := Chat{LastMessagePreview: &Message{CreatedDateTime: "2026-08-01T19:30:00Z"}}
+
+	if !chatHasActivityOn(previousUTCDate, day) {
+		t.Fatal("activity after local midnight did not match today's bookmark")
+	}
+	if chatHasActivityOn(previousLocalDate, day) {
+		t.Fatal("activity before local midnight matched today's bookmark")
+	}
+}
+
+func TestFilterReplacementAtSameIndexLoadsReplacementChat(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	model := NewModel(app, "client", "user")
+	read := Chat{ID: "read", ChatType: "group", LastMessagePreview: filterTestMessage("read-last", "Other")}
+	unread := Chat{ID: "unread", ChatType: "group", LastMessagePreview: filterTestMessage("unread-last", "Other")}
+	model.latestChats = []Chat{read, unread}
+	model.stableChatOrder = []string{read.ID, unread.ID}
+	model.lastMsgID[read.ID] = "read-last"
+	model.lastReadMsgID[read.ID] = "read-last"
+	model.lastMsgID[unread.ID] = "unread-last"
+	model = model.rebuildChatList()
+	app.Messages = []Message{{ID: "read-message"}}
+	app.ChatMessagesLoadedOnce[unread.ID] = true
+	app.CachedMessages[unread.ID] = []Message{{ID: "unread-message"}}
+
+	app.DraftChatFilter = newChatListFilter()
+	app.DraftChatFilter.ReadState = ChatReadUnread
+	model, _ = model.applyChatFilter()
+
+	if app.SelectedIndex != 0 {
+		t.Fatalf("replacement selected index %d, want 0", app.SelectedIndex)
+	}
+	if selected := app.GetSelectedChat(); selected == nil || selected.ID != unread.ID {
+		t.Fatalf("selected wrong replacement chat: %#v", selected)
+	}
+	if len(app.Messages) != 1 || app.Messages[0].ID != "unread-message" {
+		t.Fatalf("same-index replacement retained stale messages: %#v", app.Messages)
 	}
 }
