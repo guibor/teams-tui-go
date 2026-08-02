@@ -361,6 +361,75 @@ func TestChatBookmarkPrefixAppliesUnreadAndInboxPresets(t *testing.T) {
 	}
 }
 
+func TestUpperUReplacesEveryActiveFilterWithUnreadOnly(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	model := NewModel(app, "client", "user")
+	unread := Chat{ID: "unread", ChatType: "oneOnOne", LastMessagePreview: filterTestMessage("unread-last", "Other")}
+	read := Chat{ID: "read", ChatType: "group", LastMessagePreview: filterTestMessage("read-last", "Other")}
+	model.latestChats = []Chat{read, unread}
+	model.stableChatOrder = []string{read.ID, unread.ID}
+	model.lastMsgID[read.ID] = "read-last"
+	model.lastReadMsgID[read.ID] = "read-last"
+	model.lastMsgID[unread.ID] = "unread-last"
+	app.ActiveChatFilter = ChatListFilter{
+		Query:          "something else",
+		ReadState:      ChatReadRead,
+		FavouritesOnly: true,
+		TodayOnly:      true,
+		ChatTypes:      map[string]bool{"group": true},
+	}
+	model = model.rebuildChatList()
+
+	model, _ = model.handleNormalModeKey(filterTestKey('U'))
+	filter := app.ActiveChatFilter
+	if filter.ReadState != ChatReadUnread || filter.Query != "" || filter.FavouritesOnly || filter.TodayOnly || len(filter.ChatTypes) != 0 {
+		t.Fatalf("U did not replace all filter criteria: %#v", filter)
+	}
+	if len(app.Chats) != 1 || app.Chats[0].ID != unread.ID {
+		t.Fatalf("U showed unexpected chats: %#v", app.Chats)
+	}
+}
+
+func TestFilteredChatListDeduplicatesCorruptStableOrder(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	model := NewModel(app, "client", "user")
+	first := Chat{ID: "first", ChatType: "group", LastMessagePreview: filterTestMessage("first-last", "Other")}
+	second := Chat{ID: "second", ChatType: "group", LastMessagePreview: filterTestMessage("second-last", "Other")}
+	model.latestChats = []Chat{first, first, second, second}
+	model.stableChatOrder = []string{"first", "first", "second", "first", "second"}
+	model.lastMsgID[first.ID] = "first-last"
+	model.lastMsgID[second.ID] = "second-last"
+	app.ActiveChatFilter.ReadState = ChatReadUnread
+
+	model = model.rebuildChatList()
+	if len(model.stableChatOrder) != 2 || model.stableChatOrder[0] != "first" || model.stableChatOrder[1] != "second" {
+		t.Fatalf("stable order was not normalized: %#v", model.stableChatOrder)
+	}
+	if len(app.Chats) != 2 || app.Chats[0].ID != "first" || app.Chats[1].ID != "second" {
+		t.Fatalf("filtered list contains duplicates: %#v", app.Chats)
+	}
+}
+
+func TestMergeAndPromoteKeepStableOrderUnique(t *testing.T) {
+	app := NewApp()
+	model := NewModel(app, "client", "user")
+	model.stableChatOrder = []string{"existing", "existing"}
+	model = model.mergeChats([]Chat{{ID: "new"}, {ID: "new"}, {ID: "existing"}})
+	if len(model.stableChatOrder) != 2 || model.stableChatOrder[0] != "existing" || model.stableChatOrder[1] != "new" {
+		t.Fatalf("merge produced duplicate IDs: %#v", model.stableChatOrder)
+	}
+
+	model.stableChatOrder = []string{"existing", "new", "new", "existing"}
+	model.promoteChat("new")
+	if len(model.stableChatOrder) != 2 || model.stableChatOrder[0] != "new" || model.stableChatOrder[1] != "existing" {
+		t.Fatalf("promotion produced duplicate IDs: %#v", model.stableChatOrder)
+	}
+}
+
 func TestTodayBookmarkUsesLocalCalendarDay(t *testing.T) {
 	location := time.FixedZone("IDT", 3*60*60)
 	day := time.Date(2026, 8, 2, 10, 0, 0, 0, location)

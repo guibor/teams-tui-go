@@ -1903,6 +1903,11 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.chatFilterInput.Blur()
 		return m, nil
 
+	case "U":
+		filter := newChatListFilter()
+		filter.ReadState = ChatReadUnread
+		return m.applyChatBookmark(chatBookmarkPreset{Name: "Unread", Filter: filter})
+
 	case "b":
 		m.app.ChatBookmarkPopupMode = true
 		m.app.ChatBookmarkSelectedIndex = 0
@@ -4733,28 +4738,45 @@ func reactionEmoji(t string) string {
 // Chat ordering helpers
 // ---------------------------------------------------------------------------
 
+func uniqueChatIDs(ids []string) []string {
+	unique := make([]string, 0, len(ids))
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		unique = append(unique, id)
+	}
+	return unique
+}
+
 // promoteChat moves chatID to position 0 in the stable order.
 // Favourited chats are anchored at the top by rebuildChatList, so they are
 // skipped here to avoid disrupting the alphabetical favourites group.
 func (m *Model) promoteChat(chatID string) {
+	m.stableChatOrder = uniqueChatIDs(m.stableChatOrder)
+	if chatID == "" {
+		return
+	}
 	// Don't promote favourited chats — they stay anchored at the top.
 	if m.favourites[chatID] {
 		return
 	}
-	for i, id := range m.stableChatOrder {
-		if id == chatID {
-			m.stableChatOrder = append([]string{chatID},
-				append(m.stableChatOrder[:i], m.stableChatOrder[i+1:]...)...)
-			return
+	remaining := make([]string, 0, len(m.stableChatOrder))
+	for _, id := range m.stableChatOrder {
+		if id != chatID {
+			remaining = append(remaining, id)
 		}
 	}
-	// Not found — prepend.
-	m.stableChatOrder = append([]string{chatID}, m.stableChatOrder...)
+	m.stableChatOrder = append([]string{chatID}, remaining...)
 }
 
 // mergeChats integrates fresh chats from the API into the stable order.
 // New chats with messages are prepended; new chats without messages are appended.
 func (m Model) mergeChats(fresh []Chat) Model {
+	m.stableChatOrder = uniqueChatIDs(m.stableChatOrder)
+
 	// Build a set of known IDs.
 	known := make(map[string]bool, len(m.stableChatOrder))
 	for _, id := range m.stableChatOrder {
@@ -4767,7 +4789,8 @@ func (m Model) mergeChats(fresh []Chat) Model {
 	var newWithMsg []string
 	var newWithout []string
 	for _, c := range fresh {
-		if !known[c.ID] {
+		if c.ID != "" && !known[c.ID] {
+			known[c.ID] = true
 			if c.LastMessagePreview != nil {
 				// Only prepend if the message was sent after the app started.
 				// Otherwise, it is an old chat that drifted in, so append it.
@@ -4793,17 +4816,22 @@ func (m Model) rebuildChatList() Model {
 		selectedID = chat.ID
 	}
 	previousIndex := m.app.SelectedIndex
+	m.stableChatOrder = uniqueChatIDs(m.stableChatOrder)
 
 	if m.chatCache == nil {
 		m.chatCache = make(map[string]Chat)
 	}
 	// Retain previously loaded chats independently of the visible filter.
 	for _, c := range m.app.Chats {
-		m.chatCache[c.ID] = c
+		if c.ID != "" {
+			m.chatCache[c.ID] = c
+		}
 	}
 	// Overwrite/add with fresh chat list data from the API.
 	for _, c := range m.latestChats {
-		m.chatCache[c.ID] = c
+		if c.ID != "" {
+			m.chatCache[c.ID] = c
+		}
 	}
 
 	// Split into favourites and non-favourites.
@@ -4850,10 +4878,14 @@ func (m Model) rebuildChatList() Model {
 		return strings.ToLower(namei) < strings.ToLower(namej)
 	})
 
-	orderedChats := append(favChats, normalChats...)
+	orderedChats := make([]Chat, 0, len(favChats)+len(normalChats))
+	orderedChats = append(orderedChats, favChats...)
+	orderedChats = append(orderedChats, normalChats...)
 	visibleChats := make([]Chat, 0, len(orderedChats))
+	visibleIDs := make(map[string]bool, len(orderedChats))
 	for _, chat := range orderedChats {
-		if m.chatMatchesFilter(chat, m.app.ActiveChatFilter) {
+		if !visibleIDs[chat.ID] && m.chatMatchesFilter(chat, m.app.ActiveChatFilter) {
+			visibleIDs[chat.ID] = true
 			visibleChats = append(visibleChats, chat)
 		}
 	}
@@ -6685,10 +6717,11 @@ func (m Model) getHelpContentLines() []string {
 			{"c", "Open chat search / open chat"},
 			{"/", "Search message history"},
 			{"F", "Filter chat list by state, type, favorite, or text"},
+			{"U", "Replace the current view with unread-only chats"},
 			{"b", "Open mu4e-style chat bookmarks (bu unread, bi inbox)"},
 			{"a", "Open actions for the selected chat"},
 			{"f", "Toggle favourite (chats only)"},
-			{"o / O", "Open selected chat in browser / Teams desktop"},
+			{"o / O", "Open selected chat in Teams web / Teams desktop"},
 			{"r", "Mark selected chat read"},
 			{"u", "Mark selected chat unread"},
 			{"E", "Export complete chat history as Markdown"},

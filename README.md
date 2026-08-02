@@ -438,6 +438,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `Esc`        | Clear active search, or leave conversation for dashboard   |
 | `c`          | Open chat search / chat creation popup                    |
 | `F`          | Filter chats by read state, type, favorite, and text      |
+| `U`          | Replace any active chat view/filter with unread-only chats |
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
 | `a`          | Open actions for the selected chat                         |
 | `f`          | Toggle ★ favourite on selected chat (chats only)          |
@@ -479,6 +480,8 @@ The external editor command can be configured in your `config.json` via the `"ex
 
 Press `F` from normal mode. Filters are local and combine with AND semantics, so
 an unread + group + favorites filter shows only chats matching all three.
+Press `U` from normal mode to replace the current filter or bookmark immediately
+with unread-only chats.
 
 | Filter key       | Action                                             |
 | ---------------- | -------------------------------------------------- |
