@@ -1797,7 +1797,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.SelectedIndex = len(m.app.Chats) - 1
 		}
 
-	case "j", "down":
+	case "j", "down", "alt+n":
 		if m.channelSelectedIndex >= 0 {
 			// Channel section: wrap around at the bottom.
 			chans := m.allChannels()
@@ -1815,7 +1815,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		}
 
-	case "k", "up":
+	case "k", "up", "alt+p":
 		if m.channelSelectedIndex >= 0 {
 			// Channel section: wrap around at the top.
 			if m.channelSelectedIndex > 0 {
@@ -2450,11 +2450,11 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		var cmd tea.Cmd
 		if m.app.AttachmentCursorMode {
 			m.app.AttachmentCursorMode = false
-			cmd = clearKittyImagesCmd()
+			cmd = clearTerminalImagesCmd()
 		} else {
 			m.app.MessagePopupMode = false
 			m.app.AttachmentCursorMode = false
-			cmd = clearKittyImagesCmd()
+			cmd = clearTerminalImagesCmd()
 		}
 		return m, cmd
 
@@ -2504,7 +2504,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		m.app.MessagePopupMode = false
 		m.app.AttachmentCursorMode = false
-		return m, clearKittyImagesCmd()
+		return m, clearTerminalImagesCmd()
 
 	case "tab":
 		var cmd tea.Cmd
@@ -2516,7 +2516,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				if m.app.AttachmentCursorMode {
 					cmd = m.checkAndTriggerPreviewDownload()
 				} else {
-					cmd = clearKittyImagesCmd()
+					cmd = clearTerminalImagesCmd()
 				}
 			}
 		}
@@ -2536,7 +2536,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.MessageSelectedIndex--
 			m.app.MessagePopupScrollOffset = 0
 			m.app.AttachmentSelectedIndex = 0
-			return m, clearKittyImagesCmd()
+			return m, clearTerminalImagesCmd()
 		}
 
 	case "k", "up":
@@ -2550,14 +2550,14 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.MessageSelectedIndex++
 			m.app.MessagePopupScrollOffset = 0
 			m.app.AttachmentSelectedIndex = 0
-			return m, clearKittyImagesCmd()
+			return m, clearTerminalImagesCmd()
 		} else if m.app.NextLink != "" && !m.app.LoadingMessages {
 			// Already at the oldest loaded message — fetch the next page.
 			m.app.SetLoadingMessages(true)
 			m.app.MessagePopupScrollOffset = 0
 			return m, tea.Batch(
 				loadMoreMessagesCmd(m.clientID, m.app.NextLink, m.activeConversationID(), false),
-				clearKittyImagesCmd(),
+				clearTerminalImagesCmd(),
 			)
 		}
 
@@ -3173,7 +3173,7 @@ func (m Model) View() string {
 		result = mainView
 	}
 
-	var kittySeq string
+	var imageSeq string
 	if m.app.MessagePopupMode && m.app.Features.FilePreviewInTerminal && m.app.AttachmentCursorMode {
 		if m.app.MessageSelectedIndex >= 0 && m.app.MessageSelectedIndex < len(m.app.Messages) {
 			msgObj := m.app.Messages[m.app.MessageSelectedIndex]
@@ -3220,8 +3220,12 @@ func (m Model) View() string {
 								imgW := previewW - 2
 								imgH := (innerH - 1) - 2 // targetH - 2
 
-								// Clear all, then draw image
-								kittySeq = "\x1b_Ga=d,d=a\x1b\\" + kittyImageSequence(cp, imgX, imgY, imgW, imgH)
+								// Clear old Kitty placements, then draw with the
+								// protocol selected for the active terminal.
+								if resolveTerminalImageProtocol() == terminalImageKitty {
+									imageSeq = "\x1b_Ga=d,d=a\x1b\\"
+								}
+								imageSeq += terminalImageSequence(cp, imgX, imgY, imgW, imgH)
 							}
 						}
 					}
@@ -3230,7 +3234,7 @@ func (m Model) View() string {
 		}
 	}
 
-	return result + kittySeq
+	return result + imageSeq
 }
 
 // renderRightPanel renders the messages panel (with optional input area).
@@ -6746,8 +6750,8 @@ func (m Model) getHelpContentLines() []string {
 		binds [][2]string
 	}{
 		{"Navigation", [][2]string{
-			{"j / ↓", "Navigate list down (within section)"},
-			{"k / ↑", "Navigate list up (within section)"},
+			{"j / ↓ / M-n", "Navigate list down (within section)"},
+			{"k / ↑ / M-p", "Navigate list up (within section)"},
 			{"M-< / M->", "Jump to first / last item in the active section"},
 			{"Tab", "Switch between Chats & Channels"},
 			{"m", "Enter message selection mode"},
@@ -6860,6 +6864,8 @@ func (m Model) getHelpContentLines() []string {
 		return dimStyle.Render("✗ disabled")
 	}
 	contentLines = append(contentLines,
+		fmt.Sprintf("  chat_limit               %d", ResolveChatLimit()),
+		fmt.Sprintf("  terminal_image_protocol  %s", resolveTerminalImageProtocol()),
 		fmt.Sprintf("  file_preview_enabled      %s", featureState(m.app.Features.FilePreview)),
 		fmt.Sprintf("  file_preview_in_terminal  %s", featureState(m.app.Features.FilePreviewInTerminal)),
 		fmt.Sprintf("  file_upload_enabled       %s", featureState(m.app.Features.FileUpload)),
@@ -7318,7 +7324,7 @@ func (m Model) checkAndTriggerPreviewDownload() tea.Cmd {
 	att := vAtts[m.app.AttachmentSelectedIndex]
 	if !isImageAttachment(att) {
 		// Not an image, clear any displayed preview
-		return clearKittyImagesCmd()
+		return clearTerminalImagesCmd()
 	}
 	if att.ContentURL == nil || *att.ContentURL == "" {
 		return nil
@@ -7440,6 +7446,8 @@ func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 	// 1. Check in-memory cache first if it has been fully loaded once in this session.
 	if m.app.ChatMessagesLoadedOnce[chatID] {
 		if cached, ok := m.app.CachedMessages[chatID]; ok && len(cached) > 0 {
+			prepareChatMessages(cached, chatID)
+			m.app.CachedMessages[chatID] = cached
 			m.app.Messages = cached
 			m.app.NextLink = m.app.CachedNextLink[chatID]
 			m.app.SnapToBottom = true
@@ -7456,6 +7464,7 @@ func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 	if m.app.Features.SqliteEnabled {
 		dbMsgs, err := GetStoredMessages(chatID, ResolveMessageLimit())
 		if err == nil && len(dbMsgs) > 0 {
+			prepareChatMessages(dbMsgs, chatID)
 			m.app.CachedMessages[chatID] = dbMsgs
 			nextLink, _ := GetNextLink(chatID)
 			m.app.CachedNextLink[chatID] = nextLink
@@ -7472,6 +7481,8 @@ func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 
 	// 3. Fallback to API load (using cached message, e.g. LastMessagePreview, as a placeholder if available)
 	if cached, ok := m.app.CachedMessages[chatID]; ok && len(cached) > 0 {
+		prepareChatMessages(cached, chatID)
+		m.app.CachedMessages[chatID] = cached
 		m.app.Messages = cached
 		m.app.NextLink = m.app.CachedNextLink[chatID]
 		m.app.SetLoadingMessages(true)
@@ -7489,6 +7500,8 @@ func (m Model) loadChannelMessages(teamID string, channelID string) (Model, tea.
 	m.lastMessageRefresh = time.Now()
 	// 1. Check in-memory cache first
 	if cached, ok := m.app.CachedMessages[channelID]; ok && len(cached) > 0 {
+		prepareChannelMessages(cached, teamID, channelID)
+		m.app.CachedMessages[channelID] = cached
 		m.app.Messages = cached
 		m.app.NextLink = m.app.CachedNextLink[channelID]
 		m.app.SetLoadingMessages(false)
@@ -7500,6 +7513,7 @@ func (m Model) loadChannelMessages(teamID string, channelID string) (Model, tea.
 	if m.app.Features.SqliteEnabled {
 		dbMsgs, err := GetStoredMessages(channelID, ResolveMessageLimit())
 		if err == nil && len(dbMsgs) > 0 {
+			prepareChannelMessages(dbMsgs, teamID, channelID)
 			m.app.CachedMessages[channelID] = dbMsgs
 			nextLink, _ := GetNextLink(channelID)
 			m.app.CachedNextLink[channelID] = nextLink

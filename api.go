@@ -60,26 +60,34 @@ type ChatViewpoint struct {
 
 // Message represents a single message in a chat.
 type Message struct {
-	ID                      string              `json:"id"`
-	CreatedDateTime         string              `json:"createdDateTime"`
-	MessageType             string              `json:"messageType,omitempty"`
-	Subject                 string              `json:"subject,omitempty"`
-	WebURL                  string              `json:"webUrl,omitempty"`
-	From                    *MessageFrom        `json:"from,omitempty"`
-	Body                    *MessageBody        `json:"body,omitempty"`
-	Attachments             []MessageAttachment `json:"attachments,omitempty"`
-	Reactions               []MessageReaction   `json:"reactions,omitempty"`
-	Mentions                []MessageMention    `json:"mentions,omitempty"`
-	PlainTextCached         *string             `json:"-"`
-	NormalizedTextCached    *string             `json:"-"`
-	NormalizedSubjectCached *string             `json:"-"`
-	WrappedWidthCached      int                 `json:"-"`
-	WrappedQueryCached      string              `json:"-"`
-	WrappedLinesCached      []string            `json:"-"`
-	WrappedLinesRTLCached   []bool              `json:"-"`
+	ID                      string                  `json:"id"`
+	ChatID                  string                  `json:"chatId,omitempty"`
+	CreatedDateTime         string                  `json:"createdDateTime"`
+	MessageType             string                  `json:"messageType,omitempty"`
+	Subject                 string                  `json:"subject,omitempty"`
+	WebURL                  string                  `json:"webUrl,omitempty"`
+	From                    *MessageFrom            `json:"from,omitempty"`
+	Body                    *MessageBody            `json:"body,omitempty"`
+	ChannelIdentity         *MessageChannelIdentity `json:"channelIdentity,omitempty"`
+	Attachments             []MessageAttachment     `json:"attachments,omitempty"`
+	Reactions               []MessageReaction       `json:"reactions,omitempty"`
+	Mentions                []MessageMention        `json:"mentions,omitempty"`
+	PlainTextCached         *string                 `json:"-"`
+	NormalizedTextCached    *string                 `json:"-"`
+	NormalizedSubjectCached *string                 `json:"-"`
+	WrappedWidthCached      int                     `json:"-"`
+	WrappedQueryCached      string                  `json:"-"`
+	WrappedLinesCached      []string                `json:"-"`
+	WrappedLinesRTLCached   []bool                  `json:"-"`
 	// IsReply is set in-process (not from JSON) for Teams channel thread replies.
 	IsReply   bool   `json:"-"`
-	ReplyToID string `json:"-"` // ID of the root message this is a reply to
+	ReplyToID string `json:"replyToId,omitempty"` // ID of the root message this is a reply to
+}
+
+// MessageChannelIdentity identifies the Teams channel that owns a message.
+type MessageChannelIdentity struct {
+	TeamID    string `json:"teamId,omitempty"`
+	ChannelID string `json:"channelId,omitempty"`
 }
 
 type MessageMention struct {
@@ -195,7 +203,59 @@ func getAttachmentSavedName(att MessageAttachment, defaultName string) string {
 	return fmt.Sprintf("%s_%s%s", stem, idStr, ext)
 }
 
-func ExtractInlineImages(htmlContent string) []MessageAttachment {
+func hostedContentBaseURL(msg Message) string {
+	messageID := url.PathEscape(msg.ID)
+	if msg.ChatID != "" && messageID != "" {
+		return fmt.Sprintf("%s/chats/%s/messages/%s", graphAPIBase, url.PathEscape(msg.ChatID), messageID)
+	}
+	if msg.ChannelIdentity == nil || msg.ChannelIdentity.TeamID == "" || msg.ChannelIdentity.ChannelID == "" || messageID == "" {
+		return ""
+	}
+
+	base := fmt.Sprintf(
+		"%s/teams/%s/channels/%s/messages/%s",
+		graphAPIBase,
+		url.PathEscape(msg.ChannelIdentity.TeamID),
+		url.PathEscape(msg.ChannelIdentity.ChannelID),
+		messageID,
+	)
+	if msg.ReplyToID != "" && msg.ReplyToID != msg.ID {
+		base = fmt.Sprintf(
+			"%s/teams/%s/channels/%s/messages/%s/replies/%s",
+			graphAPIBase,
+			url.PathEscape(msg.ChannelIdentity.TeamID),
+			url.PathEscape(msg.ChannelIdentity.ChannelID),
+			url.PathEscape(msg.ReplyToID),
+			messageID,
+		)
+	}
+	return base
+}
+
+func resolveInlineImageURL(src, hostedBaseURL string) string {
+	src = strings.TrimSpace(src)
+	if src == "" {
+		return ""
+	}
+	parsed, err := url.Parse(src)
+	if err == nil && parsed.IsAbs() {
+		return src
+	}
+	if strings.HasPrefix(src, "//") {
+		return "https:" + src
+	}
+	if strings.HasPrefix(src, "/v1.0/") || strings.HasPrefix(src, "/beta/") {
+		return "https://graph.microsoft.com" + src
+	}
+
+	lower := strings.ToLower(src)
+	if index := strings.Index(lower, "hostedcontents/"); index >= 0 && hostedBaseURL != "" {
+		return strings.TrimRight(hostedBaseURL, "/") + "/" + strings.TrimLeft(src[index:], "/")
+	}
+	return src
+}
+
+func extractInlineImages(htmlContent, hostedBaseURL string) []MessageAttachment {
 	if htmlContent == "" {
 		return nil
 	}
@@ -231,7 +291,7 @@ func ExtractInlineImages(htmlContent string) []MessageAttachment {
 					}
 					contentType := "image/png"
 
-					srcCopy := src
+					srcCopy := resolveInlineImageURL(src, hostedBaseURL)
 					nameCopy := name
 					contentTypeCopy := contentType
 
@@ -248,23 +308,82 @@ func ExtractInlineImages(htmlContent string) []MessageAttachment {
 	return list
 }
 
+func ExtractInlineImages(htmlContent string) []MessageAttachment {
+	return extractInlineImages(htmlContent, "")
+}
+
 func (msg *Message) ProcessInlineImages() {
 	if msg.Body == nil || msg.Body.Content == nil {
 		return
 	}
-	inlineAtts := ExtractInlineImages(*msg.Body.Content)
+	inlineAtts := extractInlineImages(*msg.Body.Content, hostedContentBaseURL(*msg))
 	if len(inlineAtts) > 0 {
-		seen := make(map[string]bool)
-		for _, a := range msg.Attachments {
-			seen[a.ID] = true
+		seen := make(map[string]int)
+		for index, a := range msg.Attachments {
+			seen[a.ID] = index
 		}
 		for _, a := range inlineAtts {
-			if !seen[a.ID] {
-				msg.Attachments = append(msg.Attachments, a)
-				seen[a.ID] = true
+			if index, ok := seen[a.ID]; ok {
+				// Older cache entries may contain the relative Teams HTML URL.
+				// Replace them once message context makes the Graph URL resolvable.
+				if a.ContentURL != nil && strings.HasPrefix(*a.ContentURL, "https://graph.microsoft.com/") {
+					msg.Attachments[index] = a
+				}
+				continue
+			}
+			msg.Attachments = append(msg.Attachments, a)
+			seen[a.ID] = len(msg.Attachments) - 1
+		}
+	}
+}
+
+func prepareChatMessages(messages []Message, chatID string) {
+	for index := range messages {
+		if messages[index].ChatID == "" {
+			messages[index].ChatID = chatID
+		}
+		messages[index].ProcessInlineImages()
+	}
+}
+
+func prepareChannelMessages(messages []Message, teamID, channelID string) {
+	for index := range messages {
+		if messages[index].ChannelIdentity == nil {
+			messages[index].ChannelIdentity = &MessageChannelIdentity{}
+		}
+		if messages[index].ChannelIdentity.TeamID == "" {
+			messages[index].ChannelIdentity.TeamID = teamID
+		}
+		if messages[index].ChannelIdentity.ChannelID == "" {
+			messages[index].ChannelIdentity.ChannelID = channelID
+		}
+		messages[index].ProcessInlineImages()
+	}
+}
+
+func conversationIdentityFromURL(rawURL string) (chatID, teamID, channelID string) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", "", ""
+	}
+	segments := strings.Split(strings.Trim(parsed.Path, "/"), "/")
+	for index, segment := range segments {
+		switch strings.ToLower(segment) {
+		case "chats":
+			if index+1 < len(segments) {
+				chatID, _ = url.PathUnescape(segments[index+1])
+			}
+		case "teams":
+			if index+1 < len(segments) {
+				teamID, _ = url.PathUnescape(segments[index+1])
+			}
+		case "channels":
+			if index+1 < len(segments) {
+				channelID, _ = url.PathUnescape(segments[index+1])
 			}
 		}
 	}
+	return chatID, teamID, channelID
 }
 
 // FilterMessageAttachments removes unwanted rich card and URL-preview attachments
@@ -764,6 +883,8 @@ func GetMessages(accessToken, chatID string, top int) ([]Message, string, error)
 		next = newNext
 	}
 
+	prepareChatMessages(allMsgs, chatID)
+
 	// Filter out non-downloadable attachments (like rich cards and URL previews)
 	FilterMessagesAttachments(allMsgs)
 
@@ -794,6 +915,12 @@ func GetMessagesFromLink(accessToken, nextLink string) ([]Message, string, error
 	var r messagesResponse
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, "", fmt.Errorf("GetMessagesFromLink: parse: %w", err)
+	}
+	chatID, teamID, channelID := conversationIdentityFromURL(nextLink)
+	if chatID != "" {
+		prepareChatMessages(r.Value, chatID)
+	} else if teamID != "" && channelID != "" {
+		prepareChannelMessages(r.Value, teamID, channelID)
 	}
 
 	// Filter out non-downloadable attachments (like rich cards and URL previews)
@@ -2748,6 +2875,7 @@ func GetChannelMessages(accessToken, teamID, channelID string, top int) ([]Messa
 			rootMsgs = append(rootMsgs, m)
 		}
 	}
+	prepareChannelMessages(rootMsgs, teamID, channelID)
 
 	// Fetch replies for each root message in parallel.
 	type replyResult struct {
@@ -2776,6 +2904,7 @@ func GetChannelMessages(accessToken, teamID, channelID string, top int) ([]Messa
 					filtered = append(filtered, m)
 				}
 			}
+			prepareChannelMessages(filtered, teamID, channelID)
 			replyCh <- replyResult{msgs: filtered}
 		}(rm.ID)
 	}

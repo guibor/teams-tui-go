@@ -38,8 +38,8 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 💾 Provider-aware refresh — external credentials stay with their owner; built-in device-flow tokens refresh from the application cache
 
 **Optional features** (enable per-feature in `config.json`; see [AZURE_SETUP.md](AZURE_SETUP.md)):
-- 📎 **File Preview & Download** (`file_preview_enabled`) — Tab through attachments in the message popup and press Enter to download them to `~/Downloads/`
-  - **Terminal Image Preview** (`file_preview_in_terminal`) — Displays the highlighted image attachment directly inside the details popup on the right side using the Kitty Graphics Protocol (requires `file_preview_enabled: true`)
+- 📎 **File Preview & Download** (`file_preview_enabled`) — Tab through attachments and Teams-hosted inline images in the message popup and press Enter to download them to `~/Downloads/`
+  - **Terminal Image Preview** (`file_preview_in_terminal`) — Displays the highlighted image inside the details popup using Kitty graphics in compatible terminals and Sixel in Emacs EAT (requires `file_preview_enabled: true`)
 - ⬆️ **File Browsing & Uploading** (`file_upload_enabled`) — Press `Ctrl+f` in compose mode to open a file browser and attach small files (up to 50MB) from your computer. Files are uploaded to OneDrive/SharePoint and attached to your message.
 - 🟢 **User Presence** (`presence_enabled`) — press `p` in message selection mode to see real-time availability of the message sender
 - 👤 **User Profile** (`user_profile_enabled`) — press `i` in message selection mode to view extended profile info (name, email, job title, department)
@@ -177,6 +177,10 @@ Navigation is non-destructive by default. Select a chat and press `r` to mark
 it read or `u` to mark it unread. To restore the original mark-on-open behavior,
 set `mark_read_on_open` to `true`.
 
+`M-n` and `M-p` select the next and previous chat in the visible list. They use
+the same filtered-list navigation as `j` and `k`; `M-<` and `M->` jump to the
+first and last visible item.
+
 Press `D` to toggle a fixed-width local last-message date immediately before
 each chat title. The choice persists as `show_chat_dates` in `config.json`.
 
@@ -296,6 +300,7 @@ or open `?` help to confirm the effective file, then restart the TUI after edits
   "sqlite_enabled": false,
   "file_preview_enabled": true,
   "file_preview_in_terminal": false,
+  "terminal_image_protocol": "auto",
   "file_upload_enabled": false,
   "presence_enabled": true,
   "user_profile_enabled": true,
@@ -309,7 +314,8 @@ or open `?` help to confirm the effective file, then restart the TUI after edits
 |---|---|---|---|
 | `sqlite_enabled` | `false` | - | Enables offline caching via SQLite (`~/.cache/teams-tui-go/teams-tui-go.db`). Instantly loads messages when entering chats/channels, syncing updates in the background. |
 | `file_preview_enabled` | `false` | `Files.Read` | Tab through attachments in the `v` popup and press Enter to download to `~/Downloads/` |
-| `file_preview_in_terminal` | `false` | `Files.Read` | Previews the highlighted image attachment inside the details popup on the right side using the Kitty Graphics Protocol (requires `file_preview_enabled: true`) |
+| `file_preview_in_terminal` | `false` | `Files.Read` | Previews the highlighted file attachment or Teams-hosted inline image inside the details popup (requires `file_preview_enabled: true`) |
+| `terminal_image_protocol` | `auto` | - | Chooses `sixel` inside Emacs EAT and `kitty` elsewhere; accepts explicit `kitty`, `sixel`, or `none`, and `TEAMS_TUI_GO_IMAGE_PROTOCOL` overrides it |
 | `file_upload_enabled` | `false` | `Files.ReadWrite` | Press `Ctrl+f` in compose mode to open a file browser and attach files under 4MB from the computer |
 | `presence_enabled` | `false` | `Presence.Read.All` | Press `p` in message selection mode to see sender availability |
 | `user_profile_enabled` | `false` | `User.ReadBasic.All` | Press `i` in message selection mode to view sender's profile |
@@ -438,6 +444,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | ------------ | --------------------------------------------------------- |
 | `↑` / `k`    | Move up in list (within active section)                   |
 | `↓` / `j`    | Move down in list (within active section)                 |
+| `M-p` / `M-n`| Move to previous / next item in the active section        |
 | `M-<` / `M->`| Jump to first / last item in the active section            |
 | `Tab`        | Switch between Chats & Channels sections (in Normal Mode) |
 | `PgUp` / `K` | Scroll messages up                                        |

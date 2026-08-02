@@ -9,15 +9,83 @@ import (
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
-	_ "image/png"
 	"image/png"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+	ansisixel "github.com/charmbracelet/x/ansi/sixel"
 	"github.com/nfnt/resize"
 )
+
+type terminalImageProtocol string
+
+const (
+	terminalImageAuto  terminalImageProtocol = "auto"
+	terminalImageKitty terminalImageProtocol = "kitty"
+	terminalImageSixel terminalImageProtocol = "sixel"
+	terminalImageNone  terminalImageProtocol = "none"
+)
+
+type terminalImageCacheKey struct {
+	Path                string
+	X, Y, Columns, Rows int
+	Protocol            terminalImageProtocol
+}
+
+var terminalImageSequenceCache sync.Map
+
+func parseTerminalImageProtocol(value string) terminalImageProtocol {
+	switch terminalImageProtocol(strings.ToLower(strings.TrimSpace(value))) {
+	case terminalImageKitty:
+		return terminalImageKitty
+	case terminalImageSixel:
+		return terminalImageSixel
+	case terminalImageNone:
+		return terminalImageNone
+	default:
+		return terminalImageAuto
+	}
+}
+
+func selectTerminalImageProtocol(configured, override, insideEmacs, termProgram, term string) terminalImageProtocol {
+	if selected := parseTerminalImageProtocol(override); selected != terminalImageAuto {
+		return selected
+	}
+	if selected := parseTerminalImageProtocol(configured); selected != terminalImageAuto {
+		return selected
+	}
+	insideEmacs = strings.ToLower(insideEmacs)
+	termProgram = strings.ToLower(termProgram)
+	term = strings.ToLower(term)
+	if strings.Contains(insideEmacs, ",eat") || strings.HasPrefix(term, "eat-") || strings.Contains(term, "sixel") {
+		return terminalImageSixel
+	}
+	// iTerm 3.6+ and Kitty both understand the Kitty graphics protocol. Keep
+	// Kitty as the compatibility default for terminals that do not identify
+	// themselves, matching the behavior before protocol auto-detection.
+	if strings.Contains(termProgram, "iterm") || strings.Contains(term, "kitty") {
+		return terminalImageKitty
+	}
+	return terminalImageKitty
+}
+
+func resolveTerminalImageProtocol() terminalImageProtocol {
+	configured := "auto"
+	if cfg := LoadConfig(); cfg != nil && cfg.TerminalImageProtocol != nil {
+		configured = *cfg.TerminalImageProtocol
+	}
+	return selectTerminalImageProtocol(
+		configured,
+		os.Getenv("TEAMS_TUI_GO_IMAGE_PROTOCOL"),
+		os.Getenv("INSIDE_EMACS"),
+		os.Getenv("TERM_PROGRAM"),
+		os.Getenv("TERM"),
+	)
+}
 
 // isImageAttachment checks if the attachment is an image based on ContentType or file extension.
 func isImageAttachment(att MessageAttachment) bool {
@@ -90,16 +158,15 @@ func downloadPreviewCmd(clientID, fileURL, destPath string) tea.Cmd {
 	}
 }
 
-// kittyImageSequence generates the escape sequence to draw a high-quality centered image using Kitty Graphics Protocol.
-func kittyImageSequence(filePath string, x, y, cols, rows int) string {
+func prepareTerminalImage(filePath string, x, y, cols, rows int) (image.Image, int, int, int, int, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return ""
+		return nil, 0, 0, 0, 0, err
 	}
 	img, _, err := image.Decode(file)
 	file.Close()
 	if err != nil {
-		return ""
+		return nil, 0, 0, 0, 0, err
 	}
 
 	bounds := img.Bounds()
@@ -154,8 +221,17 @@ func kittyImageSequence(filePath string, x, y, cols, rows int) string {
 
 	// 6. Resample the image client-side to the exact target pixels using high-quality Lanczos3
 	resizedImg := resize.Resize(uint(newPixelW), uint(newPixelH), img, resize.Lanczos3)
+	return resizedImg, targetX, targetY, c, r, nil
+}
 
-	// 7. Encode as PNG
+// kittyImageSequence generates the escape sequence to draw a centered image
+// using the Kitty Graphics Protocol.
+func kittyImageSequence(filePath string, x, y, cols, rows int) string {
+	resizedImg, targetX, targetY, c, r, err := prepareTerminalImage(filePath, x, y, cols, rows)
+	if err != nil {
+		return ""
+	}
+
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, resizedImg); err != nil {
 		return ""
@@ -189,20 +265,71 @@ func kittyImageSequence(filePath string, x, y, cols, rows int) string {
 	return sb.String()
 }
 
-// clearKittyImagesCmd returns a Bubble Tea command to clear all displayed Kitty images.
-func clearKittyImagesCmd() tea.Cmd {
+// sixelImageSequence generates a centered Sixel image for terminal emulators
+// such as Emacs EAT that do not implement Kitty image placement.
+func sixelImageSequence(filePath string, x, y, cols, rows int) string {
+	resizedImg, targetX, targetY, _, _, err := prepareTerminalImage(filePath, x, y, cols, rows)
+	if err != nil {
+		return ""
+	}
+	var payload bytes.Buffer
+	encoder := &ansisixel.Encoder{}
+	if err := encoder.Encode(&payload, resizedImg); err != nil {
+		return ""
+	}
+	return fmt.Sprintf(
+		"\x1b[s\x1b[%d;%dH%s\x1b[u",
+		targetY+1,
+		targetX+1,
+		ansi.SixelGraphics(0, 1, 0, payload.Bytes()),
+	)
+}
+
+func terminalImageSequence(filePath string, x, y, cols, rows int) string {
+	protocol := resolveTerminalImageProtocol()
+	if protocol == terminalImageNone {
+		return ""
+	}
+	key := terminalImageCacheKey{
+		Path: filePath, X: x, Y: y, Columns: cols, Rows: rows, Protocol: protocol,
+	}
+	if cached, ok := terminalImageSequenceCache.Load(key); ok {
+		return cached.(string)
+	}
+	var sequence string
+	switch protocol {
+	case terminalImageSixel:
+		sequence = sixelImageSequence(filePath, x, y, cols, rows)
+	default:
+		sequence = kittyImageSequence(filePath, x, y, cols, rows)
+	}
+	if sequence != "" {
+		terminalImageSequenceCache.Store(key, sequence)
+	}
+	return sequence
+}
+
+// clearTerminalImagesCmd clears Kitty placements. Sixel images are ordinary
+// terminal cells and disappear when Bubble Tea redraws the underlying view.
+func clearTerminalImagesCmd() tea.Cmd {
 	return func() tea.Msg {
-		os.Stdout.Write([]byte("\x1b_Ga=d,d=a\x1b\\"))
+		if resolveTerminalImageProtocol() == terminalImageKitty {
+			_, _ = os.Stdout.Write([]byte("\x1b_Ga=d,d=a\x1b\\"))
+		}
 		return nil
 	}
 }
 
 // previewImage is used by the CLI subcommand "preview-image"
 func previewImage(path string) {
-	seq := kittyImageSequence(path, 0, 0, 80, 24)
+	protocol := resolveTerminalImageProtocol()
+	seq := terminalImageSequence(path, 0, 0, 80, 24)
 	if seq != "" {
-		fmt.Printf("\x1b_Ga=d,d=a\x1b\\%s\n", seq)
+		if protocol == terminalImageKitty {
+			fmt.Print("\x1b_Ga=d,d=a\x1b\\")
+		}
+		fmt.Printf("%s\n", seq)
 	}
-	fmt.Println("Image preview loaded (Kitty Graphics Protocol). Press Enter to exit...")
+	fmt.Printf("Image preview loaded (%s). Press Enter to exit...\n", protocol)
 	_, _ = os.Stdin.Read(make([]byte, 1))
 }

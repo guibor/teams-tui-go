@@ -773,6 +773,10 @@ func main() {
 		fmt.Println(path)
 		return
 	}
+	if len(os.Args) == 2 && os.Args[1] == "--image-protocol" {
+		fmt.Println(resolveTerminalImageProtocol())
+		return
+	}
 
 	if len(os.Args) >= 3 && os.Args[1] == "preview-image" {
 		previewImage(os.Args[2])

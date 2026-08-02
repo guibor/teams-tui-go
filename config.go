@@ -185,6 +185,7 @@ type Config struct {
 	BrowserCommand         *string `json:"browser_command,omitempty"`
 	TeamsAppCommand        *string `json:"teams_app_command,omitempty"`
 	ImageViewer            *string `json:"image_viewer,omitempty"`
+	TerminalImageProtocol  *string `json:"terminal_image_protocol,omitempty"`
 	YoutrackCommand        *string `json:"youtrack_command,omitempty"`
 	GitlabCommand          *string `json:"gitlab_command,omitempty"`
 }
@@ -413,6 +414,11 @@ func InitConfig() {
 	if cfg.ImageViewer == nil {
 		v := ""
 		cfg.ImageViewer = &v
+		modified = true
+	}
+	if cfg.TerminalImageProtocol == nil {
+		v := "auto"
+		cfg.TerminalImageProtocol = &v
 		modified = true
 	}
 

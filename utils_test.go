@@ -171,12 +171,71 @@ func TestExtractAndProcessInlineImages(t *testing.T) {
 	}
 }
 
+func TestProcessInlineImagesResolvesTeamsHostedContentURLs(t *testing.T) {
+	body := `<p>Screenshot <img src="../hostedContents/hosted-123/$value" alt="screen" /></p>`
+	msg := Message{
+		ID:     "message-456",
+		ChatID: "19:chat@thread.v2",
+		Body:   &MessageBody{Content: &body},
+	}
+
+	msg.ProcessInlineImages()
+	if len(msg.Attachments) != 1 || msg.Attachments[0].ContentURL == nil {
+		t.Fatalf("resolved attachments = %#v", msg.Attachments)
+	}
+	want := "https://graph.microsoft.com/v1.0/chats/19:chat@thread.v2/messages/message-456/hostedContents/hosted-123/$value"
+	if got := *msg.Attachments[0].ContentURL; got != want {
+		t.Fatalf("hosted content URL = %q, want %q", got, want)
+	}
+}
+
+func TestProcessInlineImagesResolvesChannelReplyURLs(t *testing.T) {
+	body := `<img src="../hostedContents/channel-image/$value" />`
+	msg := Message{
+		ID:        "reply-2",
+		ReplyToID: "root-1",
+		ChannelIdentity: &MessageChannelIdentity{
+			TeamID:    "team-1",
+			ChannelID: "channel-1",
+		},
+		Body: &MessageBody{Content: &body},
+	}
+
+	msg.ProcessInlineImages()
+	want := "https://graph.microsoft.com/v1.0/teams/team-1/channels/channel-1/messages/root-1/replies/reply-2/hostedContents/channel-image/$value"
+	if len(msg.Attachments) != 1 || msg.Attachments[0].ContentURL == nil || *msg.Attachments[0].ContentURL != want {
+		t.Fatalf("channel hosted content URL = %#v, want %q", msg.Attachments, want)
+	}
+}
+
+func TestProcessInlineImagesUpgradesRelativeCachedAttachment(t *testing.T) {
+	body := `<img src="../hostedContents/hosted-123/$value" />`
+	name := "inline-image-1.png"
+	contentType := "image/png"
+	relative := "../hostedContents/hosted-123/$value"
+	msg := Message{
+		ID:     "message-456",
+		ChatID: "chat-1",
+		Body:   &MessageBody{Content: &body},
+		Attachments: []MessageAttachment{{
+			ID:          "inline-img-1",
+			Name:        &name,
+			ContentType: &contentType,
+			ContentURL:  &relative,
+		}},
+	}
+
+	msg.ProcessInlineImages()
+	if len(msg.Attachments) != 1 || msg.Attachments[0].ContentURL == nil || !strings.HasPrefix(*msg.Attachments[0].ContentURL, graphAPIBase) {
+		t.Fatalf("cached inline attachment was not upgraded: %#v", msg.Attachments)
+	}
+}
+
 func TestHTMLToTextMentions(t *testing.T) {
 	// Force color profile for testing ANSI codes
 	oldProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(termenv.TrueColor)
 	defer lipgloss.SetColorProfile(oldProfile)
-
 
 	// Helper functions for pointers
 	intPtr := func(v int) *int { return &v }
@@ -462,7 +521,3 @@ func TestGetAttachmentSavedName(t *testing.T) {
 		})
 	}
 }
-
-
-
-

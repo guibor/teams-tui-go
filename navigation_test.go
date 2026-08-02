@@ -31,6 +31,50 @@ func TestMetaAngleKeysJumpToChatListEnds(t *testing.T) {
 	}
 }
 
+func TestMetaNPNavigateChats(t *testing.T) {
+	app := NewApp()
+	app.Chats = []Chat{{ID: "first"}, {ID: "middle"}, {ID: "last"}}
+	app.SelectedIndex = 1
+	model := NewModel(app, "client", "user")
+
+	nextKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}, Alt: true}
+	if nextKey.String() != "alt+n" {
+		t.Fatalf("unexpected Bubble Tea Meta-n encoding: %q", nextKey.String())
+	}
+	model, _ = model.handleNormalModeKey(nextKey)
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "last" {
+		t.Fatalf("Meta-n selected %#v, want last", selected)
+	}
+
+	previousKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}, Alt: true}
+	if previousKey.String() != "alt+p" {
+		t.Fatalf("unexpected Bubble Tea Meta-p encoding: %q", previousKey.String())
+	}
+	model, _ = model.handleNormalModeKey(previousKey)
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "middle" {
+		t.Fatalf("Meta-p selected %#v, want middle", selected)
+	}
+}
+
+func TestMetaNNavigatesFilteredChatListWithoutSkipping(t *testing.T) {
+	app := NewApp()
+	model := NewModel(app, "client", "user")
+	model.latestChats = []Chat{
+		{ID: "group-a", ChatType: "group"},
+		{ID: "direct", ChatType: "oneOnOne"},
+		{ID: "group-b", ChatType: "group"},
+	}
+	model.stableChatOrder = []string{"group-a", "direct", "group-b"}
+	app.ActiveChatFilter.ChatTypes["group"] = true
+	model = model.rebuildChatList()
+
+	metaNext := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}, Alt: true}
+	model, _ = model.handleNormalModeKey(metaNext)
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "group-b" {
+		t.Fatalf("Meta-n selected %#v, want group-b", selected)
+	}
+}
+
 func TestFilteredNavigationVisitsEveryVisibleChatInOrder(t *testing.T) {
 	app := NewApp()
 	model := NewModel(app, "client", "user")

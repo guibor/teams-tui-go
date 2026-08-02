@@ -112,6 +112,9 @@ func TestInitConfig(t *testing.T) {
 	if cfg.TeamsAppCommand == nil || *cfg.TeamsAppCommand != defaultTeamsAppCommand() {
 		t.Errorf("expected default Teams app command %q, got %v", defaultTeamsAppCommand(), cfg.TeamsAppCommand)
 	}
+	if cfg.TerminalImageProtocol == nil || *cfg.TerminalImageProtocol != "auto" {
+		t.Errorf("expected terminal image protocol auto, got %v", cfg.TerminalImageProtocol)
+	}
 	if cfg.YoutrackCommand != nil {
 		t.Errorf("expected youtrack command to be nil, got %v", cfg.YoutrackCommand)
 	}
@@ -187,6 +190,9 @@ func TestInitConfig(t *testing.T) {
 	}
 	if updatedCfg.TeamsAppCommand == nil || *updatedCfg.TeamsAppCommand != defaultTeamsAppCommand() {
 		t.Errorf("expected default Teams app command %q, got %v", defaultTeamsAppCommand(), updatedCfg.TeamsAppCommand)
+	}
+	if updatedCfg.TerminalImageProtocol == nil || *updatedCfg.TerminalImageProtocol != "auto" {
+		t.Errorf("expected default terminal image protocol auto, got %v", updatedCfg.TerminalImageProtocol)
 	}
 	if updatedCfg.YoutrackCommand != nil {
 		t.Errorf("expected default youtrack command to be nil, got %v", updatedCfg.YoutrackCommand)
