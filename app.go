@@ -143,6 +143,7 @@ type App struct {
 	NotificationPreviewLen     int
 	MarkReadOnOpen             bool
 	ExportDirectory            string
+	ThreadCaptureFile          string
 	VisualBellUntil            *time.Time
 	StatusUntil                *time.Time
 	SearchStatusUntil          *time.Time
@@ -187,6 +188,8 @@ type App struct {
 	ChatFilterSelectedIndex    int
 	ChatBookmarkPopupMode      bool
 	ChatBookmarkSelectedIndex  int
+	ThreadActionPopupMode      bool
+	ThreadActionSelectedIndex  int
 	ActiveChatFilter           ChatListFilter
 	DraftChatFilter            ChatListFilter
 	AppStartTime               time.Time
@@ -221,6 +224,7 @@ type App struct {
 	ChannelMsgRefreshMin  int
 	ExternalEditor        string // command/path for the external editor
 	BrowserCommand        string // command to open URLs
+	TeamsAppCommand       string // command to open msteams:// desktop deep links
 	ImageViewer           string // command to open images (empty = use default file opener)
 	YoutrackCommand       string // command to open YouTrack URLs
 	GitlabCommand         string // command to open GitLab URLs

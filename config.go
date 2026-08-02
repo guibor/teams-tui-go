@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -161,6 +163,7 @@ type Config struct {
 	ChatLimit               *int              `json:"chat_limit,omitempty"`
 	MarkReadOnOpen          *bool             `json:"mark_read_on_open,omitempty"`
 	ExportDirectory         *string           `json:"export_directory,omitempty"`
+	ThreadCaptureFile       *string           `json:"thread_capture_file,omitempty"`
 	ChatIconTheme           *string           `json:"chat_icon_theme,omitempty"`
 	CustomChatIcons         map[string]string `json:"custom_chat_icons,omitempty"`
 
@@ -179,6 +182,7 @@ type Config struct {
 	SqliteEnabled          *bool   `json:"sqlite_enabled,omitempty"`
 	ExternalEditor         *string `json:"external_editor,omitempty"`
 	BrowserCommand         *string `json:"browser_command,omitempty"`
+	TeamsAppCommand        *string `json:"teams_app_command,omitempty"`
 	ImageViewer            *string `json:"image_viewer,omitempty"`
 	YoutrackCommand        *string `json:"youtrack_command,omitempty"`
 	GitlabCommand          *string `json:"gitlab_command,omitempty"`
@@ -303,6 +307,11 @@ func InitConfig() {
 		cfg.ExportDirectory = &dir
 		modified = true
 	}
+	if cfg.ThreadCaptureFile == nil {
+		path := "~/Documents/teams-threads.md"
+		cfg.ThreadCaptureFile = &path
+		modified = true
+	}
 	if cfg.ChatIconTheme == nil {
 		theme := "unicode"
 		cfg.ChatIconTheme = &theme
@@ -367,6 +376,11 @@ func InitConfig() {
 	if cfg.BrowserCommand == nil {
 		cmd := "xdg-open"
 		cfg.BrowserCommand = &cmd
+		modified = true
+	}
+	if cfg.TeamsAppCommand == nil {
+		cmd := defaultTeamsAppCommand()
+		cfg.TeamsAppCommand = &cmd
 		modified = true
 	}
 	if cfg.ImageViewer == nil {
@@ -468,6 +482,15 @@ func ResolveExportDirectory() string {
 		return *cfg.ExportDirectory
 	}
 	return "~/Downloads"
+}
+
+// ResolveThreadCaptureFile returns the Markdown file used for thread captures.
+func ResolveThreadCaptureFile() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ThreadCaptureFile != nil && strings.TrimSpace(*cfg.ThreadCaptureFile) != "" {
+		return *cfg.ThreadCaptureFile
+	}
+	return "~/Documents/teams-threads.md"
 }
 
 // ResolveChannelMsgRefreshMin returns the channel messages refresh interval in minutes.
@@ -597,6 +620,26 @@ func ResolveBrowserCommand() string {
 		return *cfg.BrowserCommand
 	}
 	return "xdg-open"
+}
+
+func defaultTeamsAppCommand() string {
+	switch runtime.GOOS {
+	case "darwin":
+		return "open"
+	case "windows":
+		return "rundll32 url.dll,FileProtocolHandler"
+	default:
+		return "xdg-open"
+	}
+}
+
+// ResolveTeamsAppCommand returns the command that dispatches msteams:// links.
+func ResolveTeamsAppCommand() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.TeamsAppCommand != nil && strings.TrimSpace(*cfg.TeamsAppCommand) != "" {
+		return *cfg.TeamsAppCommand
+	}
+	return defaultTeamsAppCommand()
 }
 
 // ResolveImageViewer returns the image viewer command, using precedence:

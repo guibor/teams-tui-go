@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -49,8 +51,62 @@ func TestNormalModeOpenUsesSelectedChatTeamsURL(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("normal-mode o did not create an open-URL command")
 	}
-	if app.Status != "Opening chat in Teams..." {
+	if app.Status != "Opening chat in browser..." {
 		t.Fatalf("unexpected open status: %q", app.Status)
+	}
+}
+
+func TestNormalModeUpperOUsesTeamsDesktopLink(t *testing.T) {
+	app := NewApp()
+	app.TeamsAppCommand = "true"
+	app.Chats = []Chat{{ID: "chat-1", WebURL: "https://teams.microsoft.com/l/chat/example"}}
+	app.SelectedIndex = 0
+	model := NewModel(app, "client", "user")
+
+	_, cmd := model.handleNormalModeKey(filterTestKey('O'))
+	if cmd == nil {
+		t.Fatal("normal-mode O did not create a Teams-app command")
+	}
+	if app.Status != "Opening chat in Teams..." {
+		t.Fatalf("unexpected Teams open status: %q", app.Status)
+	}
+}
+
+func TestTeamsDesktopURLUsesOfficialScheme(t *testing.T) {
+	got := teamsDesktopURL("https://teams.microsoft.com/l/chat/example?tenantId=abc")
+	want := "msteams://teams.microsoft.com/l/chat/example?tenantId=abc"
+	if got != want {
+		t.Fatalf("desktop URL = %q, want %q", got, want)
+	}
+	if got := teamsDesktopURL("https://example.com/l/chat/example"); got != "" {
+		t.Fatalf("non-Teams URL converted to %q", got)
+	}
+}
+
+func TestThreadActionMenuCapturesSelectedChat(t *testing.T) {
+	app := NewApp()
+	title := "Capture me"
+	app.Chats = []Chat{{ID: "chat-1", CachedDisplayName: &title}}
+	app.SelectedIndex = 0
+	app.ThreadCaptureFile = filepath.Join(t.TempDir(), "threads.md")
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.handleNormalModeKey(filterTestKey('a'))
+	if !app.ThreadActionPopupMode {
+		t.Fatal("a did not open the thread action menu")
+	}
+	model, cmd := model.handleThreadActionPopupKey(filterTestKey('c'))
+	if cmd == nil || app.ThreadActionPopupMode {
+		t.Fatal("capture action did not close the menu and return a command")
+	}
+	rawMsg := cmd()
+	msg, ok := rawMsg.(MsgThreadCaptured)
+	if !ok {
+		t.Fatalf("capture command returned %T", rawMsg)
+	}
+	model, _ = model.updateInternal(msg)
+	if _, err := os.Stat(app.ThreadCaptureFile); err != nil {
+		t.Fatalf("capture action did not create file: %v", err)
 	}
 }
 

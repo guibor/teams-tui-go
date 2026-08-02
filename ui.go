@@ -85,6 +85,13 @@ type MsgThreadExported struct {
 	Err   error
 }
 
+// MsgThreadCaptured reports completion of a local thread-list capture.
+type MsgThreadCaptured struct {
+	Path  string
+	Added bool
+	Err   error
+}
+
 // MsgMessagesLoaded is sent when messages for a specific chat have loaded.
 type MsgMessagesLoaded struct {
 	ChatID   string
@@ -1239,6 +1246,15 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SetStatus(fmt.Sprintf("Exported %d messages to %s", msg.Count, msg.Path), 8*time.Second)
 		}
 
+	case MsgThreadCaptured:
+		if msg.Err != nil {
+			m.app.SetStatus("Capture failed: "+msg.Err.Error(), 7*time.Second)
+		} else if msg.Added {
+			m.app.SetStatus("Captured thread in "+msg.Path, 7*time.Second)
+		} else {
+			m.app.SetStatus("Thread already captured today in "+msg.Path, 6*time.Second)
+		}
+
 	// ── Message send result ───────────────────────────────────────────────
 	case MsgSendDone:
 		if msg.Err != nil {
@@ -1694,6 +1710,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.ChatBookmarkPopupMode {
 		return m.handleChatBookmarkPopupKey(msg)
 	}
+	if m.app.ThreadActionPopupMode {
+		return m.handleThreadActionPopupKey(msg)
+	}
 	if m.app.HelpPopupMode {
 		return m.handleHelpPopupKey(msg)
 	}
@@ -1881,6 +1900,15 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.app.ChatBookmarkSelectedIndex = 0
 		return m, nil
 
+	case "a":
+		if m.channelSelectedIndex >= 0 || m.app.GetSelectedChat() == nil {
+			m.app.SetStatus("Select a chat to use thread actions", 3*time.Second)
+			break
+		}
+		m.app.ThreadActionPopupMode = true
+		m.app.ThreadActionSelectedIndex = 0
+		return m, nil
+
 	case "/":
 		if m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0 {
 			break
@@ -1984,57 +2012,13 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 
 	case "f":
-		// Toggle favourite on the selected chat — no-op in channel mode.
-		if m.channelSelectedIndex >= 0 {
-			break
-		}
-		if chat := m.app.GetSelectedChat(); chat != nil {
-			toggledChatID := chat.ID
-			if m.favourites[chat.ID] {
-				delete(m.favourites, chat.ID)
-				m.app.SetStatus("★ Removed from favourites: "+*chat.CachedDisplayName, 3*time.Second)
-			} else {
-				m.favourites[chat.ID] = true
-				m.app.SetStatus("★ Added to favourites: "+*chat.CachedDisplayName, 3*time.Second)
-			}
-			// Persist and rebuild the list to reorder immediately.
-			_ = SaveFavourites(m.favourites)
-			m = m.rebuildChatList()
-			// Restore selection to the toggled chat.
-			for i, c := range m.app.Chats {
-				if c.ID == chat.ID {
-					m.app.SelectedIndex = i
-					break
-				}
-			}
-			if m.app.ActiveChatFilter.FavouritesOnly {
-				selected := m.app.GetSelectedChat()
-				if selected == nil {
-					m.app.Messages = nil
-					m.app.NextLink = ""
-					m.app.SetLoadingMessages(false)
-					return m, nil
-				}
-				if selected.ID != toggledChatID {
-					m.app.SnapToBottom = true
-					return m.loadChatMessages(selected.ID)
-				}
-			}
-		}
+		return m.executeThreadAction(threadActionFavorite)
 
 	case "o":
-		if m.channelSelectedIndex >= 0 {
-			m.app.SetStatus("Open in Teams currently supports chats", 4*time.Second)
-			break
-		}
-		chat := m.app.GetSelectedChat()
-		chatURL := teamsChatURL(chat)
-		if chatURL == "" {
-			m.app.SetStatus("This chat did not include a Teams URL", 4*time.Second)
-			break
-		}
-		m.app.SetStatus("Opening chat in Teams...", 0)
-		return m, openURLCmd(chatURL, m.app.BrowserCommand, m.app.YoutrackCommand, m.app.GitlabCommand)
+		return m.executeThreadAction(threadActionOpenBrowser)
+
+	case "O":
+		return m.executeThreadAction(threadActionOpenTeams)
 
 	case "r":
 		if m.channelSelectedIndex >= 0 {
@@ -2051,9 +2035,8 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 			break
 		}
-		if chat := m.app.GetSelectedChat(); chat != nil {
-			m.app.SetStatus("Marking chat read...", 0)
-			return m, setChatReadStateCmd(m.clientID, chat.ID, m.userID, false)
+		if m.app.GetSelectedChat() != nil {
+			return m.executeThreadAction(threadActionRead)
 		}
 
 	case "u":
@@ -2065,9 +2048,8 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 			break
 		}
-		if chat := m.app.GetSelectedChat(); chat != nil {
-			m.app.SetStatus("Marking chat unread...", 0)
-			return m, setChatReadStateCmd(m.clientID, chat.ID, m.userID, true)
+		if m.app.GetSelectedChat() != nil {
+			return m.executeThreadAction(threadActionUnread)
 		}
 
 	case "E":
@@ -2075,9 +2057,8 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.SetStatus("Full Markdown export currently supports chats", 5*time.Second)
 			break
 		}
-		if chat := m.app.GetSelectedChat(); chat != nil {
-			m.app.SetStatus("Exporting complete chat history...", 0)
-			return m, exportChatMarkdownCmd(m.clientID, *chat, m.app.ExportDirectory)
+		if m.app.GetSelectedChat() != nil {
+			return m.executeThreadAction(threadActionExport)
 		}
 
 	case "p":
@@ -3102,6 +3083,17 @@ func (m Model) View() string {
 		}
 		modal := m.renderChatBookmarkPopup(popupW, popupH)
 		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
+	} else if m.app.ThreadActionPopupMode {
+		popupW := m.width * 50 / 100
+		popupH := m.height * 70 / 100
+		if popupW < 48 {
+			popupW = 48
+		}
+		if popupH < 17 {
+			popupH = 17
+		}
+		modal := m.renderThreadActionPopup(popupW, popupH)
+		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 	} else if m.app.HelpPopupMode {
 		popupW := m.width * 70 / 100
 		popupH := m.height * 85 / 100
@@ -3232,7 +3224,7 @@ func (m Model) renderRightPanel(w, h int) string {
 	}
 
 	if !m.app.InputMode {
-		title := "Messages (i:compose, m:select, r/u:read state, E:export, K/J:scroll, /:search, ?:help)"
+		title := "Messages (i:compose, a:actions, m:select, r/u:read state, K/J:scroll, /:search, ?:help)"
 		if m.channelSelectedIndex >= 0 {
 			chans := m.allChannels()
 			if m.channelSelectedIndex < len(chans) {
@@ -6701,8 +6693,9 @@ func (m Model) getHelpContentLines() []string {
 			{"/", "Search message history"},
 			{"F", "Filter chat list by state, type, favorite, or text"},
 			{"b", "Open mu4e-style chat bookmarks (bu unread, bi inbox)"},
+			{"a", "Open actions for the selected chat"},
 			{"f", "Toggle favourite (chats only)"},
-			{"o", "Open selected chat in Microsoft Teams"},
+			{"o / O", "Open selected chat in browser / Teams desktop"},
 			{"r", "Mark selected chat read"},
 			{"u", "Mark selected chat unread"},
 			{"E", "Export complete chat history as Markdown"},
@@ -6765,6 +6758,14 @@ func (m Model) getHelpContentLines() []string {
 			{"bt / bf", "Today's activity / favorites"},
 			{"bd / bg / bm", "Direct / group / meeting chats"},
 			{"j / k / Enter", "Navigate and apply a preset"},
+			{"ESC", "Cancel"},
+		}},
+		{"Thread Actions (a)", [][2]string{
+			{"o / O", "Open in browser / Teams desktop"},
+			{"r / u / f", "Mark read / unread / toggle favorite"},
+			{"c", "Capture in the dated Markdown thread list"},
+			{"e / y", "Export complete transcript / copy Teams link"},
+			{"j / k / Enter", "Navigate and run an action"},
 			{"ESC", "Cancel"},
 		}},
 		{"Composing Messages", [][2]string{

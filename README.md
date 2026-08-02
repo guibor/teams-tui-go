@@ -179,12 +179,15 @@ set `mark_read_on_open` to `true`.
 
 Press `E` to fetch the complete selected chat, follow every Graph pagination
 link, and write a chronological Markdown transcript. Exports default to
-`~/Downloads`; change `export_directory` to use another location.
+`~/Downloads`; change `export_directory` to use another location. Press `a`
+then `c` to add the selected chat as a checkbox under today's heading in a
+deduplicated thread list. That file defaults to `~/Documents/teams-threads.md`.
 
   ```json
   {
-    "mark_read_on_open": false,
-    "export_directory": "~/Downloads"
+	"mark_read_on_open": false,
+	"export_directory": "~/Downloads",
+	"thread_capture_file": "~/Documents/teams-threads.md"
   }
   ```
 
@@ -223,12 +226,14 @@ Configure the commands used to open URLs when pressing `o` on a message or from 
 
   ```json
   {
-    "browser_command": "xdg-open",
+	"browser_command": "xdg-open",
+	"teams_app_command": "xdg-open",
     "youtrack_command": "yt-tui",
     "gitlab_command": "gitlab-tui"
   }
   ```
-  - `browser_command`: The command used to open general URLs (default: `"xdg-open"`, but you can specify e.g. `"firefox"` or `"google-chrome"`). This key is always initialized in `config.json`.
+	- `browser_command`: The command used to open general URLs (default: `"xdg-open"`, but you can specify e.g. `"firefox"` or `"google-chrome"`). This key is always initialized in `config.json`.
+	- `teams_app_command`: The command used by uppercase `O` to dispatch the selected chat's `msteams://` deep link to the installed Teams desktop client. It defaults to `open` on macOS, `xdg-open` on Linux, and the Windows URL protocol handler on Windows.
   - `youtrack_command`: The optional command to open YouTrack URLs (default: `"yt-tui"`, but you can specify e.g. `"youtrack-cli"` or `"yt-cli"`). If a URL contains `"youtrack"`, this command is executed. Useful with tools like [yt-tui](https://github.com/nospor/yt-tui).
   - `gitlab_command`: The optional command to open GitLab URLs (default: `"gitlab-tui"`). If a URL contains `"gitlab"` (for example, merge requests, pipelines, or jobs), this command is executed. Useful with tools like [gitlab-tui](https://github.com/nospor/gitlab-tui).
 
@@ -434,8 +439,10 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `c`          | Open chat search / chat creation popup                    |
 | `F`          | Filter chats by read state, type, favorite, and text      |
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
+| `a`          | Open actions for the selected chat                         |
 | `f`          | Toggle ★ favourite on selected chat (chats only)          |
-| `o`          | Open selected chat in Microsoft Teams (Normal Mode)       |
+| `o`          | Open selected chat in the configured browser              |
+| `O`          | Open selected chat in the Teams desktop client            |
 | `r`          | Mark selected chat read (Normal Mode)                     |
 | `u`          | Mark selected chat unread (Normal Mode)                   |
 | `E`          | Export complete selected chat as Markdown (Normal Mode)   |
@@ -502,6 +509,20 @@ local; applying one does not issue a Graph list request.
 | `bg`     | Groups                              |
 | `bm`     | Meetings                            |
 
+### Thread Actions
+
+Press `a` on a selected chat. Use the action's displayed shortcut directly, or
+navigate with `j`/`k` and run it with `Enter`.
+
+| Action key | Action                                      |
+| ---------- | ------------------------------------------- |
+| `o` / `O`  | Open in browser / Teams desktop             |
+| `r` / `u`  | Mark read / unread                          |
+| `f`        | Toggle favorite                             |
+| `c`        | Capture in the dated Markdown thread list   |
+| `e`        | Export the complete Markdown transcript     |
+| `y`        | Copy the Teams web link                     |
+
 ---
 
 ## File Locations
@@ -514,6 +535,7 @@ local; applying one does not issue a Graph list request.
 | `~/.cache/teams-tui-go/profile.json`           | Cached user profile                 |
 | `~/.cache/teams-tui-go/teams-tui-go.db`       | SQLite database caching messages    |
 | `~/Downloads/*.md`                            | Complete chat exports by default    |
+| `~/Documents/teams-threads.md`                 | Dated thread-capture checklist by default |
 
 ---
 

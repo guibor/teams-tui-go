@@ -67,6 +67,9 @@ func TestInitConfig(t *testing.T) {
 	if cfg.ExportDirectory == nil || *cfg.ExportDirectory != "~/Downloads" {
 		t.Errorf("expected export directory ~/Downloads, got %v", cfg.ExportDirectory)
 	}
+	if cfg.ThreadCaptureFile == nil || *cfg.ThreadCaptureFile != "~/Documents/teams-threads.md" {
+		t.Errorf("expected default thread capture file, got %v", cfg.ThreadCaptureFile)
+	}
 	if cfg.ChannelMsgRefreshMin == nil || *cfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected channel message refresh min 2, got %v", cfg.ChannelMsgRefreshMin)
 	}
@@ -76,13 +79,15 @@ func TestInitConfig(t *testing.T) {
 	if cfg.BrowserCommand == nil || *cfg.BrowserCommand != "xdg-open" {
 		t.Errorf("expected browser command 'xdg-open', got %v", cfg.BrowserCommand)
 	}
+	if cfg.TeamsAppCommand == nil || *cfg.TeamsAppCommand != defaultTeamsAppCommand() {
+		t.Errorf("expected default Teams app command %q, got %v", defaultTeamsAppCommand(), cfg.TeamsAppCommand)
+	}
 	if cfg.YoutrackCommand != nil {
 		t.Errorf("expected youtrack command to be nil, got %v", cfg.YoutrackCommand)
 	}
 	if cfg.GitlabCommand != nil {
 		t.Errorf("expected gitlab command to be nil, got %v", cfg.GitlabCommand)
 	}
-
 
 	// Case 2: Config exists but is missing some options (e.g. partial).
 	// We'll write a custom config with only ClientID and MessageLimit set, and others missing/nil.
@@ -138,6 +143,9 @@ func TestInitConfig(t *testing.T) {
 	if updatedCfg.ExportDirectory == nil || *updatedCfg.ExportDirectory != "~/Downloads" {
 		t.Errorf("expected default export directory ~/Downloads, got %v", updatedCfg.ExportDirectory)
 	}
+	if updatedCfg.ThreadCaptureFile == nil || *updatedCfg.ThreadCaptureFile != "~/Documents/teams-threads.md" {
+		t.Errorf("expected default thread capture file, got %v", updatedCfg.ThreadCaptureFile)
+	}
 	if updatedCfg.ChannelMsgRefreshMin == nil || *updatedCfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected default channel message refresh min 2, got %v", updatedCfg.ChannelMsgRefreshMin)
 	}
@@ -146,6 +154,9 @@ func TestInitConfig(t *testing.T) {
 	}
 	if updatedCfg.BrowserCommand == nil || *updatedCfg.BrowserCommand != "xdg-open" {
 		t.Errorf("expected default browser command 'xdg-open', got %v", updatedCfg.BrowserCommand)
+	}
+	if updatedCfg.TeamsAppCommand == nil || *updatedCfg.TeamsAppCommand != defaultTeamsAppCommand() {
+		t.Errorf("expected default Teams app command %q, got %v", defaultTeamsAppCommand(), updatedCfg.TeamsAppCommand)
 	}
 	if updatedCfg.YoutrackCommand != nil {
 		t.Errorf("expected default youtrack command to be nil, got %v", updatedCfg.YoutrackCommand)

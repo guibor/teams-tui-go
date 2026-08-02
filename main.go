@@ -151,6 +151,13 @@ func exportChatMarkdownCmd(clientID string, chat Chat, directory string) tea.Cmd
 	}
 }
 
+func captureChatMarkdownCmd(chat Chat, path string) tea.Cmd {
+	return func() tea.Msg {
+		resolved, added, err := CaptureChatMarkdown(path, chat, time.Now())
+		return MsgThreadCaptured{Path: resolved, Added: added, Err: err}
+	}
+}
+
 // searchUsersCmd searches the directory for users by name or email.
 func searchUsersCmd(clientID, query string) tea.Cmd {
 	return func() tea.Msg {
@@ -611,7 +618,11 @@ func openURLCmd(url, browserCmd, youtrackCmd, gitlabCmd string) tea.Cmd {
 		cmdStr = browserCmd
 	}
 
-	fields := strings.Fields(cmdStr)
+	return openWithCommandCmd(url, cmdStr)
+}
+
+func openWithCommandCmd(url, command string) tea.Cmd {
+	fields := strings.Fields(command)
 	if len(fields) == 0 {
 		return func() tea.Msg {
 			return MsgURLOpened{Err: fmt.Errorf("empty command configured")}
@@ -811,8 +822,10 @@ func main() {
 	app.ChannelMsgRefreshMin = ResolveChannelMsgRefreshMin()
 	app.MarkReadOnOpen = ResolveMarkReadOnOpen()
 	app.ExportDirectory = ResolveExportDirectory()
+	app.ThreadCaptureFile = ResolveThreadCaptureFile()
 	app.ExternalEditor = ResolveExternalEditor()
 	app.BrowserCommand = ResolveBrowserCommand()
+	app.TeamsAppCommand = ResolveTeamsAppCommand()
 	app.ImageViewer = ResolveImageViewer()
 	app.YoutrackCommand = ResolveYoutrackCommand()
 	app.GitlabCommand = ResolveGitlabCommand()

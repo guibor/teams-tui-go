@@ -30,7 +30,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 ### Configuration (`config.go`)
 - App data: `~/.config/teams-tui-go/` (via `GetAppDir()`)
 - Cache: `~/.cache/teams-tui-go/` (via `GetCacheDir()`)
-- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), editor/browser commands, and optional feature flags.
+- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadCaptureFile *string` (default `~/Documents/teams-threads.md`), separate browser/Teams-app commands, and optional feature flags.
 - `ResolveClientID()`, `ResolveMessageLimit()`, `ResolveSearchContextLimit()`, `ResolveChatLimit()`, and `ResolveExternalEditor()` implement the full precedence chain
 - `InitConfig()` is run at application startup to populate any missing configuration keys in `config.json` with their default values and persist them to disk. It defaults `ChatIconTheme` to `"unicode"` and all feature flags to `false`.
 - `BuildScopes()` assembles the OAuth2 scope string dynamically: always includes the four basic scopes (`User.Read Chat.ReadWrite offline_access`) and appends optional scopes for each enabled feature flag.
@@ -83,8 +83,10 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 	- `rebuildChatList()` applies stable/favorite ordering before filtering, preserves the selected chat by ID whenever it remains visible, and preserves `SelectedIndex == -1` so background refreshes cannot leave the dashboard.
 	- `MsgMessagesLoaded` carries the immutable chat ID. Never infer response identity from a current sidebar index because filtering and refreshes can replace the chat at that position.
 - **Open in Teams**:
-  - Normal-mode `o` passes the selected chat's opaque Graph `webUrl` to `openURLCmd`; do not parse or reconstruct this URL.
-  - This uses data already returned by `/me/chats` and requires no additional Graph request or permission.
+	- Normal-mode `o` passes the selected chat's opaque Graph `webUrl` to the configured browser command.
+	- Normal-mode `O` changes only the official Teams URL scheme from `https` to `msteams` and dispatches it through `teams_app_command`; retain the Graph-provided host, path, and query.
+	- This uses data already returned by `/me/chats` and requires no additional Graph request or permission.
+	- `a` opens `thread_actions.go`, whose dispatcher is also used by the direct normal-mode keys. Add thread-level actions there so the menu and direct bindings share behavior.
 - **Sidebar State Styling**:
   - Read rows are muted; unread rows use a cyan state dot and bright bold names.
   - Chat-type icons have separate colors and the default single-width Unicode set is `@` (1:1), `&` (group), `◷` (meeting), and `#` (channel).
@@ -140,7 +142,10 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - Temporarily saves the current textarea value to a temporary file, opens the configured editor (`ExternalEditor`), and updates the textarea value on success.
   - Uses Bubble Tea's `tea.ExecProcess` to pause the TUI while the editor executes in the terminal foreground, resuming when the editor process exits.
 - **Full Markdown Export**:
-  - Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.
+	- Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.
+- **Thread Capture**:
+	- Action-menu `c` calls `CaptureChatMarkdown()` in `capture.go`, which atomically records a private (`0600`) checklist entry under the local marking date in `thread_capture_file`.
+	- A stable encoded chat marker deduplicates the same chat within a day while allowing it to be marked again on another day.
 
 ### Main / Entry Point (`main.go`)
 - Startup: banner → auth → profile → chats (with expanded last message preview) → sort → init model → run
