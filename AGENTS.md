@@ -72,6 +72,18 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - `promoteChat()` is a no-op for favourited chats so new messages don't displace them
   - Favourited chats with old/unloaded activity still show up once their data is in `byID` cache
   - The `★` icon appears before the chat type tag in the sidebar (yellow for non-selected, inline for selected)
+- **Chat List Filters**:
+  - `F` opens a local filter popup; no Graph request is made.
+  - `App.ActiveChatFilter` is the applied filter and `App.DraftChatFilter` is an isolated copy used by the popup so `Esc` can cancel safely.
+  - Read state, type, favorite, and name/topic/member/email criteria combine with AND semantics; an empty type map means all types.
+  - `Model.chatCache` retains hydrated chats independently of `App.Chats`, which contains only the currently visible list. Never rebuild from the visible list alone.
+  - `rebuildChatList()` applies stable/favorite ordering before filtering and preserves the selected chat by ID whenever it remains visible.
+- **Open in Teams**:
+  - Normal-mode `o` passes the selected chat's opaque Graph `webUrl` to `openURLCmd`; do not parse or reconstruct this URL.
+  - This uses data already returned by `/me/chats` and requires no additional Graph request or permission.
+- **Sidebar State Styling**:
+  - Read rows are muted; unread rows use a cyan state dot and bright bold names.
+  - Chat-type icons have separate colors and the default single-width Unicode set is `@` (1:1), `&` (group), `◷` (meeting), and `#` (channel).
 - **Read Logic**:
   - `lastMsgID` and `lastMsgTime` track latest content
   - `lastReadMsgID` tracks what was read locally in this session

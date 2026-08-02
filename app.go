@@ -31,6 +31,40 @@ func (n NotificationMode) String() string {
 	}
 }
 
+// ChatReadFilter controls which server/local read states appear in the chat list.
+type ChatReadFilter string
+
+const (
+	ChatReadAll    ChatReadFilter = "all"
+	ChatReadUnread ChatReadFilter = "unread"
+	ChatReadRead   ChatReadFilter = "read"
+)
+
+// ChatListFilter is the local, zero-network filter applied to the chat sidebar.
+// An empty ChatTypes map means all chat types are included.
+type ChatListFilter struct {
+	Query          string
+	ReadState      ChatReadFilter
+	ChatTypes      map[string]bool
+	FavouritesOnly bool
+}
+
+func newChatListFilter() ChatListFilter {
+	return ChatListFilter{
+		ReadState: ChatReadAll,
+		ChatTypes: make(map[string]bool),
+	}
+}
+
+func cloneChatListFilter(filter ChatListFilter) ChatListFilter {
+	clone := filter
+	clone.ChatTypes = make(map[string]bool, len(filter.ChatTypes))
+	for chatType, enabled := range filter.ChatTypes {
+		clone.ChatTypes[chatType] = enabled
+	}
+	return clone
+}
+
 // MarshalJSON serialises NotificationMode as a string so config.json is readable.
 func (n NotificationMode) MarshalJSON() ([]byte, error) {
 	return json.Marshal(n.String())
@@ -147,6 +181,11 @@ type App struct {
 	UserSearchDirectoryResults []User
 	UserSearchSelectedIndex    int
 	UserSearchLoading          bool
+	ChatFilterPopupMode        bool
+	ChatFilterInputMode        bool
+	ChatFilterSelectedIndex    int
+	ActiveChatFilter           ChatListFilter
+	DraftChatFilter            ChatListFilter
 	AppStartTime               time.Time
 	ChatIconTheme              string
 	CustomChatIcons            map[string]string
@@ -233,6 +272,7 @@ type SearchPopupItem struct {
 
 // NewApp creates an App with sensible initial defaults.
 func NewApp() *App {
+	defaultFilter := newChatListFilter()
 	return &App{
 		Status:                    "Loading...",
 		SnapToBottom:              true,
@@ -247,6 +287,8 @@ func NewApp() *App {
 		SearchStates:              make(map[string]*ChatSearchState),
 		CachedMessages:            make(map[string][]Message),
 		CachedNextLink:            make(map[string]string),
+		ActiveChatFilter:          defaultFilter,
+		DraftChatFilter:           cloneChatListFilter(defaultFilter),
 		TeamMembersCache:          make(map[string][]ChatMember),
 		ChatIconTheme:             "unicode",
 		CustomChatIcons:           make(map[string]string),

@@ -34,6 +34,9 @@ var (
 	colWhite    = lipgloss.Color("#FFFFFF")
 	colRed      = lipgloss.Color("#FF4444")
 	colDimGray  = lipgloss.Color("#888888")
+	colBlue     = lipgloss.Color("#5F87FF")
+	colMagenta  = lipgloss.Color("#D787FF")
+	colUnread   = lipgloss.Color("#7DD3FC")
 )
 
 // Panel border styles.
@@ -237,6 +240,9 @@ type Model struct {
 	// Textinput for searching users.
 	userSearchInput textinput.Model
 
+	// Textinput for the optional name/member term in the chat-list filter.
+	chatFilterInput textinput.Model
+
 	// Stable ordering of chat IDs.
 	stableChatOrder []string
 
@@ -249,6 +255,9 @@ type Model struct {
 
 	// Track latest chats from the API (before applying stable order).
 	latestChats []Chat
+
+	// Preserve every hydrated chat independently of the currently visible filter.
+	chatCache map[string]Chat
 
 	// Timer tracking for periodic refreshes.
 	lastChatRefresh    time.Time
@@ -335,6 +344,11 @@ func NewModel(app *App, clientID, userID string) Model {
 	tiUser.CharLimit = 100
 	tiUser.Width = 40
 
+	tiFilter := textinput.New()
+	tiFilter.Placeholder = "Name, topic, member, or email contains..."
+	tiFilter.CharLimit = 100
+	tiFilter.Width = 44
+
 	fp := filepicker.New()
 	fp.AllowedTypes = []string{} // allow all types
 	fp.FileAllowed = true
@@ -368,6 +382,7 @@ func NewModel(app *App, clientID, userID string) Model {
 		textarea:             ta,
 		searchInput:          ti,
 		userSearchInput:      tiUser,
+		chatFilterInput:      tiFilter,
 		lastMsgID:            make(map[string]string),
 		lastMsgTime:          make(map[string]time.Time),
 		lastReadMsgID:        make(map[string]string),
@@ -376,6 +391,7 @@ func NewModel(app *App, clientID, userID string) Model {
 		reactionsInitialized: make(map[string]bool),
 		notifiedReactions:    make(map[string]map[string]bool),
 		pendingEdits:         make(map[string]string),
+		chatCache:            make(map[string]Chat),
 		favourites:           make(map[string]bool),
 		unhiddenChannels:     make(map[string]bool),
 		originalTeamIndex:    make(map[string]int),
@@ -420,6 +436,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 	wasInputMode := m.app.InputMode
 	wasSearchMode := m.app.SearchMode
 	wasUserSearchMode := m.app.UserSearchMode
+	wasChatFilterInputMode := m.app.ChatFilterInputMode
 
 	switch msg := msg.(type) {
 
@@ -1200,6 +1217,22 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.markReactionsRead(msg.ChatID)
 			m.app.SetStatus("Marked chat read", 3*time.Second)
 		}
+		if m.app.ActiveChatFilter.ReadState == ChatReadUnread || m.app.ActiveChatFilter.ReadState == ChatReadRead {
+			previousChatID := msg.ChatID
+			m = m.rebuildChatList()
+			if len(m.app.Chats) == 0 {
+				m.app.Messages = nil
+				m.app.NextLink = ""
+				m.app.SetLoadingMessages(false)
+			} else if selected := m.app.GetSelectedChat(); selected != nil && selected.ID != previousChatID {
+				m.app.SnapToBottom = true
+				var loadCmd tea.Cmd
+				m, loadCmd = m.loadChatMessages(selected.ID, m.app.SelectedIndex)
+				if loadCmd != nil {
+					cmds = append(cmds, loadCmd)
+				}
+			}
+		}
 
 	// ── Full-thread Markdown export ──────────────────────────────────────
 	case MsgThreadExported:
@@ -1629,6 +1662,16 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		}
 	}
 
+	// Update the chat-filter text input only when it was already focused before
+	// this event, so the key that enters text mode is not inserted as content.
+	if m.app.ChatFilterInputMode && wasChatFilterInputMode {
+		var cmd tea.Cmd
+		m.chatFilterInput, cmd = m.chatFilterInput.Update(msg)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+
 	// Update filepicker if in filepicker mode (for non-keyboard messages like directory read results)
 	if m.app.FilePickerPopupMode {
 		if _, ok := msg.(tea.KeyMsg); !ok {
@@ -1647,6 +1690,9 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.FilePickerPopupMode {
 		return m.handleFilePickerKey(msg)
+	}
+	if m.app.ChatFilterPopupMode {
+		return m.handleChatFilterPopupKey(msg)
 	}
 	if m.app.HelpPopupMode {
 		return m.handleHelpPopupKey(msg)
@@ -1798,6 +1844,15 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.userSearchInput.Focus()
 		return m, textinput.Blink
 
+	case "F":
+		m.app.DraftChatFilter = cloneChatListFilter(m.app.ActiveChatFilter)
+		m.app.ChatFilterSelectedIndex = 0
+		m.app.ChatFilterInputMode = false
+		m.app.ChatFilterPopupMode = true
+		m.chatFilterInput.SetValue(m.app.DraftChatFilter.Query)
+		m.chatFilterInput.Blur()
+		return m, nil
+
 	case "/":
 		if m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0 {
 			break
@@ -1906,6 +1961,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			break
 		}
 		if chat := m.app.GetSelectedChat(); chat != nil {
+			toggledChatID := chat.ID
 			if m.favourites[chat.ID] {
 				delete(m.favourites, chat.ID)
 				m.app.SetStatus("★ Removed from favourites: "+*chat.CachedDisplayName, 3*time.Second)
@@ -1923,7 +1979,34 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 					break
 				}
 			}
+			if m.app.ActiveChatFilter.FavouritesOnly {
+				selected := m.app.GetSelectedChat()
+				if selected == nil {
+					m.app.Messages = nil
+					m.app.NextLink = ""
+					m.app.SetLoadingMessages(false)
+					return m, nil
+				}
+				if selected.ID != toggledChatID {
+					m.app.SnapToBottom = true
+					return m.loadChatMessages(selected.ID, m.app.SelectedIndex)
+				}
+			}
 		}
+
+	case "o":
+		if m.channelSelectedIndex >= 0 {
+			m.app.SetStatus("Open in Teams currently supports chats", 4*time.Second)
+			break
+		}
+		chat := m.app.GetSelectedChat()
+		chatURL := teamsChatURL(chat)
+		if chatURL == "" {
+			m.app.SetStatus("This chat did not include a Teams URL", 4*time.Second)
+			break
+		}
+		m.app.SetStatus("Opening chat in Teams...", 0)
+		return m, openURLCmd(chatURL, m.app.BrowserCommand, m.app.YoutrackCommand, m.app.GitlabCommand)
 
 	case "r":
 		if m.channelSelectedIndex >= 0 {
@@ -2964,6 +3047,17 @@ func (m Model) View() string {
 		}
 		modal := m.renderSearchPopup(popupW, popupH)
 		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
+	} else if m.app.ChatFilterPopupMode {
+		popupW := m.width * 60 / 100
+		popupH := m.height * 65 / 100
+		if popupW < 52 {
+			popupW = 52
+		}
+		if popupH < 15 {
+			popupH = 15
+		}
+		modal := m.renderChatFilterPopup(popupW, popupH)
+		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 	} else if m.app.HelpPopupMode {
 		popupW := m.width * 70 / 100
 		popupH := m.height * 85 / 100
@@ -3283,6 +3377,8 @@ func (m Model) chatTypeToIcon(chatType string) string {
 			return "👥"
 		case "meeting":
 			return "📅"
+		case "channel":
+			return "#️⃣"
 		default:
 			return "💬"
 		}
@@ -3304,16 +3400,31 @@ func (m Model) chatTypeToIcon(chatType string) string {
 	default:
 		switch chatType {
 		case "oneOnOne":
-			return "◉"
+			return "@"
 		case "group":
-			return "⊞"
+			return "&"
 		case "meeting":
-			return "⊛"
+			return "◷"
 		case "channel":
-			return "☰"
+			return "#"
 		default:
-			return "◈"
+			return "◇"
 		}
+	}
+}
+
+func chatTypeColor(chatType string) lipgloss.Color {
+	switch chatType {
+	case "oneOnOne":
+		return colCyan
+	case "group":
+		return colGreen
+	case "meeting":
+		return colMagenta
+	case "channel":
+		return colBlue
+	default:
+		return colDimGray
 	}
 }
 
@@ -3405,16 +3516,333 @@ func (m Model) activeConversationID() string {
 	return ""
 }
 
-func (m Model) renderChatList(w, h int) string {
-	titleText := "Chats (j/k: nav, r/u: read state, E: export, f: ★ fav, q: quit)"
-	if m.app.Features.TeamsChannels {
-		titleText = "Chats (j/k: nav, Tab: switch, r/u: read state, E: export, q: quit)"
+// teamsChatURL returns Graph's opaque Teams deep link for a chat.
+func teamsChatURL(chat *Chat) string {
+	if chat == nil {
+		return ""
 	}
-	title := lipgloss.NewStyle().Foreground(colDimGray).Render(titleText)
+	return strings.TrimSpace(chat.WebURL)
+}
 
-	if len(m.app.Chats) == 0 {
-		return lipgloss.JoinVertical(lipgloss.Left, title, m.app.Status)
+func chatFilterIsActive(filter ChatListFilter) bool {
+	return strings.TrimSpace(filter.Query) != "" ||
+		(filter.ReadState != "" && filter.ReadState != ChatReadAll) ||
+		filter.FavouritesOnly ||
+		len(filter.ChatTypes) > 0
+}
+
+func chatReadFilterLabel(filter ChatReadFilter) string {
+	switch filter {
+	case ChatReadUnread:
+		return "Unread only"
+	case ChatReadRead:
+		return "Read only"
+	default:
+		return "All"
 	}
+}
+
+func chatFilterSummary(filter ChatListFilter) string {
+	var parts []string
+	if filter.ReadState != "" && filter.ReadState != ChatReadAll {
+		parts = append(parts, string(filter.ReadState))
+	}
+	for _, entry := range []struct {
+		chatType string
+		label    string
+	}{
+		{"oneOnOne", "1:1"},
+		{"group", "group"},
+		{"meeting", "meeting"},
+	} {
+		if filter.ChatTypes[entry.chatType] {
+			parts = append(parts, entry.label)
+		}
+	}
+	if filter.FavouritesOnly {
+		parts = append(parts, "favorites")
+	}
+	if query := strings.TrimSpace(filter.Query); query != "" {
+		parts = append(parts, fmt.Sprintf("%q", query))
+	}
+	if len(parts) == 0 {
+		return "all"
+	}
+	return strings.Join(parts, " · ")
+}
+
+func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
+	unread := m.isUnread(chat)
+	switch filter.ReadState {
+	case ChatReadUnread:
+		if !unread {
+			return false
+		}
+	case ChatReadRead:
+		if unread {
+			return false
+		}
+	}
+
+	if filter.FavouritesOnly && !m.favourites[chat.ID] {
+		return false
+	}
+	if len(filter.ChatTypes) > 0 && !filter.ChatTypes[chat.ChatType] {
+		return false
+	}
+
+	query := strings.ToLower(strings.TrimSpace(filter.Query))
+	if query == "" {
+		return true
+	}
+	var searchable []string
+	if chat.CachedDisplayName != nil {
+		searchable = append(searchable, *chat.CachedDisplayName)
+	}
+	if chat.Topic != nil {
+		searchable = append(searchable, *chat.Topic)
+	}
+	for _, member := range chat.Members {
+		if member.DisplayName != nil {
+			searchable = append(searchable, *member.DisplayName)
+		}
+		if member.Email != nil {
+			searchable = append(searchable, *member.Email)
+		}
+	}
+	return strings.Contains(strings.ToLower(strings.Join(searchable, "\n")), query)
+}
+
+const (
+	chatFilterReadRow = iota
+	chatFilterOneOnOneRow
+	chatFilterGroupRow
+	chatFilterMeetingRow
+	chatFilterFavouriteRow
+	chatFilterTextRow
+	chatFilterRowCount
+)
+
+func (m Model) toggleDraftChatFilterRow(row int) Model {
+	filter := cloneChatListFilter(m.app.DraftChatFilter)
+	switch row {
+	case chatFilterReadRow:
+		switch filter.ReadState {
+		case ChatReadAll:
+			filter.ReadState = ChatReadUnread
+		case ChatReadUnread:
+			filter.ReadState = ChatReadRead
+		default:
+			filter.ReadState = ChatReadAll
+		}
+	case chatFilterOneOnOneRow:
+		toggleChatTypeFilter(&filter, "oneOnOne")
+	case chatFilterGroupRow:
+		toggleChatTypeFilter(&filter, "group")
+	case chatFilterMeetingRow:
+		toggleChatTypeFilter(&filter, "meeting")
+	case chatFilterFavouriteRow:
+		filter.FavouritesOnly = !filter.FavouritesOnly
+	}
+	m.app.DraftChatFilter = filter
+	return m
+}
+
+func toggleChatTypeFilter(filter *ChatListFilter, chatType string) {
+	if filter.ChatTypes == nil {
+		filter.ChatTypes = make(map[string]bool)
+	}
+	if filter.ChatTypes[chatType] {
+		delete(filter.ChatTypes, chatType)
+	} else {
+		filter.ChatTypes[chatType] = true
+	}
+}
+
+func (m Model) startChatFilterInput() (Model, tea.Cmd) {
+	m.app.ChatFilterSelectedIndex = chatFilterTextRow
+	m.app.ChatFilterInputMode = true
+	m.chatFilterInput.SetValue(m.app.DraftChatFilter.Query)
+	m.chatFilterInput.CursorEnd()
+	return m, m.chatFilterInput.Focus()
+}
+
+func (m Model) applyChatFilter() (Model, tea.Cmd) {
+	wasChannelMode := m.channelSelectedIndex >= 0
+	previousChatID := ""
+	if !wasChannelMode {
+		if chat := m.app.GetSelectedChat(); chat != nil {
+			previousChatID = chat.ID
+		}
+	}
+
+	m.app.ActiveChatFilter = cloneChatListFilter(m.app.DraftChatFilter)
+	m.app.ChatFilterPopupMode = false
+	m.app.ChatFilterInputMode = false
+	m.chatFilterInput.Blur()
+	m = m.rebuildChatList()
+	m.app.ChatScrollOffset = 0
+
+	summary := chatFilterSummary(m.app.ActiveChatFilter)
+	m.app.SetStatus(fmt.Sprintf("Chat filter: %s (%d shown)", summary, len(m.app.Chats)), 4*time.Second)
+	if wasChannelMode {
+		return m, nil
+	}
+	if len(m.app.Chats) == 0 {
+		m.app.SelectedIndex = -1
+		m.app.Messages = nil
+		m.app.NextLink = ""
+		m.app.SetLoadingMessages(false)
+		return m, nil
+	}
+
+	selected := m.app.GetSelectedChat()
+	if selected == nil {
+		m.app.SelectedIndex = 0
+		selected = m.app.GetSelectedChat()
+	}
+	if selected != nil && selected.ID != previousChatID {
+		m.app.SnapToBottom = true
+		return m.loadChatMessages(selected.ID, m.app.SelectedIndex)
+	}
+	return m, nil
+}
+
+func (m Model) handleChatFilterPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	if m.app.ChatFilterInputMode {
+		switch msg.String() {
+		case "esc":
+			m.chatFilterInput.SetValue(m.app.DraftChatFilter.Query)
+			m.chatFilterInput.Blur()
+			m.app.ChatFilterInputMode = false
+			return m, nil
+		case "enter":
+			filter := cloneChatListFilter(m.app.DraftChatFilter)
+			filter.Query = strings.TrimSpace(m.chatFilterInput.Value())
+			m.app.DraftChatFilter = filter
+			m.chatFilterInput.Blur()
+			m.app.ChatFilterInputMode = false
+			return m.applyChatFilter()
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "esc", "q":
+		m.app.ChatFilterPopupMode = false
+		m.app.DraftChatFilter = cloneChatListFilter(m.app.ActiveChatFilter)
+	case "j", "down", "tab":
+		m.app.ChatFilterSelectedIndex = (m.app.ChatFilterSelectedIndex + 1) % chatFilterRowCount
+	case "k", "up", "shift+tab":
+		m.app.ChatFilterSelectedIndex--
+		if m.app.ChatFilterSelectedIndex < 0 {
+			m.app.ChatFilterSelectedIndex = chatFilterRowCount - 1
+		}
+	case " ", "space":
+		if m.app.ChatFilterSelectedIndex == chatFilterTextRow {
+			return m.startChatFilterInput()
+		}
+		m = m.toggleDraftChatFilterRow(m.app.ChatFilterSelectedIndex)
+	case "/":
+		return m.startChatFilterInput()
+	case "u":
+		m.app.DraftChatFilter.ReadState = ChatReadUnread
+		m.app.ChatFilterSelectedIndex = chatFilterReadRow
+	case "r":
+		m.app.DraftChatFilter.ReadState = ChatReadRead
+		m.app.ChatFilterSelectedIndex = chatFilterReadRow
+	case "a":
+		m.app.DraftChatFilter.ReadState = ChatReadAll
+		m.app.ChatFilterSelectedIndex = chatFilterReadRow
+	case "1":
+		toggleChatTypeFilter(&m.app.DraftChatFilter, "oneOnOne")
+		m.app.ChatFilterSelectedIndex = chatFilterOneOnOneRow
+	case "g":
+		toggleChatTypeFilter(&m.app.DraftChatFilter, "group")
+		m.app.ChatFilterSelectedIndex = chatFilterGroupRow
+	case "m":
+		toggleChatTypeFilter(&m.app.DraftChatFilter, "meeting")
+		m.app.ChatFilterSelectedIndex = chatFilterMeetingRow
+	case "f":
+		m.app.DraftChatFilter.FavouritesOnly = !m.app.DraftChatFilter.FavouritesOnly
+		m.app.ChatFilterSelectedIndex = chatFilterFavouriteRow
+	case "x":
+		m.app.DraftChatFilter = newChatListFilter()
+		m.chatFilterInput.SetValue("")
+	case "enter":
+		return m.applyChatFilter()
+	}
+	return m, nil
+}
+
+func filterCheckbox(enabled bool) string {
+	if enabled {
+		return "[x]"
+	}
+	return "[ ]"
+}
+
+func (m Model) renderChatFilterPopup(w, h int) string {
+	if w < 52 {
+		w = 52
+	}
+	filter := m.app.DraftChatFilter
+	rows := []string{
+		fmt.Sprintf("Read state          %s", chatReadFilterLabel(filter.ReadState)),
+		fmt.Sprintf("%s 1:1 chats", filterCheckbox(filter.ChatTypes["oneOnOne"])),
+		fmt.Sprintf("%s Group chats", filterCheckbox(filter.ChatTypes["group"])),
+		fmt.Sprintf("%s Meeting chats", filterCheckbox(filter.ChatTypes["meeting"])),
+		fmt.Sprintf("%s Favorites only", filterCheckbox(filter.FavouritesOnly)),
+	}
+	query := strings.TrimSpace(filter.Query)
+	if query == "" {
+		query = "(none)"
+	}
+	if m.app.ChatFilterInputMode {
+		rows = append(rows, "Text contains       "+m.chatFilterInput.View())
+	} else {
+		rows = append(rows, "Text contains       "+query)
+	}
+
+	lines := []string{
+		lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("Filter chats"),
+		lipgloss.NewStyle().Foreground(colDimGray).Render("Criteria combine; no selected type means all types."),
+		"",
+	}
+	for index, row := range rows {
+		cursor := "  "
+		style := lipgloss.NewStyle()
+		if index == m.app.ChatFilterSelectedIndex {
+			cursor = "› "
+			style = style.Foreground(colCyan).Bold(true)
+		}
+		lines = append(lines, style.Render(cursor+row))
+	}
+	lines = append(lines,
+		"",
+		lipgloss.NewStyle().Foreground(colDimGray).Render("u/r/a read state · 1/g/m/f toggle · / edit text"),
+		lipgloss.NewStyle().Foreground(colDimGray).Render("Space toggle · Enter apply · x clear · Esc cancel"),
+	)
+
+	return lipgloss.NewStyle().
+		BorderStyle(lipgloss.RoundedBorder()).
+		BorderForeground(colGreen).
+		Padding(1, 2).
+		Width(w - 2).
+		MaxHeight(h).
+		Render(strings.Join(lines, "\n"))
+}
+
+func (m Model) renderChatList(w, h int) string {
+	totalChats := len(m.chatCache)
+	if totalChats < len(m.app.Chats) {
+		totalChats = len(m.app.Chats)
+	}
+	titleText := fmt.Sprintf("Chats %d · F filter · ? help", len(m.app.Chats))
+	if chatFilterIsActive(m.app.ActiveChatFilter) {
+		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, chatFilterSummary(m.app.ActiveChatFilter))
+	}
+	title := lipgloss.NewStyle().Foreground(colDimGray).MaxWidth(w).Render(titleText)
 
 	// Total lines available = h minus the title row.
 	budget := h - 1
@@ -3477,6 +3905,9 @@ func (m Model) renderChatList(w, h int) string {
 	}
 
 	lines := []string{title}
+	if len(m.app.Chats) == 0 {
+		lines = append(lines, lipgloss.NewStyle().Foreground(colDimGray).Render("  No chats match the current filter"))
+	}
 
 	start := m.app.ChatScrollOffset
 	if start < 0 {
@@ -3499,47 +3930,37 @@ func (m Model) renderChatList(w, h int) string {
 		reactionEmoji := m.getLatestUnreadReactionEmoji(c)
 		isFav := m.favourites[c.ID]
 
-		prefix := ""
+		selected := i == m.app.SelectedIndex && m.channelSelectedIndex < 0
+		selectionMarker := "  "
+		if selected {
+			selectionMarker = lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("› ")
+		}
+		favoriteMarker := "  "
 		if isFav {
-			prefix += "★ "
+			favoriteMarker = lipgloss.NewStyle().Foreground(colYellow).Render("★ ")
 		}
+		unreadMarker := "  "
 		if unread {
-			prefix += "● "
+			unreadMarker = lipgloss.NewStyle().Foreground(colUnread).Bold(true).Render("● ")
 		}
+		typeTag := lipgloss.NewStyle().
+			Foreground(chatTypeColor(c.ChatType)).
+			Bold(unread).
+			Faint(!unread).
+			Render(chatTypeIcon)
+		nameStyle := lipgloss.NewStyle().Foreground(colDimGray)
+		if unread || reactionEmoji != "" {
+			nameStyle = lipgloss.NewStyle().Foreground(colWhite).Bold(true)
+		}
+		base := selectionMarker + favoriteMarker + unreadMarker + typeTag + " " + nameStyle.Render(displayName)
 		if reactionEmoji != "" {
-			prefix += reactionEmoji + " "
+			base += " " + reactionEmoji
 		}
-
-		labelStr := prefix + chatTypeIcon + " " + displayName
-
-		var label string
-		if i == m.app.SelectedIndex && m.channelSelectedIndex < 0 {
-			label = lipgloss.NewStyle().
-				Foreground(colYellow).
-				Bold(unread || reactionEmoji != "").
-				Background(colDarkGray).
-				Width(w).
-				MaxWidth(w).
-				Render(labelStr)
-		} else {
-			typeTag := lipgloss.NewStyle().Foreground(colCyan).Render(chatTypeIcon)
-			base := typeTag + " " + displayName
-			if isFav {
-				star := lipgloss.NewStyle().Foreground(colYellow).Render("★ ")
-				base = star + base
-			}
-			if unread || reactionEmoji != "" {
-				pfx := ""
-				if unread {
-					pfx += "● "
-				}
-				if reactionEmoji != "" {
-					pfx += reactionEmoji + " "
-				}
-				base = lipgloss.NewStyle().Bold(true).Render(pfx) + base
-			}
-			label = lipgloss.NewStyle().MaxWidth(w).Render(base)
+		rowStyle := lipgloss.NewStyle().MaxWidth(w)
+		if selected {
+			rowStyle = rowStyle.Background(colDarkGray).Width(w)
 		}
+		label := rowStyle.Render(base)
 		lines = append(lines, label)
 	}
 
@@ -3605,41 +4026,30 @@ func (m Model) renderChatList(w, h int) string {
 				isHidden := !m.unhiddenChannels[entry.channelID]
 				unread := m.lastMsgID[entry.channelID] != "" && m.lastReadMsgID[entry.channelID] != m.lastMsgID[entry.channelID]
 
-				prefix := ""
+				selected := ci == m.channelSelectedIndex
+				selectionMarker := "  "
+				if selected {
+					selectionMarker = lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("› ")
+				}
+				unreadMarker := "  "
 				if unread {
-					prefix = "● "
+					unreadMarker = lipgloss.NewStyle().Foreground(colUnread).Bold(true).Render("● ")
 				}
-
-				var label string
-				if ci == m.channelSelectedIndex {
-					label = lipgloss.NewStyle().
-						Foreground(colYellow).
-						Background(colDarkGray).
-						Bold(unread).
-						Width(w).
-						MaxWidth(w).
-						Render(prefix + "# " + entry.teamName + " » " + entry.channelName)
-				} else {
-					var textStyle lipgloss.Style
-					if isHidden {
-						textStyle = lipgloss.NewStyle().Foreground(colDimGray)
-					} else {
-						textStyle = lipgloss.NewStyle()
-					}
-					if unread {
-						textStyle = textStyle.Bold(true)
-					}
-
-					var icon string
-					if isHidden {
-						icon = lipgloss.NewStyle().Foreground(colDimGray).Render("#")
-					} else {
-						icon = lipgloss.NewStyle().Foreground(lipgloss.Color("#5F87FF")).Render("#")
-					}
-
-					labelStr := prefix + icon + " " + entry.teamName + " » " + entry.channelName
-					label = textStyle.MaxWidth(w).Render(labelStr)
+				iconStyle := lipgloss.NewStyle().Foreground(chatTypeColor("channel"))
+				nameStyle := lipgloss.NewStyle().Foreground(colDimGray)
+				if isHidden {
+					iconStyle = lipgloss.NewStyle().Foreground(colDimGray).Faint(true)
+				} else if unread {
+					iconStyle = iconStyle.Bold(true)
+					nameStyle = lipgloss.NewStyle().Foreground(colWhite).Bold(true)
 				}
+				labelStr := selectionMarker + unreadMarker + iconStyle.Render("#") + " " +
+					nameStyle.Render(entry.teamName+" » "+entry.channelName)
+				rowStyle := lipgloss.NewStyle().MaxWidth(w)
+				if selected {
+					rowStyle = rowStyle.Background(colDarkGray).Width(w)
+				}
+				label := rowStyle.Render(labelStr)
 				lines = append(lines, label)
 			}
 		}
@@ -4312,14 +4722,22 @@ func (m Model) mergeChats(fresh []Chat) Model {
 }
 
 func (m Model) rebuildChatList() Model {
-	byID := make(map[string]Chat)
-	// Retain previously loaded chats so they don't disappear from the UI
-	for _, c := range m.app.Chats {
-		byID[c.ID] = c
+	selectedID := ""
+	if chat := m.app.GetSelectedChat(); chat != nil {
+		selectedID = chat.ID
 	}
-	// Overwrite/add with fresh chat list data from the API
+	previousIndex := m.app.SelectedIndex
+
+	if m.chatCache == nil {
+		m.chatCache = make(map[string]Chat)
+	}
+	// Retain previously loaded chats independently of the visible filter.
+	for _, c := range m.app.Chats {
+		m.chatCache[c.ID] = c
+	}
+	// Overwrite/add with fresh chat list data from the API.
 	for _, c := range m.latestChats {
-		byID[c.ID] = c
+		m.chatCache[c.ID] = c
 	}
 
 	// Split into favourites and non-favourites.
@@ -4328,7 +4746,7 @@ func (m Model) rebuildChatList() Model {
 
 	// Non-favourite chats follow the stable order.
 	for _, id := range m.stableChatOrder {
-		if c, ok := byID[id]; ok {
+		if c, ok := m.chatCache[id]; ok {
 			if m.favourites[id] {
 				favChats = append(favChats, c)
 			} else {
@@ -4345,7 +4763,7 @@ func (m Model) rebuildChatList() Model {
 	}
 	for id := range m.favourites {
 		if !knownInOrder[id] {
-			if c, ok := byID[id]; ok {
+			if c, ok := m.chatCache[id]; ok {
 				favChats = append(favChats, c)
 			}
 			// If the chat data isn't loaded yet, it simply won't appear until
@@ -4366,7 +4784,33 @@ func (m Model) rebuildChatList() Model {
 		return strings.ToLower(namei) < strings.ToLower(namej)
 	})
 
-	m.app.Chats = append(favChats, normalChats...)
+	orderedChats := append(favChats, normalChats...)
+	visibleChats := make([]Chat, 0, len(orderedChats))
+	for _, chat := range orderedChats {
+		if m.chatMatchesFilter(chat, m.app.ActiveChatFilter) {
+			visibleChats = append(visibleChats, chat)
+		}
+	}
+	m.app.Chats = visibleChats
+
+	if len(visibleChats) == 0 {
+		m.app.SelectedIndex = -1
+		m.app.ChatScrollOffset = 0
+		return m
+	}
+	for index, chat := range visibleChats {
+		if chat.ID == selectedID {
+			m.app.SelectedIndex = index
+			return m
+		}
+	}
+	if previousIndex < 0 {
+		previousIndex = 0
+	}
+	if previousIndex >= len(visibleChats) {
+		previousIndex = len(visibleChats) - 1
+	}
+	m.app.SelectedIndex = previousIndex
 	return m
 }
 
@@ -6152,7 +6596,9 @@ func (m Model) getHelpContentLines() []string {
 			{"i", "Compose new message"},
 			{"c", "Open chat search / open chat"},
 			{"/", "Search message history"},
+			{"F", "Filter chat list by state, type, favorite, or text"},
 			{"f", "Toggle favourite (chats only)"},
+			{"o", "Open selected chat in Microsoft Teams"},
 			{"r", "Mark selected chat read"},
 			{"u", "Mark selected chat unread"},
 			{"E", "Export complete chat history as Markdown"},
@@ -6198,6 +6644,16 @@ func (m Model) getHelpContentLines() []string {
 			{"Enter", "Open selected chat / direct open by email"},
 			{"j / k", "Navigate results"},
 			{"ESC", "Close popup"},
+		}},
+		{"Chat Filter (F)", [][2]string{
+			{"j / k", "Navigate filter characteristics"},
+			{"Space", "Cycle/toggle selected characteristic"},
+			{"u / r / a", "Unread only / read only / all states"},
+			{"1 / g / m / f", "Toggle 1:1 / group / meeting / favorites"},
+			{"/", "Edit name, topic, member, or email text"},
+			{"x", "Clear all filter characteristics"},
+			{"Enter", "Apply filter"},
+			{"ESC", "Cancel without changing active filter"},
 		}},
 		{"Composing Messages", [][2]string{
 			{"Type", "Write message (Alt+Enter for newline)"},

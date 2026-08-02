@@ -22,10 +22,12 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 😊 Emoticon Auto-replacement — popular text emoticons (like `:)`, `:D`, `<3`) are automatically converted to Unicode emojis
 - 🔍 Search History — search messages in any chat, recursively loading and indexing all conversation history in the background
 - 🔍 Chat Search & Open — filter locally loaded chats or open/start a 1:1 chat directly by entering a UPN/email (bypassing directory search)
+- 🧭 Chat List Filters — press `F` to combine unread/read state, chat type, favorites, and name/member text without making another Graph request
 - ⭐ Favourites — pin any chat to the top of the sidebar with `f`; favourites are sorted alphabetically and stay anchored regardless of activity
+- ↗️ Open in Teams — press `o` in normal mode to open the selected chat using Graph's native Teams URL and your configured browser/app command
 - ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
 
-- 🔵 Unread Indicators — chats with new messages are marked with a dot (●) and bold text
+- 🔵 Read-State Styling — unread chats use a cyan dot with bright bold text; read chats are deliberately muted
 - 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread; merely moving over a chat does not mark it read by default
 - 📥 Full Markdown Export — press `E` to fetch every page of the selected chat and save a chronological Markdown transcript
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
@@ -252,7 +254,7 @@ You can configure the style of chat type indicators in the sidebar using `~/.con
 }
 ```
 - `chat_icon_theme`: Choose between presets (default: `"unicode"`):
-  - `"unicode"`: Minimal single-width geometric icons (`◉` 1:1, `⊞` group, `⊛` meeting, `☰` channel).
+  - `"unicode"`: Clear single-width symbols (`@` 1:1, `&` group, `◷` meeting, `#` channel).
   - `"emoji"`: Colorful emojis (`👤` 1:1, `👥` group, `📅` meeting, `#️⃣` channel).
   - `"text"`: The original bracketed text headers (`[oneOnOne]`, `[group]`, `[meeting]`, `[channel]`).
 
@@ -412,7 +414,9 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `/`          | Open search input (in Normal Mode)                        |
 | `Esc`        | Clear active search, or enter sleep/idle mode (Normal Mode) |
 | `c`          | Open chat search / chat creation popup                    |
+| `F`          | Filter chats by read state, type, favorite, and text      |
 | `f`          | Toggle ★ favourite on selected chat (chats only)          |
+| `o`          | Open selected chat in Microsoft Teams (Normal Mode)       |
 | `r`          | Mark selected chat read (Normal Mode)                     |
 | `u`          | Mark selected chat unread (Normal Mode)                   |
 | `E`          | Export complete selected chat as Markdown (Normal Mode)   |
@@ -443,6 +447,22 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `i`          | Show profile info of sender (`user_profile_enabled`)      |
 | `1-6`        | Send reaction (in Reaction Mode)                          |
 | `q`          | Quit                                                      |
+
+### Chat List Filter
+
+Press `F` from normal mode. Filters are local and combine with AND semantics, so
+an unread + group + favorites filter shows only chats matching all three.
+
+| Filter key       | Action                                             |
+| ---------------- | -------------------------------------------------- |
+| `u` / `r` / `a`  | Unread only / read only / all read states          |
+| `1` / `g` / `m`  | Toggle 1:1 / group / meeting chat types            |
+| `f`              | Toggle favorites-only                              |
+| `/`              | Edit name, topic, member, or email text            |
+| `Space`          | Toggle or cycle the selected filter row            |
+| `x`              | Clear the draft filter                             |
+| `Enter`          | Apply                                               |
+| `Esc`            | Cancel and retain the currently active filter      |
 
 ---
 
