@@ -144,6 +144,7 @@ type App struct {
 	MarkReadOnOpen             bool
 	ExportDirectory            string
 	ThreadCaptureFile          string
+	ShowChatDates              bool
 	VisualBellUntil            *time.Time
 	StatusUntil                *time.Time
 	SearchStatusUntil          *time.Time

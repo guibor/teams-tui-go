@@ -19,6 +19,24 @@ func TestSelectConfigBaseDir(t *testing.T) {
 	}
 }
 
+func TestResolveShowChatDates(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	InitConfig()
+	if ResolveShowChatDates() {
+		t.Fatal("chat dates should default to hidden")
+	}
+
+	cfg := LoadConfig()
+	show := true
+	cfg.ShowChatDates = &show
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	if !ResolveShowChatDates() {
+		t.Fatal("show_chat_dates=true did not resolve")
+	}
+}
+
 func TestInitConfig(t *testing.T) {
 	// Set XDG_CONFIG_HOME to a temporary directory to avoid writing to the user's actual config.
 	tmpDir, err := os.MkdirTemp("", "teams-tui-config-test")

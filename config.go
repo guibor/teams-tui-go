@@ -165,6 +165,7 @@ type Config struct {
 	ExportDirectory         *string           `json:"export_directory,omitempty"`
 	ThreadCaptureFile       *string           `json:"thread_capture_file,omitempty"`
 	ChatIconTheme           *string           `json:"chat_icon_theme,omitempty"`
+	ShowChatDates           *bool             `json:"show_chat_dates,omitempty"`
 	CustomChatIcons         map[string]string `json:"custom_chat_icons,omitempty"`
 
 	// Optional feature flags — each defaults to false (disabled).
@@ -336,6 +337,11 @@ func InitConfig() {
 	if cfg.ChatIconTheme == nil {
 		theme := "unicode"
 		cfg.ChatIconTheme = &theme
+		modified = true
+	}
+	if cfg.ShowChatDates == nil {
+		show := false
+		cfg.ShowChatDates = &show
 		modified = true
 	}
 	// Feature flags default to false (disabled) — written so users can see them in config.json.
@@ -512,6 +518,12 @@ func ResolveThreadCaptureFile() string {
 		return *cfg.ThreadCaptureFile
 	}
 	return "~/Documents/teams-threads.md"
+}
+
+// ResolveShowChatDates returns whether chat rows include the last-message date.
+func ResolveShowChatDates() bool {
+	cfg := LoadConfig()
+	return cfg != nil && cfg.ShowChatDates != nil && *cfg.ShowChatDates
 }
 
 // ResolveChannelMsgRefreshMin returns the channel messages refresh interval in minutes.

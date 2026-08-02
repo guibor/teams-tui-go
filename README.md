@@ -177,6 +177,9 @@ Navigation is non-destructive by default. Select a chat and press `r` to mark
 it read or `u` to mark it unread. To restore the original mark-on-open behavior,
 set `mark_read_on_open` to `true`.
 
+Press `D` to toggle a fixed-width local last-message date immediately before
+each chat title. The choice persists as `show_chat_dates` in `config.json`.
+
 Press `E` to fetch the complete selected chat, follow every Graph pagination
 link, and write a chronological Markdown transcript. Exports default to
 `~/Downloads`; change `export_directory` to use another location. Press `a`
@@ -186,6 +189,7 @@ deduplicated thread list. That file defaults to `~/Documents/teams-threads.md`.
   ```json
   {
 	"mark_read_on_open": false,
+	"show_chat_dates": false,
 	"export_directory": "~/Downloads",
 	"thread_capture_file": "~/Documents/teams-threads.md"
   }
@@ -440,7 +444,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `PgDn` / `J` | Scroll messages down                                      |
 | `/`          | Open search input (in Normal Mode)                        |
 | `Esc`        | Clear active search, or leave conversation for dashboard   |
-| `c`          | Open chat search / chat creation popup                    |
+| `s`          | Open chat search / chat creation popup                    |
 | `F`          | Filter chats by read state, type, favorite, and text      |
 | `U`          | Replace any active chat view/filter with unread-only chats |
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |

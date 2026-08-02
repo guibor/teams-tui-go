@@ -315,6 +315,118 @@ func TestReadStateChangeImmediatelyReappliesUnreadFilter(t *testing.T) {
 	}
 }
 
+func TestReadStateChangeForBackgroundChatDoesNotResetSelectedTranscript(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	model := NewModel(app, "client", "user")
+	first := Chat{ID: "first", LastMessagePreview: filterTestMessage("message-1", "Someone else")}
+	second := Chat{ID: "second", LastMessagePreview: filterTestMessage("message-2", "Someone else")}
+	model.latestChats = []Chat{first, second}
+	model.stableChatOrder = []string{first.ID, second.ID}
+	model.lastMsgID[first.ID] = "message-1"
+	model.lastMsgID[second.ID] = "message-2"
+	app.ActiveChatFilter.ReadState = ChatReadUnread
+	model = model.rebuildChatList()
+	app.SelectedIndex = 1
+	app.Messages = []Message{{ID: "selected-transcript"}}
+
+	model, cmd := model.updateInternal(MsgChatReadStateChanged{ChatID: first.ID})
+	if cmd != nil {
+		t.Fatal("background read-state update unexpectedly reloaded the selected chat")
+	}
+	if selected := app.GetSelectedChat(); selected == nil || selected.ID != second.ID {
+		t.Fatalf("background update changed selection: %#v", selected)
+	}
+	if len(app.Messages) != 1 || app.Messages[0].ID != "selected-transcript" {
+		t.Fatalf("background update reset the selected transcript: %#v", app.Messages)
+	}
+	if len(app.Chats) != 1 || app.Chats[0].ID != second.ID {
+		t.Fatalf("read chat remained in unread filter: %#v", app.Chats)
+	}
+}
+
+func TestReadStateChangeLoadsReplacementTranscriptByChatID(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	model := NewModel(app, "client", "user")
+	first := Chat{ID: "first", LastMessagePreview: filterTestMessage("message-1", "Someone else")}
+	second := Chat{ID: "second", LastMessagePreview: filterTestMessage("message-2", "Someone else")}
+	model.latestChats = []Chat{first, second}
+	model.stableChatOrder = []string{first.ID, second.ID}
+	model.lastMsgID[first.ID] = "message-1"
+	model.lastMsgID[second.ID] = "message-2"
+	app.ActiveChatFilter.ReadState = ChatReadUnread
+	model = model.rebuildChatList()
+	app.SelectedIndex = 0
+	app.Messages = []Message{{ID: "first-transcript"}}
+	app.ChatMessagesLoadedOnce[second.ID] = true
+	app.CachedMessages[second.ID] = []Message{{ID: "second-transcript"}}
+
+	model, cmd := model.updateInternal(MsgChatReadStateChanged{ChatID: first.ID})
+	if cmd != nil {
+		t.Fatal("cached replacement transcript unexpectedly requested a network load")
+	}
+	if selected := app.GetSelectedChat(); selected == nil || selected.ID != second.ID {
+		t.Fatalf("wrong replacement selected: %#v", selected)
+	}
+	if len(app.Messages) != 1 || app.Messages[0].ID != "second-transcript" {
+		t.Fatalf("replacement transcript does not match selected chat: %#v", app.Messages)
+	}
+}
+
+func TestNormalModeSOpensChatSearchAndCDoesNot(t *testing.T) {
+	app := NewApp()
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.handleNormalModeKey(filterTestKey('s'))
+	if !app.UserSearchPopupMode || !app.UserSearchMode {
+		t.Fatal("s did not open chat search")
+	}
+
+	app.UserSearchPopupMode = false
+	app.UserSearchMode = false
+	model, _ = model.handleNormalModeKey(filterTestKey('c'))
+	if app.UserSearchPopupMode || app.UserSearchMode {
+		t.Fatal("c still opened chat search")
+	}
+}
+
+func TestNormalModeDTogglesAndPersistsChatDates(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	InitConfig()
+	app := NewApp()
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.handleNormalModeKey(filterTestKey('D'))
+	if !app.ShowChatDates {
+		t.Fatal("D did not enable chat dates")
+	}
+	cfg := LoadConfig()
+	if cfg == nil || cfg.ShowChatDates == nil || !*cfg.ShowChatDates {
+		t.Fatalf("D did not persist show_chat_dates: %#v", cfg)
+	}
+
+	model, _ = model.handleNormalModeKey(filterTestKey('D'))
+	if app.ShowChatDates {
+		t.Fatal("second D did not hide chat dates")
+	}
+}
+
+func TestChatLastMessageDateUsesLocalDateAndYear(t *testing.T) {
+	location := time.FixedZone("IDT", 3*60*60)
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, location)
+	chat := Chat{LastMessagePreview: &Message{CreatedDateTime: "2026-08-02T22:30:00Z"}}
+	if got := chatLastMessageDate(chat, now); got != "Aug 03" {
+		t.Fatalf("local chat date = %q, want Aug 03", got)
+	}
+	chat.LastMessagePreview.CreatedDateTime = "2025-12-31T20:00:00Z"
+	if got := chatLastMessageDate(chat, now); got != "2025-12-31" {
+		t.Fatalf("prior-year chat date = %q, want 2025-12-31", got)
+	}
+}
+
 func TestChatBookmarkPrefixAppliesUnreadAndInboxPresets(t *testing.T) {
 	app := NewApp()
 	currentUser := "Me"

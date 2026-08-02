@@ -1209,6 +1209,10 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SetStatus("Could not mark chat "+action+": "+msg.Err.Error(), 6*time.Second)
 			break
 		}
+		selectedBeforeID := ""
+		if selected := m.app.GetSelectedChat(); selected != nil {
+			selectedBeforeID = selected.ID
+		}
 		if msg.Unread {
 			m.lastReadMsgID[msg.ChatID] = ""
 			m.manuallyUnread[msg.ChatID] = true
@@ -1222,13 +1226,12 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SetStatus("Marked chat read", 3*time.Second)
 		}
 		if m.app.ActiveChatFilter.ReadState == ChatReadUnread || m.app.ActiveChatFilter.ReadState == ChatReadRead {
-			previousChatID := msg.ChatID
 			m = m.rebuildChatList()
 			if len(m.app.Chats) == 0 {
 				m.app.Messages = nil
 				m.app.NextLink = ""
 				m.app.SetLoadingMessages(false)
-			} else if selected := m.app.GetSelectedChat(); selected != nil && selected.ID != previousChatID {
+			} else if selected := m.app.GetSelectedChat(); selected != nil && selected.ID != selectedBeforeID {
 				m.app.SnapToBottom = true
 				var loadCmd tea.Cmd
 				m, loadCmd = m.loadChatMessages(selected.ID)
@@ -1868,6 +1871,21 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		cfg.NotificationMode = &nm
 		_ = SaveConfig(cfg)
 
+	case "D":
+		m.app.ShowChatDates = !m.app.ShowChatDates
+		cfg := LoadConfig()
+		if cfg == nil {
+			cfg = &Config{}
+		}
+		cfg.ShowChatDates = &m.app.ShowChatDates
+		if err := SaveConfig(cfg); err != nil {
+			m.app.SetStatus("Could not save chat-date setting: "+err.Error(), 5*time.Second)
+		} else if m.app.ShowChatDates {
+			m.app.SetStatus("Chat dates shown", 3*time.Second)
+		} else {
+			m.app.SetStatus("Chat dates hidden", 3*time.Second)
+		}
+
 	case "?":
 		m.app.HelpPopupMode = true
 		m.app.HelpScrollOffset = 0
@@ -1881,7 +1899,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.textarea.Reset()
 		return m, m.textarea.Focus()
 
-	case "c":
+	case "s":
 		m.app.UserSearchPopupMode = true
 		m.app.UserSearchMode = true
 		m.app.UserSearchQuery = ""
@@ -3904,7 +3922,7 @@ func (m Model) renderChatList(w, h int) string {
 	if totalChats < len(m.app.Chats) {
 		totalChats = len(m.app.Chats)
 	}
-	titleText := fmt.Sprintf("Chats %d · F filter · ? help", len(m.app.Chats))
+	titleText := fmt.Sprintf("Chats %d · D dates · F filter · ? help", len(m.app.Chats))
 	if chatFilterIsActive(m.app.ActiveChatFilter) {
 		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, chatFilterSummary(m.app.ActiveChatFilter))
 	}
@@ -3984,6 +4002,7 @@ func (m Model) renderChatList(w, h int) string {
 		end = len(m.app.Chats)
 	}
 
+	renderedAt := time.Now()
 	for i := start; i < end; i++ {
 		c := m.app.Chats[i]
 		chatTypeIcon := m.chatTypeToIcon(c.ChatType)
@@ -4019,7 +4038,11 @@ func (m Model) renderChatList(w, h int) string {
 		if unread || reactionEmoji != "" {
 			nameStyle = lipgloss.NewStyle().Foreground(colWhite).Bold(true)
 		}
-		base := selectionMarker + favoriteMarker + unreadMarker + typeTag + " " + nameStyle.Render(displayName)
+		dateColumn := ""
+		if m.app.ShowChatDates {
+			dateColumn = lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf("%10s ", chatLastMessageDate(c, renderedAt)))
+		}
+		base := selectionMarker + favoriteMarker + unreadMarker + typeTag + " " + dateColumn + nameStyle.Render(displayName)
 		if reactionEmoji != "" {
 			base += " " + reactionEmoji
 		}
@@ -4124,6 +4147,21 @@ func (m Model) renderChatList(w, h int) string {
 	}
 
 	return strings.Join(lines, "\n")
+}
+
+func chatLastMessageDate(chat Chat, now time.Time) string {
+	if chat.LastMessagePreview == nil {
+		return ""
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, chat.LastMessagePreview.CreatedDateTime)
+	if err != nil {
+		return ""
+	}
+	local := timestamp.In(now.Location())
+	if local.Year() == now.Year() {
+		return local.Format("Jan 02")
+	}
+	return local.Format("2006-01-02")
 }
 
 // ---------------------------------------------------------------------------
@@ -6714,7 +6752,7 @@ func (m Model) getHelpContentLines() []string {
 			{"Tab", "Switch between Chats & Channels"},
 			{"m", "Enter message selection mode"},
 			{"i", "Compose new message"},
-			{"c", "Open chat search / open chat"},
+			{"s", "Open chat search / open chat"},
 			{"/", "Search message history"},
 			{"F", "Filter chat list by state, type, favorite, or text"},
 			{"U", "Replace the current view with unread-only chats"},
@@ -6728,6 +6766,7 @@ func (m Model) getHelpContentLines() []string {
 			{"h", "Toggle hide/unhide channel (channels only)"},
 			{"p", "Presence status of chat participants (chats only, feature: presence_enabled)"},
 			{"n", "Cycle notification mode"},
+			{"D", "Toggle last-message dates in chat rows"},
 			{"ESC", "Leave the current conversation for the dashboard"},
 			{"?", "Show this help"},
 			{"q", "Leave conversation; press again on dashboard to quit"},
@@ -6763,7 +6802,7 @@ func (m Model) getHelpContentLines() []string {
 			{"g", "Go to message in normal view"},
 			{"ESC", "Close search popup"},
 		}},
-		{"Chat Search (c)", [][2]string{
+		{"Chat Search (s)", [][2]string{
 			{"Type", "Filter local chats"},
 			{"Enter", "Open selected chat / direct open by email"},
 			{"j / k", "Navigate results"},

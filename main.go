@@ -832,6 +832,7 @@ func main() {
 	app.MarkReadOnOpen = ResolveMarkReadOnOpen()
 	app.ExportDirectory = ResolveExportDirectory()
 	app.ThreadCaptureFile = ResolveThreadCaptureFile()
+	app.ShowChatDates = ResolveShowChatDates()
 	if configPath, err := GetConfigPath(); err == nil {
 		app.ConfigPath = configPath
 	}
