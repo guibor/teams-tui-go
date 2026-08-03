@@ -254,6 +254,9 @@ type Model struct {
 	// Stable ordering of chat IDs.
 	stableChatOrder []string
 
+	// pendingChatGoto records the first g in the normal-mode gg sequence.
+	pendingChatGoto bool
+
 	// Index in stableChatOrder to start the next reaction poll from.
 	nextReactionPollIndex int
 
@@ -1781,7 +1784,12 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	switch msg.String() {
+	key := msg.String()
+	if key != "g" {
+		m.pendingChatGoto = false
+	}
+
+	switch key {
 	case "ctrl+c":
 		return m, tea.Quit
 
@@ -1811,13 +1819,32 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.SelectedIndex = len(m.app.Chats) - 1
 		}
 
-	case "<", "g":
+	case "g":
+		if m.channelSelectedIndex >= 0 {
+			m.pendingChatGoto = false
+			break
+		}
+		if !m.pendingChatGoto {
+			m.pendingChatGoto = true
+			return m, nil
+		}
+		m.pendingChatGoto = false
+		if len(m.app.Chats) > 0 {
+			m.app.SelectedIndex = 0
+		}
+
+	case "G":
+		if m.channelSelectedIndex < 0 && len(m.app.Chats) > 0 {
+			m.app.SelectedIndex = len(m.app.Chats) - 1
+		}
+
+	case "<", "H":
 		if m.hasActiveConversation() {
 			m.app.ScrollOffset = 0
 			m.app.SnapToBottom = false
 		}
 
-	case ">", "G":
+	case ">", "L":
 		if m.hasActiveConversation() {
 			m.app.ScrollOffset = m.app.MaxScroll
 			m.app.SnapToBottom = true
@@ -2158,10 +2185,13 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 
 	case "h":
-		// Toggle hide/unhide on the selected channel — no-op in chat mode.
 		if m.channelSelectedIndex < 0 {
+			if len(m.app.Chats) > 0 {
+				m.app.SelectedIndex = 0
+			}
 			break
 		}
+		// In channel mode, retain the existing hide/unhide action.
 		chans := m.allChannels()
 		if m.channelSelectedIndex < len(chans) {
 			entry := chans[m.channelSelectedIndex]
@@ -2190,6 +2220,11 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 					break
 				}
 			}
+		}
+
+	case "l":
+		if m.channelSelectedIndex < 0 && len(m.app.Chats) > 0 {
+			m.app.SelectedIndex = len(m.app.Chats) - 1
 		}
 	}
 
@@ -2567,7 +2602,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, clearTerminalImagesCmd()
 		}
 
-	case ">", "G":
+	case ">", "L":
 		if !m.app.AttachmentCursorMode && len(m.app.Messages) > 0 {
 			m.app.MessageSelectedIndex = 0
 			m.app.MessagePopupScrollOffset = 0
@@ -2575,7 +2610,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, clearTerminalImagesCmd()
 		}
 
-	case "<", "g":
+	case "<", "H":
 		if !m.app.AttachmentCursorMode && len(m.app.Messages) > 0 {
 			m.app.MessageSelectedIndex = len(m.app.Messages) - 1
 			m.app.MessagePopupScrollOffset = 0
@@ -2637,12 +2672,12 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, loadMoreMessagesCmd(m.clientID, m.app.NextLink, m.activeConversationID(), false)
 		}
 
-	case ">", "G":
+	case ">", "L":
 		if len(m.app.Messages) > 0 {
 			m.app.MessageSelectedIndex = 0
 		}
 
-	case "<", "g":
+	case "<", "H":
 		if len(m.app.Messages) > 0 {
 			m.app.MessageSelectedIndex = len(m.app.Messages) - 1
 		}
@@ -6813,7 +6848,9 @@ func (m Model) getHelpContentLines() []string {
 			{"j / ↓ / M-n", "Navigate list down (within section)"},
 			{"k / ↑ / M-p", "Navigate list up (within section)"},
 			{"M-< / M->", "Jump to first / last item in the active section"},
-			{"< / >, g / G", "Jump to top / bottom of loaded messages"},
+			{"gg / G", "Jump to first / last chat"},
+			{"h / l", "Jump to first / last chat (h hides channels in channel mode)"},
+			{"< / >, H / L", "Jump to top / bottom of loaded messages"},
 			{"Tab", "Switch between Chats & Channels"},
 			{"m", "Enter message selection mode"},
 			{"i", "Compose new message"},
@@ -6839,7 +6876,7 @@ func (m Model) getHelpContentLines() []string {
 		}},
 		{"Message Selection (m)", [][2]string{
 			{"j / k", "Navigate messages"},
-			{"< / >, g / G", "Select oldest / newest loaded message"},
+			{"< / >, H / L", "Select oldest / newest loaded message"},
 			{"v", "View message popup"},
 			{"y", "Yank message to clipboard"},
 			{"u", "Extract URLs"},
@@ -6854,7 +6891,7 @@ func (m Model) getHelpContentLines() []string {
 		}},
 		{"Message View Popup (v)", [][2]string{
 			{"j / k", "Navigate to next/prev message"},
-			{"< / >, g / G", "Select oldest / newest loaded message"},
+			{"< / >, H / L", "Select oldest / newest loaded message"},
 			{"J / K", "Scroll message body"},
 			{"Tab", "Switch to attachment cursor mode"},
 			{"Enter", "Download selected attachment (feature: file_preview_enabled)"},

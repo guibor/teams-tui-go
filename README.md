@@ -180,8 +180,9 @@ set `mark_read_on_open` to `true`.
 
 `M-n` and `M-p` select the next and previous chat in the visible list. They use
 the same filtered-list navigation as `j` and `k`; `M-<` and `M->` jump to the
-first and last visible item. Plain `<` and `>` jump to the top and bottom of
-the loaded message pane; `g` and `G` provide the equivalent Vim-style pair.
+first and last visible item in the active chat or channel section. In the chat
+list, `gg` or `h` selects the first visible chat and `G` or `l` selects the last.
+Plain `<`/`>` and `H`/`L` jump to the top/bottom of the loaded message pane.
 
 Teams-generated system messages use Microsoft Graph's `eventDetail` metadata.
 The normal thread view, history search, notifications, message popup, and
@@ -460,8 +461,10 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `↓` / `j`    | Move down in list (within active section)                 |
 | `M-p` / `M-n`| Move to previous / next item in the active section        |
 | `M-<` / `M->`| Jump to first / last item in the active section            |
+| `gg` / `G`   | Jump to first / last visible chat                          |
+| `h` / `l`    | Jump to first / last visible chat                          |
 | `<` / `>`    | Jump to top / bottom of the loaded messages pane           |
-| `g` / `G`    | Vim-style jump to top / bottom of loaded messages          |
+| `H` / `L`    | Jump to top / bottom of the loaded messages pane           |
 | `Tab`        | Switch between Chats & Channels sections (in Normal Mode) |
 | `PgUp` / `K` | Scroll messages up                                        |
 | `PgDn` / `J` | Scroll messages down                                      |
@@ -478,7 +481,7 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `r`          | Mark selected chat read (Normal Mode)                     |
 | `u`          | Mark selected chat unread (Normal Mode)                   |
 | `E`          | Export complete selected chat as Markdown (Normal Mode)   |
-| `h`          | Toggle hide/unhide on selected channel (channels only)    |
+| `h`          | Toggle hide/unhide on selected channel (channel mode)     |
 | `i`          | Enter compose mode                                        |
 | `Ctrl+V`     | Paste image from clipboard (in Compose Mode)              |
 | `Ctrl+f`     | Browse and attach file from computer (in Compose Mode)    |
@@ -490,7 +493,7 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `n`          | Toggle notification mode                                  |
 | `?`          | Show help popup (keyboard reference + feature status)     |
 | `m`          | Enter/Exit **Message Mode** (to select/react/delete/copy) |
-| `<` / `>` or `g` / `G` | Select oldest / newest loaded message       |
+| `<` / `>` or `H` / `L` | Select oldest / newest loaded message       |
 | `v`          | View details/reactions of selected message (Message Mode) |
 | `Ctrl+g`     | View selected message in external editor (in Message Mode / Message View Popup) |
 | `Tab`        | Switch to attachment cursor in `v` popup (in Message View Popup) |

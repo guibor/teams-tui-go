@@ -59,8 +59,8 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - Layout: 30% chat list (left) | 70% messages (right) | status bar (3 lines, bottom)
 - Uses `CachedDisplayName` from `Chat` struct — **do not compute display names here**
 - **Bidirectional rendering**: `bidi.go` converts ANSI-styled logical text to visual terminal-cell order after wrapping. It uses UAX #9 levels, preserves grapheme clusters, SGR styles, and OSC 8 links, and returns the paragraph direction so Hebrew-first lines can be right-aligned. Keep API, clipboard, editing, and export text in logical order; apply bidi conversion only at display boundaries.
-- Normal-mode `M-<` / `M->` jump to the first / last item in the active chat or channel section and then use the regular selection-loading path.
-- Plain `<` / `>` and `g` / `G` jump to the top / bottom of the loaded message pane. The same pairs select the oldest / newest loaded message in message-selection and message-popup modes.
+- Normal-mode `M-<` / `M->` jump to the first / last item in the active chat or channel section and then use the regular selection-loading path. In chat mode, `gg` / `G` and `h` / `l` jump to the first / last visible chat through that same path; the first `g` is tracked in `Model.pendingChatGoto`. Channel-mode `h` retains its hide/unhide action.
+- Plain `<` / `>` and `H` / `L` jump to the top / bottom of the loaded message pane. The same pairs select the oldest / newest loaded message in message-selection and message-popup modes.
 - Stable chat ordering maintained in `stableChatOrder []string` (list of chat IDs)
   - Only changes when a new message arrives (chat → position 0) or a brand-new chat is added
   - On every API refresh the display list is **rebuilt** from `stableChatOrder`

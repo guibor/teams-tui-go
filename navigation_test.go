@@ -31,16 +31,81 @@ func TestMetaAngleKeysJumpToChatListEnds(t *testing.T) {
 	}
 }
 
-func TestPlainAngleAndVimKeysJumpMessagePaneEnds(t *testing.T) {
+func TestChatEndpointKeysUseVisibleChatList(t *testing.T) {
+	app := NewApp()
+	app.Chats = []Chat{{ID: "first"}, {ID: "middle"}, {ID: "last"}}
+	app.SelectedIndex = 1
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.handleNormalModeKey(filterTestKey('g'))
+	if model.app.SelectedIndex != 1 || !model.pendingChatGoto {
+		t.Fatalf("first g selected index %d with pending=%v, want index 1 and pending sequence", model.app.SelectedIndex, model.pendingChatGoto)
+	}
+	model, _ = model.handleNormalModeKey(filterTestKey('g'))
+	if model.app.SelectedIndex != 0 || model.pendingChatGoto {
+		t.Fatalf("gg selected index %d with pending=%v, want first index and completed sequence", model.app.SelectedIndex, model.pendingChatGoto)
+	}
+
+	model.app.SelectedIndex = 1
+	model, _ = model.handleNormalModeKey(filterTestKey('G'))
+	if model.app.SelectedIndex != 2 {
+		t.Fatalf("G selected index %d, want last index 2", model.app.SelectedIndex)
+	}
+
+	model, _ = model.handleNormalModeKey(filterTestKey('h'))
+	if model.app.SelectedIndex != 0 {
+		t.Fatalf("h selected index %d, want first index 0", model.app.SelectedIndex)
+	}
+
+	model, _ = model.handleNormalModeKey(filterTestKey('l'))
+	if model.app.SelectedIndex != 2 {
+		t.Fatalf("l selected index %d, want last index 2", model.app.SelectedIndex)
+	}
+}
+
+func TestChatEndpointKeysRespectActiveFilter(t *testing.T) {
+	app := NewApp()
+	model := NewModel(app, "client", "user")
+	model.latestChats = []Chat{
+		{ID: "group-a", ChatType: "group"},
+		{ID: "direct", ChatType: "oneOnOne"},
+		{ID: "group-b", ChatType: "group"},
+		{ID: "group-c", ChatType: "group"},
+	}
+	model.stableChatOrder = []string{"group-a", "direct", "group-b", "group-c"}
+	app.ActiveChatFilter.ChatTypes["group"] = true
+	model = model.rebuildChatList()
+	model.app.SelectedIndex = 1
+
+	model, _ = model.handleNormalModeKey(filterTestKey('l'))
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "group-c" {
+		t.Fatalf("l selected %#v, want last visible chat group-c", selected)
+	}
+	model, _ = model.handleNormalModeKey(filterTestKey('h'))
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "group-a" {
+		t.Fatalf("h selected %#v, want first visible chat group-a", selected)
+	}
+	model, _ = model.handleNormalModeKey(filterTestKey('G'))
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "group-c" {
+		t.Fatalf("G selected %#v, want last visible chat group-c", selected)
+	}
+	model, _ = model.handleNormalModeKey(filterTestKey('g'))
+	model, _ = model.handleNormalModeKey(filterTestKey('g'))
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "group-a" {
+		t.Fatalf("gg selected %#v, want first visible chat group-a", selected)
+	}
+}
+
+func TestPlainAngleAndUppercaseKeysJumpMessagePaneEnds(t *testing.T) {
 	for _, test := range []struct {
 		key          rune
 		wantOffset   int
 		wantSnapDown bool
 	}{
 		{key: '<', wantOffset: 0, wantSnapDown: false},
-		{key: 'g', wantOffset: 0, wantSnapDown: false},
+		{key: 'H', wantOffset: 0, wantSnapDown: false},
 		{key: '>', wantOffset: 120, wantSnapDown: true},
-		{key: 'G', wantOffset: 120, wantSnapDown: true},
+		{key: 'L', wantOffset: 120, wantSnapDown: true},
 	} {
 		app := NewApp()
 		app.Chats = []Chat{{ID: "chat"}}
@@ -65,13 +130,29 @@ func TestMessageSelectionEndKeysRespectNewestFirstStorage(t *testing.T) {
 	app.MessageSelectedIndex = 1
 	model := NewModel(app, "client", "user")
 
-	model, _ = model.handleMessageSelectionModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}})
+	model, _ = model.handleMessageSelectionModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'H'}})
 	if model.app.MessageSelectedIndex != 2 {
-		t.Fatalf("< selected index %d, want oldest index 2", model.app.MessageSelectedIndex)
+		t.Fatalf("H selected index %d, want oldest index 2", model.app.MessageSelectedIndex)
 	}
-	model, _ = model.handleMessageSelectionModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	model, _ = model.handleMessageSelectionModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'L'}})
 	if model.app.MessageSelectedIndex != 0 {
-		t.Fatalf("G selected index %d, want newest index 0", model.app.MessageSelectedIndex)
+		t.Fatalf("L selected index %d, want newest index 0", model.app.MessageSelectedIndex)
+	}
+}
+
+func TestMessagePopupEndKeysRespectNewestFirstStorage(t *testing.T) {
+	app := NewApp()
+	app.Messages = []Message{{ID: "newest"}, {ID: "middle"}, {ID: "oldest"}}
+	app.MessageSelectedIndex = 1
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.handleMessagePopupKey(filterTestKey('H'))
+	if model.app.MessageSelectedIndex != 2 {
+		t.Fatalf("H selected index %d, want oldest index 2", model.app.MessageSelectedIndex)
+	}
+	model, _ = model.handleMessagePopupKey(filterTestKey('L'))
+	if model.app.MessageSelectedIndex != 0 {
+		t.Fatalf("L selected index %d, want newest index 0", model.app.MessageSelectedIndex)
 	}
 }
 
