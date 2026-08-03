@@ -71,10 +71,8 @@ func chatExportTitle(chat Chat) string {
 }
 
 func markdownSender(message Message) string {
-	if message.From != nil && message.From.User != nil && message.From.User.DisplayName != nil {
-		if name := strings.TrimSpace(*message.From.User.DisplayName); name != "" {
-			return name
-		}
+	if name := message.SenderName(); name != "" {
+		return name
 	}
 	return "Teams"
 }

@@ -11,6 +11,7 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 🔐 External token command or OAuth2 Device Code Flow — integrate with an existing credential owner without copying refresh tokens
 - 💬 List all your Teams chats (1:1, group, meetings) with computed display names
 - 📨 View messages in any chat with HTML-to-text rendering (images, attachments, emoji, **bold**, *italic*, ~~strikethrough~~, `code`, lists)
+- 🛠️ Readable Teams system events — meeting/call starts and endings, durations, recordings, transcripts, membership changes, renames, and future Graph event types are shown as meaningful messages rather than a generic placeholder
 - 🔤 Mixed Hebrew/English rendering for grid terminals, with ANSI styles and hyperlinks preserved and Hebrew-first lines aligned right
 - ❤️ Message Interactions — view and add reactions (Heart, Like, Laugh, etc.) to any message
 - 🔗 Clickable, Extractable & Openable URLs — links are clickable in supported terminals, can be extracted/copied via the `u` key, and opened in your browser/app via the `o` key
@@ -179,7 +180,15 @@ set `mark_read_on_open` to `true`.
 
 `M-n` and `M-p` select the next and previous chat in the visible list. They use
 the same filtered-list navigation as `j` and `k`; `M-<` and `M->` jump to the
-first and last visible item.
+first and last visible item. Plain `<` and `>` jump to the top and bottom of
+the loaded message pane; `g` and `G` provide the equivalent Vim-style pair.
+
+Teams-generated system messages use Microsoft Graph's `eventDetail` metadata.
+The normal thread view, history search, notifications, message popup, and
+Markdown exports therefore show text such as `Meeting started`,
+`Meeting ended (23m 15s)`, `Call recording available`, or
+`Call transcript available`. Unknown future event types are humanized instead
+of being hidden behind a generic system-event label.
 
 Press `D` to toggle a fixed-width local last-message date immediately before
 each chat title. The choice persists as `show_chat_dates` in `config.json`.
@@ -446,6 +455,8 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `↓` / `j`    | Move down in list (within active section)                 |
 | `M-p` / `M-n`| Move to previous / next item in the active section        |
 | `M-<` / `M->`| Jump to first / last item in the active section            |
+| `<` / `>`    | Jump to top / bottom of the loaded messages pane           |
+| `g` / `G`    | Vim-style jump to top / bottom of loaded messages          |
 | `Tab`        | Switch between Chats & Channels sections (in Normal Mode) |
 | `PgUp` / `K` | Scroll messages up                                        |
 | `PgDn` / `J` | Scroll messages down                                      |
@@ -473,6 +484,7 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `n`          | Toggle notification mode                                  |
 | `?`          | Show help popup (keyboard reference + feature status)     |
 | `m`          | Enter/Exit **Message Mode** (to select/react/delete/copy) |
+| `<` / `>` or `g` / `G` | Select oldest / newest loaded message       |
 | `v`          | View details/reactions of selected message (Message Mode) |
 | `Ctrl+g`     | View selected message in external editor (in Message Mode / Message View Popup) |
 | `Tab`        | Switch to attachment cursor in `v` popup (in Message View Popup) |

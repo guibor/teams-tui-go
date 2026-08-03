@@ -42,6 +42,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **Name Abbreviation**: Group chat members shown as "FirstName LastInitial" (`abbreviateName()`)
 - **Filtering**: Current user is automatically filtered from all member lists by name match (not by ID — IDs vary per chat)
 - **HTMLToText**: Uses `golang.org/x/net/html` tokenizer for robust HTML-to-text conversion, handling `<img>`, `<attachment>`, `<emoji>`, block elements, HTML entities
+- **System Events**: `Message.EventDetail` retains Graph's polymorphic `eventMessageDetail`; `system_events.go` turns known call/meeting/member/rename events into readable summaries and humanizes unknown future types. `GetPlainText()` is the shared path for live rendering, search, notifications, and export.
 - **Read State**: `Chat` includes `Viewpoint` containing `LastMessageReadDateTime` from the server
 - **Silent errors**: `GetChatMembers()` returns empty slice on error; `MarkChatAsRead()` silently ignores all errors
 
@@ -59,6 +60,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - Uses `CachedDisplayName` from `Chat` struct — **do not compute display names here**
 - **Bidirectional rendering**: `bidi.go` converts ANSI-styled logical text to visual terminal-cell order after wrapping. It uses UAX #9 levels, preserves grapheme clusters, SGR styles, and OSC 8 links, and returns the paragraph direction so Hebrew-first lines can be right-aligned. Keep API, clipboard, editing, and export text in logical order; apply bidi conversion only at display boundaries.
 - Normal-mode `M-<` / `M->` jump to the first / last item in the active chat or channel section and then use the regular selection-loading path.
+- Plain `<` / `>` and `g` / `G` jump to the top / bottom of the loaded message pane. The same pairs select the oldest / newest loaded message in message-selection and message-popup modes.
 - Stable chat ordering maintained in `stableChatOrder []string` (list of chat IDs)
   - Only changes when a new message arrives (chat → position 0) or a brand-new chat is added
   - On every API refresh the display list is **rebuilt** from `stableChatOrder`

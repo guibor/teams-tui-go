@@ -31,6 +31,50 @@ func TestMetaAngleKeysJumpToChatListEnds(t *testing.T) {
 	}
 }
 
+func TestPlainAngleAndVimKeysJumpMessagePaneEnds(t *testing.T) {
+	for _, test := range []struct {
+		key          rune
+		wantOffset   int
+		wantSnapDown bool
+	}{
+		{key: '<', wantOffset: 0, wantSnapDown: false},
+		{key: 'g', wantOffset: 0, wantSnapDown: false},
+		{key: '>', wantOffset: 120, wantSnapDown: true},
+		{key: 'G', wantOffset: 120, wantSnapDown: true},
+	} {
+		app := NewApp()
+		app.Chats = []Chat{{ID: "chat"}}
+		app.SelectedIndex = 0
+		app.ScrollOffset = 60
+		app.MaxScroll = 120
+		app.SnapToBottom = false
+		model := NewModel(app, "client", "user")
+
+		model, _ = model.handleNormalModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{test.key}})
+		if model.app.ScrollOffset != test.wantOffset || model.app.SnapToBottom != test.wantSnapDown {
+			t.Fatalf("%q produced offset=%d snap=%v, want offset=%d snap=%v",
+				test.key, model.app.ScrollOffset, model.app.SnapToBottom, test.wantOffset, test.wantSnapDown)
+		}
+	}
+}
+
+func TestMessageSelectionEndKeysRespectNewestFirstStorage(t *testing.T) {
+	app := NewApp()
+	app.Messages = []Message{{ID: "newest"}, {ID: "middle"}, {ID: "oldest"}}
+	app.MessageSelectionMode = true
+	app.MessageSelectedIndex = 1
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.handleMessageSelectionModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'<'}})
+	if model.app.MessageSelectedIndex != 2 {
+		t.Fatalf("< selected index %d, want oldest index 2", model.app.MessageSelectedIndex)
+	}
+	model, _ = model.handleMessageSelectionModeKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'G'}})
+	if model.app.MessageSelectedIndex != 0 {
+		t.Fatalf("G selected index %d, want newest index 0", model.app.MessageSelectedIndex)
+	}
+}
+
 func TestMetaNPNavigateChats(t *testing.T) {
 	app := NewApp()
 	app.Chats = []Chat{{ID: "first"}, {ID: "middle"}, {ID: "last"}}

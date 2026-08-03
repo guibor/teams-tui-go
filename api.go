@@ -65,9 +65,11 @@ type Message struct {
 	CreatedDateTime         string                  `json:"createdDateTime"`
 	MessageType             string                  `json:"messageType,omitempty"`
 	Subject                 string                  `json:"subject,omitempty"`
+	Summary                 string                  `json:"summary,omitempty"`
 	WebURL                  string                  `json:"webUrl,omitempty"`
 	From                    *MessageFrom            `json:"from,omitempty"`
 	Body                    *MessageBody            `json:"body,omitempty"`
+	EventDetail             *EventMessageDetail     `json:"eventDetail,omitempty"`
 	ChannelIdentity         *MessageChannelIdentity `json:"channelIdentity,omitempty"`
 	Attachments             []MessageAttachment     `json:"attachments,omitempty"`
 	Reactions               []MessageReaction       `json:"reactions,omitempty"`
@@ -106,15 +108,15 @@ func (msg *Message) GetPlainText() string {
 	if msg.PlainTextCached != nil {
 		return *msg.PlainTextCached
 	}
+	if msg.IsSystemEvent() {
+		text := msg.SystemEventSummary()
+		msg.PlainTextCached = &text
+		return text
+	}
 	if msg.Body == nil || msg.Body.Content == nil {
 		empty := ""
 		msg.PlainTextCached = &empty
 		return empty
-	}
-	if *msg.Body.Content == "<systemEventMessage/>" {
-		text := "── [system event] ──"
-		msg.PlainTextCached = &text
-		return text
 	}
 	text := HTMLToText(*msg.Body.Content, msg.Attachments, msg.Mentions)
 	msg.PlainTextCached = &text
@@ -437,7 +439,9 @@ type MessageAttachment struct {
 
 // MessageFrom holds the sender information.
 type MessageFrom struct {
-	User *MessageUser `json:"user,omitempty"`
+	User        *MessageUser `json:"user,omitempty"`
+	Application *MessageUser `json:"application,omitempty"`
+	Device      *MessageUser `json:"device,omitempty"`
 }
 
 // MessageUser holds the sender display name and ID.

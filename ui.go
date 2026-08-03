@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -19,7 +21,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/gen2brain/beeep"
 	"github.com/nospor/teams-tui-go/filepicker"
-	"regexp"
 )
 
 // ---------------------------------------------------------------------------
@@ -662,17 +663,18 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 					}
 
 					// Trigger notification.
-					senderName := ""
-					if c.LastMessagePreview.From != nil && c.LastMessagePreview.From.User != nil && c.LastMessagePreview.From.User.DisplayName != nil {
-						senderName = *c.LastMessagePreview.From.User.DisplayName
-					}
+					senderName := c.LastMessagePreview.SenderName()
 
 					// Build a temporary Message object for notification.
 					tempMsg := Message{
 						ID:              newID,
 						CreatedDateTime: c.LastMessagePreview.CreatedDateTime,
+						MessageType:     c.LastMessagePreview.MessageType,
+						Subject:         c.LastMessagePreview.Subject,
+						Summary:         c.LastMessagePreview.Summary,
 						From:            c.LastMessagePreview.From,
 						Body:            c.LastMessagePreview.Body,
+						EventDetail:     c.LastMessagePreview.EventDetail,
 					}
 					m.notify(senderName, tempMsg)
 					m.promoteChat(c.ID)
@@ -999,10 +1001,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 							} else {
 								// Trigger notification if blurred, and mark as unread locally
 								m.lastReadMsgID[chat.ID] = old
-								senderName := ""
-								if latestMsg.From != nil && latestMsg.From.User != nil && latestMsg.From.User.DisplayName != nil {
-									senderName = *latestMsg.From.User.DisplayName
-								}
+								senderName := latestMsg.SenderName()
 								m.notify(senderName, latestMsg)
 							}
 						}
@@ -1516,10 +1515,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 							m.lastReadMsgID[msg.ChannelID] = newest.ID
 						} else {
 							// Trigger notification
-							senderName := ""
-							if newest.From != nil && newest.From.User != nil && newest.From.User.DisplayName != nil {
-								senderName = *newest.From.User.DisplayName
-							}
+							senderName := newest.SenderName()
 							m.notify(senderName, newest)
 						}
 					} else if !ok || m.lastMsgTime[msg.ChannelID].IsZero() {
@@ -1795,6 +1791,18 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		} else if len(m.app.Chats) > 0 {
 			m.app.SelectedIndex = len(m.app.Chats) - 1
+		}
+
+	case "<", "g":
+		if m.hasActiveConversation() {
+			m.app.ScrollOffset = 0
+			m.app.SnapToBottom = false
+		}
+
+	case ">", "G":
+		if m.hasActiveConversation() {
+			m.app.ScrollOffset = m.app.MaxScroll
+			m.app.SnapToBottom = true
 		}
 
 	case "j", "down", "alt+n":
@@ -2465,8 +2473,8 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			if editorCmd == "" {
 				editorCmd = "vim"
 			}
-			content := ""
-			if msgObj.Body != nil && msgObj.Body.Content != nil {
+			content := msgObj.GetPlainText()
+			if !msgObj.IsSystemEvent() && msgObj.Body != nil && msgObj.Body.Content != nil {
 				content = HTMLToMarkdown(*msgObj.Body.Content)
 			}
 			return m, openExternalEditorCmd(content, editorCmd, true)
@@ -2539,6 +2547,22 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, clearTerminalImagesCmd()
 		}
 
+	case ">", "G":
+		if !m.app.AttachmentCursorMode && len(m.app.Messages) > 0 {
+			m.app.MessageSelectedIndex = 0
+			m.app.MessagePopupScrollOffset = 0
+			m.app.AttachmentSelectedIndex = 0
+			return m, clearTerminalImagesCmd()
+		}
+
+	case "<", "g":
+		if !m.app.AttachmentCursorMode && len(m.app.Messages) > 0 {
+			m.app.MessageSelectedIndex = len(m.app.Messages) - 1
+			m.app.MessagePopupScrollOffset = 0
+			m.app.AttachmentSelectedIndex = 0
+			return m, clearTerminalImagesCmd()
+		}
+
 	case "k", "up":
 		if m.app.AttachmentCursorMode {
 			if m.app.AttachmentSelectedIndex > 0 {
@@ -2593,6 +2617,16 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, loadMoreMessagesCmd(m.clientID, m.app.NextLink, m.activeConversationID(), false)
 		}
 
+	case ">", "G":
+		if len(m.app.Messages) > 0 {
+			m.app.MessageSelectedIndex = 0
+		}
+
+	case "<", "g":
+		if len(m.app.Messages) > 0 {
+			m.app.MessageSelectedIndex = len(m.app.Messages) - 1
+		}
+
 	case "r":
 		m.app.ReactionMode = true
 		return m, nil
@@ -2630,8 +2664,8 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			if editorCmd == "" {
 				editorCmd = "vim"
 			}
-			content := ""
-			if msgObj.Body != nil && msgObj.Body.Content != nil {
+			content := msgObj.GetPlainText()
+			if !msgObj.IsSystemEvent() && msgObj.Body != nil && msgObj.Body.Content != nil {
 				content = HTMLToMarkdown(*msgObj.Body.Content)
 			}
 			return m, openExternalEditorCmd(content, editorCmd, true)
@@ -4212,10 +4246,7 @@ func (m Model) renderMessages(w, h int) string {
 			pendingScrollLine = len(lines)
 		}
 
-		sender := ""
-		if msg.From != nil && msg.From.User != nil && msg.From.User.DisplayName != nil {
-			sender = *msg.From.User.DisplayName
-		}
+		sender := msg.SenderName()
 
 		msgTime, _ := time.Parse(time.RFC3339Nano, msg.CreatedDateTime)
 		msgTime = msgTime.Local()
@@ -4227,7 +4258,7 @@ func (m Model) renderMessages(w, h int) string {
 
 		// Channel root messages always get their own header.
 		// Channel replies and regular chat messages group by sender/hour.
-		showHeader := senderChanged || timeGap || (m.channelSelectedIndex >= 0 && !msg.IsReply)
+		showHeader := senderChanged || timeGap || msg.IsSystemEvent() || (m.channelSelectedIndex >= 0 && !msg.IsReply)
 
 		if showHeader {
 			if len(lines) > 0 {
@@ -4555,6 +4586,10 @@ func messagesEqual(a, b []Message) bool {
 			contentB = *b[i].Body.Content
 		}
 		if contentA != contentB {
+			return false
+		}
+		if a[i].MessageType != b[i].MessageType || a[i].Summary != b[i].Summary ||
+			!reflect.DeepEqual(a[i].EventDetail, b[i].EventDetail) {
 			return false
 		}
 		if len(a[i].Reactions) != len(b[i].Reactions) {
@@ -5010,8 +5045,8 @@ func stripANSI(s string) string {
 func (m *Model) notify(senderName string, msg Message) {
 	body := ""
 	if m.app.NotificationShowPreview {
-		if msg.Body != nil && msg.Body.Content != nil {
-			body = stripANSI(HTMLToText(*msg.Body.Content, msg.Attachments, msg.Mentions))
+		if text := msg.GetPlainText(); text != "" {
+			body = stripANSI(text)
 			// Remove newlines and collapse spaces for a cleaner notification body.
 			body = strings.ReplaceAll(body, "\n", " ")
 			body = strings.Join(strings.Fields(body), " ")
@@ -5019,6 +5054,9 @@ func (m *Model) notify(senderName string, msg Message) {
 				body = string([]rune(body)[:m.app.NotificationPreviewLen]) + "..."
 			}
 		}
+	}
+	if senderName == "" && msg.IsSystemEvent() {
+		senderName = "Teams"
 	}
 
 	switch m.app.NotificationMode {
@@ -5476,9 +5514,9 @@ func (m Model) renderSearchPopup(w, h int) string {
 			}
 
 			// Render sender + date
-			sender := "Unknown"
-			if item.Message.From != nil && item.Message.From.User != nil && item.Message.From.User.DisplayName != nil {
-				sender = *item.Message.From.User.DisplayName
+			sender := item.Message.SenderName()
+			if sender == "" {
+				sender = "Unknown"
 			}
 			msgTime, _ := time.Parse(time.RFC3339Nano, item.Message.CreatedDateTime)
 			msgTime = msgTime.Local()
@@ -6389,9 +6427,11 @@ func (m Model) renderMessagePopup(w, h int) string {
 	m.app.Messages[m.app.MessageSelectedIndex].ProcessInlineImages()
 	msg := m.app.Messages[m.app.MessageSelectedIndex]
 
-	sender := "Unknown"
+	sender := msg.SenderName()
+	if sender == "" {
+		sender = "Unknown"
+	}
 	if msg.From != nil && msg.From.User != nil && msg.From.User.DisplayName != nil {
-		sender = *msg.From.User.DisplayName
 		if m.app.CurrentUserName != nil && sender == *m.app.CurrentUserName {
 			sender = "Me"
 		}
@@ -6753,6 +6793,7 @@ func (m Model) getHelpContentLines() []string {
 			{"j / ↓ / M-n", "Navigate list down (within section)"},
 			{"k / ↑ / M-p", "Navigate list up (within section)"},
 			{"M-< / M->", "Jump to first / last item in the active section"},
+			{"< / >, g / G", "Jump to top / bottom of loaded messages"},
 			{"Tab", "Switch between Chats & Channels"},
 			{"m", "Enter message selection mode"},
 			{"i", "Compose new message"},
@@ -6778,6 +6819,7 @@ func (m Model) getHelpContentLines() []string {
 		}},
 		{"Message Selection (m)", [][2]string{
 			{"j / k", "Navigate messages"},
+			{"< / >, g / G", "Select oldest / newest loaded message"},
 			{"v", "View message popup"},
 			{"y", "Yank message to clipboard"},
 			{"u", "Extract URLs"},
@@ -6792,6 +6834,7 @@ func (m Model) getHelpContentLines() []string {
 		}},
 		{"Message View Popup (v)", [][2]string{
 			{"j / k", "Navigate to next/prev message"},
+			{"< / >, g / G", "Select oldest / newest loaded message"},
 			{"J / K", "Scroll message body"},
 			{"Tab", "Switch to attachment cursor mode"},
 			{"Enter", "Download selected attachment (feature: file_preview_enabled)"},
