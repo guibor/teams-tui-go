@@ -1932,11 +1932,11 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		cfg.ShowChatDates = &m.app.ShowChatDates
 		if err := SaveConfig(cfg); err != nil {
-			m.app.SetStatus("Could not save chat-date setting: "+err.Error(), 5*time.Second)
+			m.app.SetStatus("Could not save chat timestamp setting: "+err.Error(), 5*time.Second)
 		} else if m.app.ShowChatDates {
-			m.app.SetStatus("Chat dates shown", 3*time.Second)
+			m.app.SetStatus("Chat timestamps shown", 3*time.Second)
 		} else {
-			m.app.SetStatus("Chat dates hidden", 3*time.Second)
+			m.app.SetStatus("Chat timestamps hidden", 3*time.Second)
 		}
 
 	case "?":
@@ -4133,7 +4133,7 @@ func (m Model) renderChatList(w, h int) string {
 		}
 		dateColumn := ""
 		if m.app.ShowChatDates {
-			dateColumn = lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf("%10s ", chatLastMessageDate(c, renderedAt)))
+			dateColumn = lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf("%16s ", chatLastMessageTimestamp(c, renderedAt)))
 		}
 		base := selectionMarker + favoriteMarker + unreadMarker + typeTag + " " + dateColumn + nameStyle.Render(displayName)
 		if reactionEmoji != "" {
@@ -4242,7 +4242,7 @@ func (m Model) renderChatList(w, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-func chatLastMessageDate(chat Chat, now time.Time) string {
+func chatLastMessageTimestamp(chat Chat, now time.Time) string {
 	if chat.LastMessagePreview == nil {
 		return ""
 	}
@@ -4252,9 +4252,9 @@ func chatLastMessageDate(chat Chat, now time.Time) string {
 	}
 	local := timestamp.In(now.Location())
 	if local.Year() == now.Year() {
-		return local.Format("Jan 02")
+		return local.Format("Jan 02 15:04")
 	}
-	return local.Format("2006-01-02")
+	return local.Format("2006-01-02 15:04")
 }
 
 // ---------------------------------------------------------------------------
@@ -6868,7 +6868,7 @@ func (m Model) getHelpContentLines() []string {
 			{"h", "Toggle hide/unhide channel (channels only)"},
 			{"p", "Presence status of chat participants (chats only, feature: presence_enabled)"},
 			{"n", "Cycle notification mode"},
-			{"D", "Toggle last-message dates in chat rows"},
+			{"D", "Toggle last-message date/time in chat rows"},
 			{"ESC", "Leave the current conversation for the dashboard"},
 			{"?", "Show this help"},
 			{"q", "Leave conversation; press again on dashboard to quit"},

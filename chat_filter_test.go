@@ -414,16 +414,16 @@ func TestNormalModeDTogglesAndPersistsChatDates(t *testing.T) {
 	}
 }
 
-func TestChatLastMessageDateUsesLocalDateAndYear(t *testing.T) {
+func TestChatLastMessageTimestampUsesLocalDateTimeAndYear(t *testing.T) {
 	location := time.FixedZone("IDT", 3*60*60)
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, location)
 	chat := Chat{LastMessagePreview: &Message{CreatedDateTime: "2026-08-02T22:30:00Z"}}
-	if got := chatLastMessageDate(chat, now); got != "Aug 03" {
-		t.Fatalf("local chat date = %q, want Aug 03", got)
+	if got := chatLastMessageTimestamp(chat, now); got != "Aug 03 01:30" {
+		t.Fatalf("local chat timestamp = %q, want Aug 03 01:30", got)
 	}
 	chat.LastMessagePreview.CreatedDateTime = "2025-12-31T20:00:00Z"
-	if got := chatLastMessageDate(chat, now); got != "2025-12-31" {
-		t.Fatalf("prior-year chat date = %q, want 2025-12-31", got)
+	if got := chatLastMessageTimestamp(chat, now); got != "2025-12-31 23:00" {
+		t.Fatalf("prior-year chat timestamp = %q, want 2025-12-31 23:00", got)
 	}
 }
 

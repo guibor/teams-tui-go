@@ -526,7 +526,7 @@ func ResolveThreadCaptureFile() string {
 	return "~/Documents/teams-threads.md"
 }
 
-// ResolveShowChatDates returns whether chat rows include the last-message date.
+// ResolveShowChatDates returns whether chat rows include the last-message timestamp.
 func ResolveShowChatDates() bool {
 	cfg := LoadConfig()
 	return cfg != nil && cfg.ShowChatDates != nil && *cfg.ShowChatDates

@@ -191,8 +191,10 @@ Markdown exports therefore show text such as `Meeting started`,
 `Call transcript available`. Unknown future event types are humanized instead
 of being hidden behind a generic system-event label.
 
-Press `D` to toggle a fixed-width local last-message date immediately before
-each chat title. The choice persists as `show_chat_dates` in `config.json`.
+Press `D` to toggle a fixed-width local last-message date and 24-hour time
+immediately before each chat title. Current-year rows use `Aug 03 17:45`; older
+rows include the year as in `2025-12-31 17:45`. The choice persists as
+`show_chat_dates` in `config.json`.
 
 Press `E` to fetch the complete selected chat, follow every Graph pagination
 link, and write a chronological Markdown transcript. Exports default to
