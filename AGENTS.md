@@ -145,6 +145,9 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - Temporarily saves the current textarea value to a temporary file, opens the configured editor (`ExternalEditor`), and updates the textarea value on success.
   - Commands may include arguments, such as `spaceclient @spacemacs --wait`; the editor must remain running until editing is complete.
   - Uses Bubble Tea's `tea.ExecProcess` to pause the TUI while the editor executes in the terminal foreground, resuming when the editor process exits.
+- **Compose Send Keys**:
+  - Plain `Enter` inserts one newline; `Ctrl+Enter` or `Ctrl+J` sends the current message.
+  - Bubble Tea 1.x does not expose enhanced modified-Return keys directly. `isEnhancedCtrlEnter()` normalizes Kitty/iTerm `CSI 13;5u` and xterm modifyOtherKeys `CSI 27;5;13~` into `Ctrl+J` before normal key dispatch.
 - **Full Markdown Export**:
 	- Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.
 - **Thread Capture**:

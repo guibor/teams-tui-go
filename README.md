@@ -445,6 +445,11 @@ You can use an external editor (such as `vim`, `neovim`, or `nano`) to either co
 
 The external editor command can be configured in your `config.json` via the `"external_editor"` option. If not specified, it falls back to the `$EDITOR` environment variable, then `$VISUAL` environment variable, and defaults to `"vim"`.
 
+Compose mode is multiline by default: `Enter` inserts a line break and
+`Ctrl+Enter` sends the message. `Ctrl+J` is a portable send alias for terminals
+that cannot distinguish modified Return. The TUI also recognizes the common
+Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
+
 ---
 
 ## Keyboard Controls
@@ -478,8 +483,9 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `Ctrl+V`     | Paste image from clipboard (in Compose Mode)              |
 | `Ctrl+f`     | Browse and attach file from computer (in Compose Mode)    |
 | `Ctrl+g`     | Compose/edit message in external editor (in Compose Mode) |
-| `Enter`      | Send message                                              |
-| `Alt+Enter`  | New line in message                                       |
+| `Ctrl+Enter` / `Ctrl+J` | Send message                                  |
+| `Enter`      | Insert a normal new line                                  |
+| `Alt+Enter` / `Shift+Enter` | Insert a new line                             |
 | `Esc`        | Cancel compose                                            |
 | `n`          | Toggle notification mode                                  |
 | `?`          | Show help popup (keyboard reference + feature status)     |

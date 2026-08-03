@@ -440,6 +440,11 @@ func (m Model) Init() tea.Cmd {
 // ---------------------------------------------------------------------------
 
 func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
+	// Bubble Tea 1.x exposes enhanced Ctrl+Enter as an unknown CSI message.
+	// Normalize the common Kitty/iTerm encodings to Ctrl+J before dispatch.
+	if m.app.InputMode && isEnhancedCtrlEnter(msg) {
+		msg = tea.KeyMsg{Type: tea.KeyCtrlJ}
+	}
 	var cmds []tea.Cmd
 	wasInputMode := m.app.InputMode
 	wasSearchMode := m.app.SearchMode
@@ -1698,6 +1703,19 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
+func isEnhancedCtrlEnter(msg tea.Msg) bool {
+	value := reflect.ValueOf(msg)
+	if !value.IsValid() || value.Kind() != reflect.Slice || value.Type().Elem().Kind() != reflect.Uint8 {
+		return false
+	}
+	switch string(value.Bytes()) {
+	case "\x1b[13;5u", "\x1b[27;5;13~":
+		return true
+	default:
+		return false
+	}
+}
+
 // handleKey processes keyboard input and returns the updated model + command.
 func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.FilePickerPopupMode {
@@ -2327,7 +2345,7 @@ func (m Model) handleInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case "enter":
+	case "ctrl+j", "ctrl+enter":
 		content := strings.Trim(m.textarea.Value(), "\n\r")
 		if content == "" {
 			return m, nil
@@ -2387,8 +2405,10 @@ func (m Model) handleInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, sendMessageCmd(m.clientID, chat.ID, content, members, images, files)
 
-	case "alt+enter", "shift+enter", "ctrl+enter":
+	case "enter", "alt+enter", "shift+enter":
 		m.textarea.InsertString("\n")
+		m.app.InputBuffer = m.textarea.Value()
+		m.app.SkipTextareaUpdate = true
 		return m, nil
 	}
 
@@ -3389,7 +3409,7 @@ func (m Model) renderRightPanel(w, h int) string {
 	m.textarea.SetHeight(inputH - 2)
 
 	// Build input box contents — add quote preview when replying.
-	hintText := "Type your message (Enter: send, Alt+Enter: new line, ESC: cancel, @: mention, paste IMAGE"
+	hintText := "Type your message (Ctrl+Enter/Ctrl+J: send, Enter: new line, ESC: cancel, @: mention, paste IMAGE"
 	if m.app.Features.FileUpload {
 		hintText += ", Ctrl+f: attach file"
 	}
@@ -6882,10 +6902,11 @@ func (m Model) getHelpContentLines() []string {
 			{"ESC", "Cancel"},
 		}},
 		{"Composing Messages", [][2]string{
-			{"Type", "Write message (Alt+Enter for newline)"},
+			{"Type", "Write a multiline message"},
 			{"@", "Open autocomplete mention popup"},
 			{"j / k / Tab", "Navigate suggestions (when mention popup is open)"},
-			{"Enter", "Select suggestion (when open) / Send message"},
+			{"Ctrl+Enter / Ctrl+J", "Send message"},
+			{"Enter", "Insert new line / select mention suggestion"},
 			{"Ctrl+v", "Paste image from clipboard"},
 			{"Ctrl+f", "Browse and attach file (feature: file_upload_enabled)"},
 			{"Ctrl+g", "Compose/edit in external editor (e.g. vim)"},
