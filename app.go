@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"time"
 )
 
@@ -320,7 +319,8 @@ func (a *App) SetCurrentUser(name string) {
 // SetMessages updates the current message list, merging new messages with existing ones.
 func (a *App) SetMessages(messages []Message, nextLink string) {
 	if len(a.Messages) == 0 {
-		a.Messages = messages
+		a.Messages = append([]Message(nil), messages...)
+		sortMessagesNewestFirst(a.Messages)
 		a.NextLink = nextLink
 		a.LoadingMessages = false
 		return
@@ -341,10 +341,8 @@ func (a *App) SetMessages(messages []Message, nextLink string) {
 		result = append(result, msg)
 	}
 
-	// Sort newest first.
-	sort.Slice(result, func(i, j int) bool {
-		return result[i].CreatedDateTime > result[j].CreatedDateTime
-	})
+	// Sort newest first using absolute RFC 3339 timestamps.
+	sortMessagesNewestFirst(result)
 
 	// Maintain selection by ID if in message selection mode.
 	if a.MessageSelectionMode && len(a.Messages) > 0 && a.MessageSelectedIndex < len(a.Messages) {
@@ -381,6 +379,7 @@ done:
 // AppendOlderMessages adds older messages to the end of the current list.
 func (a *App) AppendOlderMessages(messages []Message, nextLink string) {
 	a.Messages = append(a.Messages, messages...)
+	sortMessagesNewestFirst(a.Messages)
 	a.NextLink = nextLink
 	a.LoadingMessages = false
 }

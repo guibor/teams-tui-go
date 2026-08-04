@@ -134,6 +134,7 @@ func GetStoredMessages(conversationID string, limit int) ([]Message, error) {
 		}
 		msgs = append(msgs, msg)
 	}
+	sortMessagesNewestFirst(msgs)
 
 	return msgs, nil
 }

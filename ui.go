@@ -485,7 +485,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		if !m.loadingChats && time.Since(m.lastChatRefresh) >= 15*time.Second {
 			m.lastChatRefresh = time.Now()
 			m.loadingChats = true
-			cmds = append(cmds, loadChatsCmd(m.clientID, m.app.Chats, m.app.CurrentUserName))
+			cmds = append(cmds, loadChatsCmd(m.clientID, m.app.Chats, m.app.CurrentUserName, m.userID))
 		}
 
 		isSleepMode := (m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0)
@@ -607,9 +607,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 					}
 					if !foundInCache {
 						existingCached = append([]Message{*c.LastMessagePreview}, existingCached...)
-						sort.Slice(existingCached, func(i, j int) bool {
-							return existingCached[i].CreatedDateTime > existingCached[j].CreatedDateTime
-						})
+						sortMessagesNewestFirst(existingCached)
 						m.app.CachedMessages[c.ID] = existingCached
 					}
 				} else {
@@ -646,9 +644,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 					}
 					if !foundInActive {
 						existingMsgs = append([]Message{*c.LastMessagePreview}, existingMsgs...)
-						sort.Slice(existingMsgs, func(i, j int) bool {
-							return existingMsgs[i].CreatedDateTime > existingMsgs[j].CreatedDateTime
-						})
+						sortMessagesNewestFirst(existingMsgs)
 						m.app.Messages = existingMsgs
 					}
 				}
@@ -885,9 +881,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 							existing = append(existing, nm)
 						}
 					}
-					sort.Slice(existing, func(i, j int) bool {
-						return existing[i].CreatedDateTime > existing[j].CreatedDateTime
-					})
+					sortMessagesNewestFirst(existing)
 					m.app.CachedMessages[loadedChatID] = existing
 				}
 				m.app.CachedNextLink[loadedChatID] = msg.NextLink
@@ -1151,9 +1145,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.UserSearchDirectoryResults = nil
 
 			chat := *msg.Chat
-			if m.app.CurrentUserName != nil {
-				chat.Members = filterMember(chat.Members, *m.app.CurrentUserName)
-			}
+			chat.Members = filterCurrentMember(chat.Members, m.userID, m.app.CurrentUserName)
 			name := computeDisplayName(&chat)
 			chat.CachedDisplayName = &name
 
@@ -1472,9 +1464,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 							existing = append(existing, nm)
 						}
 					}
-					sort.Slice(existing, func(i, j int) bool {
-						return existing[i].CreatedDateTime > existing[j].CreatedDateTime
-					})
+					sortMessagesNewestFirst(existing)
 					m.app.CachedMessages[msg.ChannelID] = existing
 				}
 				m.app.CachedNextLink[msg.ChannelID] = msg.NextLink
@@ -5385,8 +5375,8 @@ func (m *Model) RebuildSearchPopupResults() {
 	}
 
 	// Explicitly sort items oldest-first (chronological, closest to today at index len-1).
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].Message.CreatedDateTime < items[j].Message.CreatedDateTime
+	sort.SliceStable(items, func(i, j int) bool {
+		return messageChronologyLess(items[i].Message, items[j].Message, false)
 	})
 
 	m.app.SearchPopupResults = items
@@ -6117,9 +6107,7 @@ func mergeHistoryMessages(existing []Message, newMsgs []Message) []Message {
 		merged = append(merged, msg)
 	}
 
-	sort.Slice(merged, func(i, j int) bool {
-		return merged[i].CreatedDateTime > merged[j].CreatedDateTime
-	})
+	sortMessagesNewestFirst(merged)
 	return merged
 }
 
@@ -7548,6 +7536,7 @@ func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 	if m.app.ChatMessagesLoadedOnce[chatID] {
 		if cached, ok := m.app.CachedMessages[chatID]; ok && len(cached) > 0 {
 			prepareChatMessages(cached, chatID)
+			sortMessagesNewestFirst(cached)
 			m.app.CachedMessages[chatID] = cached
 			m.app.Messages = cached
 			m.app.NextLink = m.app.CachedNextLink[chatID]
@@ -7566,6 +7555,7 @@ func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 		dbMsgs, err := GetStoredMessages(chatID, ResolveMessageLimit())
 		if err == nil && len(dbMsgs) > 0 {
 			prepareChatMessages(dbMsgs, chatID)
+			sortMessagesNewestFirst(dbMsgs)
 			m.app.CachedMessages[chatID] = dbMsgs
 			nextLink, _ := GetNextLink(chatID)
 			m.app.CachedNextLink[chatID] = nextLink
@@ -7583,6 +7573,7 @@ func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 	// 3. Fallback to API load (using cached message, e.g. LastMessagePreview, as a placeholder if available)
 	if cached, ok := m.app.CachedMessages[chatID]; ok && len(cached) > 0 {
 		prepareChatMessages(cached, chatID)
+		sortMessagesNewestFirst(cached)
 		m.app.CachedMessages[chatID] = cached
 		m.app.Messages = cached
 		m.app.NextLink = m.app.CachedNextLink[chatID]
@@ -7602,6 +7593,7 @@ func (m Model) loadChannelMessages(teamID string, channelID string) (Model, tea.
 	// 1. Check in-memory cache first
 	if cached, ok := m.app.CachedMessages[channelID]; ok && len(cached) > 0 {
 		prepareChannelMessages(cached, teamID, channelID)
+		sortMessagesNewestFirst(cached)
 		m.app.CachedMessages[channelID] = cached
 		m.app.Messages = cached
 		m.app.NextLink = m.app.CachedNextLink[channelID]
@@ -7615,6 +7607,7 @@ func (m Model) loadChannelMessages(teamID string, channelID string) (Model, tea.
 		dbMsgs, err := GetStoredMessages(channelID, ResolveMessageLimit())
 		if err == nil && len(dbMsgs) > 0 {
 			prepareChannelMessages(dbMsgs, teamID, channelID)
+			sortMessagesNewestFirst(dbMsgs)
 			m.app.CachedMessages[channelID] = dbMsgs
 			nextLink, _ := GetNextLink(channelID)
 			m.app.CachedNextLink[channelID] = nextLink

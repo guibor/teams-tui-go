@@ -27,13 +27,13 @@ func tickCmd() tea.Cmd {
 }
 
 // loadChatsCmd fetches the chat list in the background.
-func loadChatsCmd(clientID string, existingChats []Chat, currentUserName *string) tea.Cmd {
+func loadChatsCmd(clientID string, existingChats []Chat, currentUserName *string, currentUserID string) tea.Cmd {
 	return func() tea.Msg {
 		token, err := GetValidTokenSilent(clientID)
 		if err != nil {
 			return MsgChatsLoaded{Chats: existingChats, CurrentUserName: currentUserName}
 		}
-		chats, currentUser, err := GetChats(token, existingChats, currentUserName)
+		chats, currentUser, err := GetChats(token, existingChats, currentUserName, currentUserID)
 		if err != nil {
 			return MsgChatsLoaded{Chats: existingChats, CurrentUserName: currentUserName}
 		}
@@ -826,7 +826,8 @@ func main() {
 	fmt.Printf("✓ Logged in as: %s\n", me.DisplayName)
 
 	// 4. Fetch initial chat list.
-	chats, currentUserName, err := GetChats(accessToken, nil, nil)
+	currentUserName := &me.DisplayName
+	chats, currentUserName, err := GetChats(accessToken, nil, currentUserName, me.ID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not fetch chats: %v\n", err)
 		os.Exit(1)
@@ -954,7 +955,7 @@ func main() {
 			ch := make(chan fetchResult, len(missingIDs))
 			for _, id := range missingIDs {
 				go func(chatID string) {
-					c, err := GetChat(accessToken, chatID, currentUserName)
+					c, err := GetChat(accessToken, chatID, currentUserName, me.ID)
 					if err != nil {
 						ch <- fetchResult{nil}
 						return

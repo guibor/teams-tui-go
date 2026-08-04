@@ -51,12 +51,7 @@ func collectAllChatMessages(
 	for _, message := range byID {
 		messages = append(messages, message)
 	}
-	sort.Slice(messages, func(i, j int) bool {
-		if messages[i].CreatedDateTime == messages[j].CreatedDateTime {
-			return messages[i].ID < messages[j].ID
-		}
-		return messages[i].CreatedDateTime < messages[j].CreatedDateTime
-	})
+	sortMessagesOldestFirst(messages)
 	return messages, nil
 }
 

@@ -403,6 +403,38 @@ func TestComputeDisplayName(t *testing.T) {
 	}
 }
 
+func TestFilterCurrentMemberPrefersAuthenticatedUserID(t *testing.T) {
+	currentName := "Alex Smith"
+	selfID := "current-user"
+	otherID := "other-user"
+	members := []ChatMember{
+		{UserID: &selfID, DisplayName: &currentName},
+		{UserID: &otherID, DisplayName: &currentName},
+	}
+
+	filtered := filterCurrentMember(members, selfID, &currentName)
+	if len(filtered) != 1 || filtered[0].UserID == nil || *filtered[0].UserID != otherID {
+		t.Fatalf("filtered members = %#v, want only the non-current member", filtered)
+	}
+	if len(members) != 2 {
+		t.Fatalf("filterCurrentMember mutated its input: %#v", members)
+	}
+}
+
+func TestFilterCurrentMemberFallsBackToDisplayName(t *testing.T) {
+	currentName := "MDF"
+	otherName := "Ada Lovelace"
+	members := []ChatMember{
+		{DisplayName: &currentName},
+		{DisplayName: &otherName},
+	}
+
+	filtered := filterCurrentMember(members, "current-user", &currentName)
+	if len(filtered) != 1 || filtered[0].DisplayName == nil || *filtered[0].DisplayName != otherName {
+		t.Fatalf("filtered members = %#v, want only Ada Lovelace", filtered)
+	}
+}
+
 func TestFilterMessageAttachments(t *testing.T) {
 	strPtr := func(s string) *string { return &s }
 

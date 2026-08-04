@@ -892,10 +892,8 @@ func GetMessages(accessToken, chatID string, top int) ([]Message, string, error)
 	// Filter out non-downloadable attachments (like rich cards and URL previews)
 	FilterMessagesAttachments(allMsgs)
 
-	// Ensure messages are sorted by creation time (newest first).
-	sort.Slice(allMsgs, func(i, j int) bool {
-		return allMsgs[i].CreatedDateTime > allMsgs[j].CreatedDateTime
-	})
+	// Ensure messages are sorted by absolute creation time (newest first).
+	sortMessagesNewestFirst(allMsgs)
 
 	return allMsgs, next, nil
 }
@@ -930,9 +928,7 @@ func GetMessagesFromLink(accessToken, nextLink string) ([]Message, string, error
 	// Filter out non-downloadable attachments (like rich cards and URL previews)
 	FilterMessagesAttachments(r.Value)
 
-	sort.Slice(r.Value, func(i, j int) bool {
-		return r.Value[i].CreatedDateTime > r.Value[j].CreatedDateTime
-	})
+	sortMessagesNewestFirst(r.Value)
 
 	next := ""
 	if r.NextLink != nil {
@@ -1535,11 +1531,11 @@ func MarkChatAsUnread(accessToken, chatID, userID string) error {
 // GetChats — main chat list with member fetch + display name computation
 // ---------------------------------------------------------------------------
 
-// GetChats fetches the user's chats, fetches members for each,
-// detects the current user (by frequency analysis), filters the current user
-// from member lists, computes CachedDisplayName, and returns
-// (chats, detectedCurrentUserName).
-func GetChats(accessToken string, existingChats []Chat, currentUserName *string) ([]Chat, *string, error) {
+// GetChats fetches the user's chats, fetches members for each, filters the
+// authenticated user from member lists, computes CachedDisplayName, and
+// returns (chats, currentUserName). Name detection remains a fallback when the
+// profile name is unavailable, but member filtering prefers currentUserID.
+func GetChats(accessToken string, existingChats []Chat, currentUserName *string, currentUserID string) ([]Chat, *string, error) {
 	limit := ResolveChatLimit()
 
 	// Build a map of existing members to avoid fetching them again in background refreshes.
@@ -1721,9 +1717,7 @@ func GetChats(accessToken string, existingChats []Chat, currentUserName *string)
 		if chats[i].LastMessagePreview != nil {
 			FilterMessageAttachments(chats[i].LastMessagePreview)
 		}
-		if currentUserName != nil {
-			chats[i].Members = filterMember(chats[i].Members, *currentUserName)
-		}
+		chats[i].Members = filterCurrentMember(chats[i].Members, currentUserID, currentUserName)
 		chats[i].CachedDisplayName = new(string)
 		*chats[i].CachedDisplayName = computeDisplayName(&chats[i])
 	}
@@ -1738,7 +1732,7 @@ func GetChats(accessToken string, existingChats []Chat, currentUserName *string)
 // GetChat fetches a single chat by ID, populates its members, filters the
 // current user, and computes CachedDisplayName. Used to hydrate favourited
 // chats that fall outside the regular chat_limit window.
-func GetChat(accessToken, chatID string, currentUserName *string) (*Chat, error) {
+func GetChat(accessToken, chatID string, currentUserName *string, currentUserID string) (*Chat, error) {
 	body, err := graphGet(accessToken, "/chats/"+chatID+"?$expand=lastMessagePreview")
 	if err != nil {
 		return nil, fmt.Errorf("GetChat: %w", err)
@@ -1756,9 +1750,7 @@ func GetChat(accessToken, chatID string, currentUserName *string) (*Chat, error)
 	}
 
 	// Filter current user and compute display name.
-	if currentUserName != nil {
-		c.Members = filterMember(c.Members, *currentUserName)
-	}
+	c.Members = filterCurrentMember(c.Members, currentUserID, currentUserName)
 	c.CachedDisplayName = new(string)
 	*c.CachedDisplayName = computeDisplayName(&c)
 	return &c, nil
@@ -1804,12 +1796,28 @@ func detectCurrentUser(chats []Chat) *string {
 	return nil
 }
 
-// filterMember removes the named member from the slice by allocating a new slice (never modifying in-place).
-func filterMember(members []ChatMember, name string) []ChatMember {
-	var out []ChatMember
-	for _, m := range members {
-		if m.DisplayName == nil || *m.DisplayName != name {
-			out = append(out, m)
+// filterCurrentMember removes the authenticated account without mutating the
+// input. A Graph user ID match is authoritative; display-name matching is only
+// used when the member payload does not identify the current user by ID.
+func filterCurrentMember(members []ChatMember, currentUserID string, currentUserName *string) []ChatMember {
+	hasIDMatch := false
+	if currentUserID != "" {
+		for _, member := range members {
+			if member.UserID != nil && strings.EqualFold(*member.UserID, currentUserID) {
+				hasIDMatch = true
+				break
+			}
+		}
+	}
+
+	out := make([]ChatMember, 0, len(members))
+	for _, member := range members {
+		isCurrent := hasIDMatch && member.UserID != nil && strings.EqualFold(*member.UserID, currentUserID)
+		if !hasIDMatch && currentUserName != nil && member.DisplayName != nil {
+			isCurrent = strings.EqualFold(*member.DisplayName, *currentUserName)
+		}
+		if !isCurrent {
+			out = append(out, member)
 		}
 	}
 	return out
@@ -2925,17 +2933,17 @@ func GetChannelMessages(accessToken, teamID, channelID string, top int) ([]Messa
 	// Sort root messages by last activity (the latest timestamp among the root and all its
 	// replies), oldest-first. This ensures that a thread receiving a new reply is promoted
 	// to the bottom of the visible channel view — consistent with Teams/Slack/Discord UX.
-	lastActivity := func(root Message) string {
-		ts := root.CreatedDateTime
-		for _, r := range replyMap[root.ID] {
-			if r.CreatedDateTime > ts {
-				ts = r.CreatedDateTime
+	lastActivity := func(root Message) Message {
+		latest := root
+		for _, reply := range replyMap[root.ID] {
+			if messageCreatedAfter(reply, latest) {
+				latest = reply
 			}
 		}
-		return ts
+		return latest
 	}
-	sort.Slice(rootMsgs, func(i, j int) bool {
-		return lastActivity(rootMsgs[i]) < lastActivity(rootMsgs[j])
+	sort.SliceStable(rootMsgs, func(i, j int) bool {
+		return messageChronologyLess(lastActivity(rootMsgs[i]), lastActivity(rootMsgs[j]), false)
 	})
 
 	// Build thread-grouped list: each root followed by its replies in chronological order.
@@ -2944,9 +2952,7 @@ func GetChannelMessages(accessToken, teamID, channelID string, top int) ([]Messa
 	for _, root := range rootMsgs {
 		allMsgs = append(allMsgs, root)
 		replies := replyMap[root.ID]
-		sort.Slice(replies, func(i, j int) bool {
-			return replies[i].CreatedDateTime < replies[j].CreatedDateTime
-		})
+		sortMessagesOldestFirst(replies)
 		allMsgs = append(allMsgs, replies...)
 	}
 
