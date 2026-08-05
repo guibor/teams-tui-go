@@ -71,14 +71,14 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - Stored in `Model.favourites map[string]bool` (chat ID set)
   - Persisted to `~/.config/teams-tui-go/favourites.json` via `LoadFavourites()` / `SaveFavourites()`
   - Loaded at startup in `main.go` and applied before the first render
-  - Toggled with `f` key in normal mode; status message confirms add/remove
+  - Toggled with `*` in normal mode or from the thread-action menu; status confirms add/remove
   - Favourited chats are pinned at the top of the sidebar, sorted **alphabetically by display name**
   - `rebuildChatList()` splits chats into favourites (sorted by name) + non-favourites (stable order)
   - `promoteChat()` is a no-op for favourited chats so new messages don't displace them
   - Favourited chats with old/unloaded activity still show up once their data is in `byID` cache
   - The `★` icon appears before the chat type tag in the sidebar (yellow for non-selected, inline for selected)
 - **Chat List Filters**:
-	- `F` opens a local filter popup; no Graph request is made.
+	- `v` / `V` opens a local filter popup; no Graph request is made.
 	- `b` opens mu4e-style bookmark presets implemented in `bookmarks.go`; `bu` selects unread chats and `bi` clears filters for the inbox/all view. Other presets cover read, today, favorites, and chat types.
 	- `App.ActiveChatFilter` is the applied filter and `App.DraftChatFilter` is an isolated copy used by the popup so `Esc` can cancel safely.
 	- Read state, local-day activity, type, favorite, and name/topic/member/email criteria combine with AND semantics; an empty type map means all types.
@@ -97,7 +97,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - `lastMsgID` and `lastMsgTime` track latest content
   - `lastReadMsgID` tracks what was read locally in this session
   - `isUnread(chat)` compares latest message time with server viewpoint and local read state
-- `markRead()` only triggers automatic read state when `mark_read_on_open` is enabled. Normal-mode `r` and `u` explicitly call the Graph read/unread actions; an explicit unread is protected from auto-read until the user leaves and reopens that chat.
+- `markRead()` only triggers automatic read state when `mark_read_on_open` is enabled. Normal-mode `i` and `u` explicitly call the Graph read/unread actions; an explicit unread is protected from auto-read until the user leaves and reopens that chat.
   - **Reactions Read Tracking**: `lastReadReactions` maps chat ID to a set of unique reaction keys (`messageID:reactorNameOrID:reactionType`). Any reaction from another user that is not in this map is considered unread, causing the reaction's actual emoji prefix (e.g. `❤️`, `👍`, `😆`, etc.) to be displayed on the chat in the sidebar and trigger desktop notifications if the app is blurred or not active.
 - **Focus Tracking & Dashboard Mode**:
 	- Terminal focus reporting enabled via `\x1b[?1004h`; `tea.FocusMsg`/`BlurMsg` update `focused` state.
@@ -113,15 +113,15 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - In navigation mode, `j`/`k` scroll results, `y` yanks the selected message body, `u` extracts/selection-copies URLs, and `g` jumps to the selected message in the normal chat view (merging paged search history and setting selection/scrolling focus).
   - History cache, query, selected result index, and viewport scroll offsets are fully preserved and persisted *per chat* on close/reopen, avoiding redundant downloads and maintaining independent search states when switching between chats.
   - Main chat viewport offsets and snap-to-bottom values are preserved and restored cleanly when entering and exiting search popup mode.
-- **Chat Search & Open Popup**:
-  - Activated by `c` in normal mode, which opens a fullscreen-budgeted modal overlay popup (`UserSearchPopupMode`).
+- **Chat Search, Open, and Forward Popup**:
+  - Activated by `s` in normal mode, or by `f` / `F` with `PendingForwardText`, which opens a fullscreen-budgeted modal overlay popup (`UserSearchPopupMode`).
   - While typing (`UserSearchMode`), it filters already loaded chats/members on-the-fly and populates `UserSearchLocalResults` under the `[Local Chat]` category.
   - Pressing `Enter` in the input field:
     - If the input contains `@` (looks like an email/UPN), it blurs the input and triggers a background `createChatCmd` calling `POST /chats` with type `oneOnOne` to retrieve/open the chat directly.
     - Otherwise, it blurs the input to focus the results navigation list.
   - Displays a filtered list of local chats.
   - In navigation mode, `j`/`k` move the selection, `/` refocuses the input, and `Enter` opens the selected local chat.
-  - On success of `createChatCmd`, the chat is added/promoted, stable order is rebuilt, and the chat is opened and selected automatically.
+  - On success of `createChatCmd`, the chat is added/promoted, stable order is rebuilt, and the chat is opened and selected automatically. A pending forward then opens an editable destination composer rather than sending immediately.
 - **Message View/Preview Popup**:
   - Activated by pressing the `v` key in message selection mode (`m` in normal mode).
   - Opens a fullscreen-budgeted modal overlay popup displaying the full message body, sender info, exact timestamps, listed attachments, and grouped reactions.
@@ -134,10 +134,10 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - `MsgPresenceLoaded` updates `app.PresenceData`; the popup `renderPresencePopup` renders availability and activity with color-coded icons.
   - Closed with `ESC`/`q`/`p`/`Enter`. Handled by `handlePresencePopupKey` in `ui.go`.
 - **User Profile Popup** (requires `user_profile_enabled`):
-  - Activated by `i` in message selection mode. Triggers `loadUserProfileCmd` for the sender's user ID.
+  - Activated by `I` in message selection mode. Triggers `loadUserProfileCmd` for the sender's user ID.
   - `MsgUserProfileLoaded` updates `app.UserProfileData`; `renderUserProfilePopup` shows name, email, and (if `user_profile_extended`) job title, department, office.
   - Results are cached in `profileCache` (in-memory, session lifetime) in `api.go` to avoid redundant Graph API calls.
-  - Closed with `ESC`/`q`/`i`/`Enter`. Handled by `handleUserProfilePopupKey` in `ui.go`.
+  - Closed with `ESC`/`q`/`I`/`Enter`. Handled by `handleUserProfilePopupKey` in `ui.go`.
 - **Help Popup**:
   - Activated by `?` in normal mode. Renders a keyboard reference and live optional-feature status (enabled/disabled per flag).
   - Handled by `handleHelpPopupKey` / `renderHelpPopup` in `ui.go`. Closed with `ESC`/`q`/`?`/`Enter`.
@@ -147,12 +147,13 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - Commands may include arguments, such as `spaceclient @spacemacs --wait`; the editor must remain running until editing is complete.
   - Uses Bubble Tea's `tea.ExecProcess` to pause the TUI while the editor executes in the terminal foreground, resuming when the editor process exits.
 - **Compose Send Keys**:
-  - Plain `Enter` inserts one newline; `Ctrl+Enter` or `Ctrl+J` sends the current message.
+	- Normal mode `c` / `C` starts an ordinary compose, `r` / `R` quotes the newest loaded message, and `f` / `F` opens the destination chooser with an editable readable forward. Message selection and preview apply reply/forward to the selected message.
+	- Plain `Enter` inserts one newline; `Ctrl+Enter` or `Ctrl+J` sends the current message.
   - Bubble Tea 1.x does not expose enhanced modified-Return keys directly. `isEnhancedCtrlEnter()` normalizes Kitty/iTerm `CSI 13;5u` and xterm modifyOtherKeys `CSI 27;5;13~` into `Ctrl+J` before normal key dispatch.
 - **Full Markdown Export**:
 	- Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.
 - **Thread Capture**:
-	- Action-menu `c` calls `CaptureChatMarkdown()` in `capture.go`, which atomically records a private (`0600`) checklist entry under the local marking date in `thread_capture_file`.
+	- Action-menu `w` calls `CaptureChatMarkdown()` in `capture.go`, which atomically records a private (`0600`) checklist entry under the local marking date in `thread_capture_file`.
 	- A stable encoded chat marker deduplicates the same chat within a day while allowing it to be marked again on another day.
 
 ### Main / Entry Point (`main.go`)

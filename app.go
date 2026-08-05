@@ -150,7 +150,8 @@ type App struct {
 	NextLink                   string
 	PendingScrollID            string
 	EditingMessageID           *string
-	ReplyToMessage             *Message // set when user presses 'a' to reply-quote a message
+	ReplyToMessage             *Message // source message for a quoted reply
+	PendingForwardText         string   // editable Markdown prepared while choosing a forward target
 	UrlSelectionMode           bool
 	UrlSelectionOpenMode       bool // true if opening, false if yanking/copying
 	UrlSelectedIndex           int

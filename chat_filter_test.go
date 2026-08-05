@@ -112,7 +112,7 @@ func TestThreadActionMenuCapturesSelectedChat(t *testing.T) {
 	if !app.ThreadActionPopupMode {
 		t.Fatal("a did not open the thread action menu")
 	}
-	model, cmd := model.handleThreadActionPopupKey(filterTestKey('c'))
+	model, cmd := model.handleThreadActionPopupKey(filterTestKey('w'))
 	if cmd == nil || app.ThreadActionPopupMode {
 		t.Fatal("capture action did not close the menu and return a command")
 	}
@@ -259,9 +259,9 @@ func TestChatFilterPopupAppliesAndCancelsDrafts(t *testing.T) {
 	model.lastReadMsgID[read.ID] = "message-2"
 	model = model.rebuildChatList()
 
-	model, _ = model.handleNormalModeKey(filterTestKey('F'))
+	model, _ = model.handleNormalModeKey(filterTestKey('v'))
 	if !app.ChatFilterPopupMode {
-		t.Fatal("F did not open the chat filter popup")
+		t.Fatal("v did not open the chat filter popup")
 	}
 	model, _ = model.handleChatFilterPopupKey(filterTestKey('u'))
 	model, _ = model.handleChatFilterPopupKey(tea.KeyMsg{Type: tea.KeyEnter})
@@ -272,7 +272,7 @@ func TestChatFilterPopupAppliesAndCancelsDrafts(t *testing.T) {
 		t.Fatalf("unexpected filtered chats: %#v", app.Chats)
 	}
 
-	model, _ = model.handleNormalModeKey(filterTestKey('F'))
+	model, _ = model.handleNormalModeKey(filterTestKey('v'))
 	model, _ = model.handleChatFilterPopupKey(filterTestKey('r'))
 	model, _ = model.handleChatFilterPopupKey(tea.KeyMsg{Type: tea.KeyEsc})
 	if app.ActiveChatFilter.ReadState != ChatReadUnread {
@@ -376,7 +376,7 @@ func TestReadStateChangeLoadsReplacementTranscriptByChatID(t *testing.T) {
 	}
 }
 
-func TestNormalModeSOpensChatSearchAndCDoesNot(t *testing.T) {
+func TestNormalModeSOpensChatSearchAndCComposes(t *testing.T) {
 	app := NewApp()
 	model := NewModel(app, "client", "user")
 
@@ -387,9 +387,11 @@ func TestNormalModeSOpensChatSearchAndCDoesNot(t *testing.T) {
 
 	app.UserSearchPopupMode = false
 	app.UserSearchMode = false
+	app.Chats = []Chat{{ID: "chat"}}
+	app.SelectedIndex = 0
 	model, _ = model.handleNormalModeKey(filterTestKey('c'))
-	if app.UserSearchPopupMode || app.UserSearchMode {
-		t.Fatal("c still opened chat search")
+	if !app.InputMode || app.UserSearchPopupMode || app.UserSearchMode {
+		t.Fatal("c did not open the current chat composer")
 	}
 }
 

@@ -1142,7 +1142,9 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.UserSearchMode = false
 			m.app.UserSearchQuery = ""
 			m.app.UserSearchLocalResults = nil
+			m.app.UserSearchChannelResults = nil
 			m.app.UserSearchDirectoryResults = nil
+			forwardText := m.app.PendingForwardText
 
 			chat := *msg.Chat
 			chat.Members = filterCurrentMember(chat.Members, m.userID, m.app.CurrentUserName)
@@ -1163,10 +1165,23 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.promoteChat(chat.ID)
 			m = m.mergeChats(m.latestChats)
 
+			selected := false
 			for i, c := range m.app.Chats {
 				if c.ID == chat.ID {
 					m.app.SelectedIndex = i
+					selected = true
 					break
+				}
+			}
+			if !selected {
+				m.app.ActiveChatFilter = newChatListFilter()
+				m = m.rebuildChatList()
+				for i, c := range m.app.Chats {
+					if c.ID == chat.ID {
+						m.app.SelectedIndex = i
+						selected = true
+						break
+					}
 				}
 			}
 
@@ -1176,6 +1191,12 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SnapToBottom = true
 
 			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
+			if forwardText != "" && selected {
+				m.app.PendingForwardText = ""
+				var composeCmd tea.Cmd
+				m, composeCmd = m.beginCompose(forwardText)
+				cmds = append(cmds, composeCmd)
+			}
 		}
 
 	// ── Focus / Blur ─────────────────────────────────────────────────────
@@ -1933,29 +1954,16 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.app.HelpPopupMode = true
 		m.app.HelpScrollOffset = 0
 
-	case "i":
+	case "c", "C":
 		if m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0 {
 			break
 		}
-		m.app.InputMode = true
-		m.app.InputBuffer = ""
-		m.textarea.Reset()
-		return m, m.textarea.Focus()
+		return m.beginCompose("")
 
 	case "s":
-		m.app.UserSearchPopupMode = true
-		m.app.UserSearchMode = true
-		m.app.UserSearchQuery = ""
-		m.app.UserSearchStatus = ""
-		m.app.UserSearchLocalResults = nil
-		m.app.UserSearchDirectoryResults = nil
-		m.app.UserSearchSelectedIndex = 0
-		m.app.UserSearchLoading = false
-		m.userSearchInput.SetValue("")
-		m.userSearchInput.Focus()
-		return m, textinput.Blink
+		return m.openChatChooser("")
 
-	case "F":
+	case "v", "V":
 		m.app.DraftChatFilter = cloneChatListFilter(m.app.ActiveChatFilter)
 		m.app.ChatFilterSelectedIndex = 0
 		m.app.ChatFilterInputMode = false
@@ -2079,7 +2087,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			}
 		}
 
-	case "f":
+	case "*":
 		return m.executeThreadAction(threadActionFavorite)
 
 	case "o":
@@ -2088,24 +2096,24 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "O":
 		return m.executeThreadAction(threadActionOpenTeams)
 
-	case "r":
-		if m.channelSelectedIndex >= 0 {
-			if entry := m.activeChannelEntry(); entry != nil {
-				latestID := m.lastMsgID[entry.channelID]
-				if latestID == "" && len(m.app.Messages) > 0 {
-					latestID = m.app.Messages[0].ID
-				}
-				if latestID != "" {
-					m.lastReadMsgID[entry.channelID] = latestID
-					delete(m.manuallyUnread, entry.channelID)
-					m.app.SetStatus("Marked channel read locally", 3*time.Second)
-				}
-			}
+	case "r", "R":
+		message, ok := m.newestLoadedMessage()
+		if !ok {
+			m.app.SetStatus("No loaded message to reply to", 3*time.Second)
 			break
 		}
-		if m.app.GetSelectedChat() != nil {
-			return m.executeThreadAction(threadActionRead)
+		return m.beginReply(message)
+
+	case "f", "F":
+		message, ok := m.newestLoadedMessage()
+		if !ok {
+			m.app.SetStatus("No loaded message to forward", 3*time.Second)
+			break
 		}
+		return m.beginForward(message)
+
+	case "i":
+		return m.markActiveConversationRead()
 
 	case "u":
 		if m.channelSelectedIndex >= 0 {
@@ -2526,6 +2534,30 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case "c", "C":
+		if m.app.AttachmentCursorMode {
+			return m, nil
+		}
+		m, composeCmd := m.beginCompose("")
+		return m, tea.Batch(clearTerminalImagesCmd(), composeCmd)
+
+	case "r", "R":
+		if m.app.AttachmentCursorMode || m.app.MessageSelectedIndex >= len(m.app.Messages) {
+			return m, nil
+		}
+		m, replyCmd := m.beginReply(m.app.Messages[m.app.MessageSelectedIndex])
+		return m, tea.Batch(clearTerminalImagesCmd(), replyCmd)
+
+	case "f", "F":
+		if m.app.AttachmentCursorMode || m.app.MessageSelectedIndex >= len(m.app.Messages) {
+			return m, nil
+		}
+		m, forwardCmd := m.beginForward(m.app.Messages[m.app.MessageSelectedIndex])
+		return m, tea.Batch(clearTerminalImagesCmd(), forwardCmd)
+
+	case "i":
+		return m.markActiveConversationRead()
+
 	case "enter":
 		if m.app.AttachmentCursorMode {
 			// Download/open selected attachment.
@@ -2672,9 +2704,15 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			m.app.MessageSelectedIndex = len(m.app.Messages) - 1
 		}
 
-	case "r":
+	case "+", "a":
 		m.app.ReactionMode = true
 		return m, nil
+
+	case "c", "C":
+		return m.beginCompose("")
+
+	case "i":
+		return m.markActiveConversationRead()
 
 	case "y":
 		if m.app.MessageSelectedIndex < len(m.app.Messages) {
@@ -2736,26 +2774,15 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "a":
+	case "r", "R":
 		if m.app.MessageSelectedIndex < len(m.app.Messages) {
-			msgObj := m.app.Messages[m.app.MessageSelectedIndex]
-			m.app.MessageSelectionMode = false
-			m.app.InputMode = true
-			m.textarea.Reset()
-			if m.activeChannelEntry() != nil {
-				// Channel thread reply: resolve the root message ID.
-				// If the selected message is itself a reply, reply to the same root.
-				rootID := msgObj.ID
-				if msgObj.IsReply && msgObj.ReplyToID != "" {
-					rootID = msgObj.ReplyToID
-				}
-				m.app.ChannelReplyToID = rootID
-			} else {
-				// Chat: use the full message reference for quoted-reply formatting.
-				ref := msgObj
-				m.app.ReplyToMessage = &ref
-			}
-			return m, m.textarea.Focus()
+			return m.beginReply(m.app.Messages[m.app.MessageSelectedIndex])
+		}
+		return m, nil
+
+	case "f", "F":
+		if m.app.MessageSelectedIndex < len(m.app.Messages) {
+			return m.beginForward(m.app.Messages[m.app.MessageSelectedIndex])
 		}
 		return m, nil
 	case "u":
@@ -2841,7 +2868,7 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "i":
+	case "I":
 		// Show user profile popup (requires user_profile_enabled feature).
 		if !m.app.Features.UserProfile {
 			m.app.SetStatus("User profile feature disabled — enable 'user_profile_enabled' in config.json", 5*time.Second)
@@ -2865,7 +2892,7 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 func (m Model) handleReactionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "r":
+	case "esc", "+", "a":
 		m.app.ReactionMode = false
 		return m, nil
 
@@ -6245,6 +6272,9 @@ func (m Model) handleUserSearchInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 			if strings.Contains(query, "@") {
 				m.app.UserSearchLoading = true
 				m.app.UserSearchStatus = "Opening chat..."
+				if m.app.PendingForwardText != "" {
+					m.app.UserSearchStatus = "Opening forward destination..."
+				}
 				return m, createChatCmd(m.clientID, m.userID, query)
 			}
 		}
@@ -6261,6 +6291,7 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "esc", "q":
 		m.app.UserSearchPopupMode = false
 		m.app.UserSearchMode = false
+		m.app.PendingForwardText = ""
 		return m, nil
 
 	case "j", "down":
@@ -6287,6 +6318,7 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 		item := items[m.app.UserSearchSelectedIndex]
 		if item.Type == UserSearchItemLocal {
+			forwardText := m.app.PendingForwardText
 			targetID := item.LocalChat.ID
 			idx := -1
 			for i, c := range m.app.Chats {
@@ -6302,10 +6334,18 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.app.SelectedChannelID = ""
 				m.app.UserSearchPopupMode = false
 				m.app.UserSearchMode = false
+				m.app.PendingForwardText = ""
 				m.app.SnapToBottom = true
-				return m.loadChatMessages(targetID)
+				m, loadCmd := m.loadChatMessages(targetID)
+				if forwardText != "" {
+					var composeCmd tea.Cmd
+					m, composeCmd = m.beginCompose(forwardText)
+					return m, tea.Batch(loadCmd, composeCmd)
+				}
+				return m, loadCmd
 			}
 		} else if item.Type == UserSearchItemChannel {
+			forwardText := m.app.PendingForwardText
 			chans := m.allChannels()
 			idx := -1
 			for i, ch := range chans {
@@ -6320,7 +6360,14 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				m.app.SelectedChannelID = item.Channel.channelID
 				m.app.UserSearchPopupMode = false
 				m.app.UserSearchMode = false
-				return m.loadChannelMessages(item.Channel.teamID, item.Channel.channelID)
+				m.app.PendingForwardText = ""
+				m, loadCmd := m.loadChannelMessages(item.Channel.teamID, item.Channel.channelID)
+				if forwardText != "" {
+					var composeCmd tea.Cmd
+					m, composeCmd = m.beginCompose(forwardText)
+					return m, tea.Batch(loadCmd, composeCmd)
+				}
+				return m, loadCmd
 			}
 		}
 	}
@@ -6330,11 +6377,16 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 func (m Model) renderUserSearchPopup(w, h int) string {
 	titleStyle := lipgloss.NewStyle().Foreground(colCyan).Bold(true)
-	title := titleStyle.Render("Find Local Chat or Start Direct Chat")
+	forwarding := m.app.PendingForwardText != ""
+	titleText := "Find Local Chat or Start Direct Chat"
+	instructionText := " j/k: Nav | Enter: Open selected chat or typed email | /: Edit | Esc: Close"
+	if forwarding {
+		titleText = "Forward Message to Chat"
+		instructionText = " j/k: Nav | Enter: Choose destination or typed email | /: Edit | Esc: Cancel"
+	}
+	title := titleStyle.Render(titleText)
 
-	instructions := lipgloss.NewStyle().Foreground(colDimGray).Render(
-		" j/k: Nav | Enter: Open selected chat or typed email | /: Edit | Esc: Close",
-	)
+	instructions := lipgloss.NewStyle().Foreground(colDimGray).Render(instructionText)
 
 	var list strings.Builder
 	list.WriteString(title + "\n")
@@ -6348,7 +6400,11 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 
 	if len(items) == 0 {
 		if m.app.UserSearchQuery == "" {
-			list.WriteString(lipgloss.NewStyle().Foreground(colDimGray).Render("Type a name/email and press Enter/arrows.") + "\n")
+			emptyText := "Type a name/email and press Enter/arrows."
+			if forwarding {
+				emptyText = "Type a destination name/email and press Enter/arrows."
+			}
+			list.WriteString(lipgloss.NewStyle().Foreground(colDimGray).Render(emptyText) + "\n")
 		} else {
 			list.WriteString(lipgloss.NewStyle().Foreground(colDimGray).Render("No matching local chats or channels found.") + "\n")
 		}
@@ -6433,7 +6489,11 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 	if m.app.UserSearchStatus != "" {
 		statusText = "  " + lipgloss.NewStyle().Foreground(colYellow).Italic(true).Render(m.app.UserSearchStatus)
 	} else if m.app.UserSearchLoading {
-		statusText = "  " + lipgloss.NewStyle().Foreground(colYellow).Italic(true).Render("⏳ Opening chat...")
+		loadingText := "⏳ Opening chat..."
+		if forwarding {
+			loadingText = "⏳ Opening forward destination..."
+		}
+		statusText = "  " + lipgloss.NewStyle().Foreground(colYellow).Italic(true).Render(loadingText)
 	}
 
 	list.WriteString(statusText + "\n" + inputBox)
@@ -6841,16 +6901,18 @@ func (m Model) getHelpContentLines() []string {
 			{"< / >, H / L", "Jump to top / bottom of loaded messages"},
 			{"Tab", "Switch between Chats & Channels"},
 			{"m", "Enter message selection mode"},
-			{"i", "Compose new message"},
+			{"c / C", "Compose new message"},
+			{"r / R", "Reply to newest loaded message"},
+			{"f / F", "Forward newest loaded message"},
 			{"s", "Open chat search / open chat"},
 			{"/", "Search message history"},
-			{"F", "Filter chat list by state, type, favorite, or text"},
+			{"v / V", "Filter chat list by state, type, favorite, or text"},
 			{"U", "Replace the current view with unread-only chats"},
 			{"b", "Open mu4e-style chat bookmarks (bu unread, bi inbox)"},
 			{"a", "Open actions for the selected chat"},
-			{"f", "Toggle favourite (chats only)"},
+			{"*", "Toggle favourite (chats only)"},
 			{"o / O", "Open selected chat in Teams web / Teams desktop"},
-			{"r", "Mark selected chat read"},
+			{"i", "Mark selected chat read"},
 			{"u", "Mark selected chat unread"},
 			{"E", "Export complete chat history as Markdown"},
 			{"h", "Toggle hide/unhide channel (channels only)"},
@@ -6869,18 +6931,25 @@ func (m Model) getHelpContentLines() []string {
 			{"y", "Yank message to clipboard"},
 			{"u", "Extract URLs"},
 			{"o", "Open URLs"},
-			{"r", "React to message"},
-			{"a", "Reply (quote) message"},
+			{"+ / a", "React to message"},
+			{"c / C", "Compose without quote"},
+			{"r / R", "Reply (quote) message"},
+			{"f / F", "Forward message"},
+			{"i", "Mark conversation read"},
 			{"d", "Delete message"},
 			{"e", "Edit message"},
 			{"p", "Presence status (feature: presence_enabled)"},
-			{"i", "User profile info (feature: user_profile_enabled)"},
+			{"I", "User profile info (feature: user_profile_enabled)"},
 			{"ESC / m", "Exit selection mode"},
 		}},
 		{"Message View Popup (v)", [][2]string{
 			{"j / k", "Navigate to next/prev message"},
 			{"< / >, H / L", "Select oldest / newest loaded message"},
 			{"J / K", "Scroll message body"},
+			{"c / C", "Compose without quote"},
+			{"r / R", "Reply to message"},
+			{"f / F", "Forward message"},
+			{"i", "Mark conversation read"},
 			{"Tab", "Switch to attachment cursor mode"},
 			{"Enter", "Download selected attachment (feature: file_preview_enabled)"},
 			{"ESC / q / v", "Close popup"},
@@ -6900,7 +6969,7 @@ func (m Model) getHelpContentLines() []string {
 			{"j / k", "Navigate results"},
 			{"ESC", "Close popup"},
 		}},
-		{"Chat Filter (F)", [][2]string{
+		{"Chat Filter (v/V)", [][2]string{
 			{"j / k", "Navigate filter characteristics"},
 			{"Space", "Cycle/toggle selected characteristic"},
 			{"u / r / a", "Unread only / read only / all states"},
@@ -6920,8 +6989,9 @@ func (m Model) getHelpContentLines() []string {
 		}},
 		{"Thread Actions (a)", [][2]string{
 			{"o / O", "Open in browser / Teams desktop"},
-			{"r / u / f", "Mark read / unread / toggle favorite"},
-			{"c", "Capture in the dated Markdown thread list"},
+			{"c / r / f", "Compose / reply / forward"},
+			{"i / u / *", "Mark read / unread / toggle favorite"},
+			{"w", "Capture in the dated Markdown thread list"},
 			{"e / y", "Export complete transcript / copy Teams link"},
 			{"j / k / Enter", "Navigate and run an action"},
 			{"ESC", "Cancel"},
@@ -7290,7 +7360,7 @@ func (m Model) renderPresencePopup(w, h int) string {
 
 func (m Model) handleUserProfilePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q", "i", "enter":
+	case "esc", "q", "I", "enter":
 		m.app.UserProfilePopupMode = false
 		m.app.UserProfileData = nil
 	}

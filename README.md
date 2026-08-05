@@ -24,14 +24,15 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 😊 Emoticon Auto-replacement — popular text emoticons (like `:)`, `:D`, `<3`) are automatically converted to Unicode emojis
 - 🔍 Search History — search messages in any chat, recursively loading and indexing all conversation history in the background
 - 🔍 Chat Search & Open — filter locally loaded chats or open/start a 1:1 chat directly by entering a UPN/email (bypassing directory search)
-- 🧭 Chat List Filters — press `F` to combine unread/read state, today's activity, chat type, favorites, and name/member text without making another Graph request
+- 🧭 Chat List Filters — press `v` or `V` to combine unread/read state, today's activity, chat type, favorites, and name/member text without making another Graph request
 - 🔖 Chat Bookmarks — use mu4e-style prefixes such as `bu` (unread), `bi` (inbox/all), `bt` (today), `bf` (favorites), `bd` (direct), `bg` (groups), and `bm` (meetings)
-- ⭐ Favourites — pin any chat to the top of the sidebar with `f`; favourites are sorted alphabetically and stay anchored regardless of activity
+- ⭐ Favourites — pin any chat to the top of the sidebar with `*`; favourites are sorted alphabetically and stay anchored regardless of activity
 - ↗️ Open in Teams — press `o` in normal mode to open the selected chat using Graph's native Teams URL and your configured browser/app command
 - ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
 
 - 🔵 Read-State Styling — unread chats use a cyan dot with bright bold text; read chats are deliberately muted
-- 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread; merely moving over a chat does not mark it read by default
+- 📬 Explicit Read State — press `i` to mark a chat read or `u` to mark it unread; merely moving over a chat does not mark it read by default
+- ✉️ Mail-style Actions — use `c`/`C` to compose, `r`/`R` to reply with a quote, and `f`/`F` to forward an editable readable copy through the chat chooser
 - 📥 Full Markdown Export — press `E` to fetch every page of the selected chat and save a chronological Markdown transcript
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
 - ⬆️ New messages bubble chats to the top of the list
@@ -174,7 +175,7 @@ Configure how many chats to load in the sidebar in `~/.config/teams-tui-go/confi
 
 ### Read State and Markdown Exports
 
-Navigation is non-destructive by default. Select a chat and press `r` to mark
+Navigation is non-destructive by default. Select a chat and press `i` to mark
 it read or `u` to mark it unread. To restore the original mark-on-open behavior,
 set `mark_read_on_open` to `true`.
 
@@ -422,7 +423,7 @@ When you press `e` to edit an existing message the edit box is pre-filled with t
 
 ### Clipboard Image Pasting
 
-When in compose mode (`i`), you can paste images (PNG/JPEG) directly from your system clipboard using **`Ctrl+V`**.
+When in compose mode (`c` or `C`), you can paste images (PNG/JPEG) directly from your system clipboard using **`Ctrl+V`**.
 - A placeholder like `[Image 1]` will be inserted into the text field.
 - You can move, copy, or delete this placeholder to control where the image appears in the sent message. If deleted, the image won't be sent.
 - When the message is sent, the image is automatically base64-encoded and uploaded inline.
@@ -433,7 +434,7 @@ When in compose mode (`i`), you can paste images (PNG/JPEG) directly from your s
 ### File Browsing & Uploading
 
 When `file_upload_enabled` is set to `true` in `config.json`, you can attach small files (under 4MB) from your local computer to chat or channel messages.
-- In compose mode (`i`), press **`Ctrl+f`** to open the offline file browser overlay.
+- In compose mode (`c` or `C`), press **`Ctrl+f`** to open the offline file browser overlay.
 - Navigate directories using `j`/`k` (or arrow keys) and enter directories with `Enter`. Move to parent directories via `..`.
 - Highlight a file and press **`Enter`** to select and attach it.
 - A placeholder like `[File: filename.ext]` is inserted into the textarea. You can move, copy, or delete it to control inline message rendering.
@@ -443,7 +444,7 @@ When `file_upload_enabled` is set to `true` in `config.json`, you can attach sma
 
 You can use an external editor (such as `vim`, `neovim`, or `nano`) to either compose a new message or view an existing message:
 
-- **Composing/Editing**: When in compose mode (`i`), press **`Ctrl+g`** to open the external editor. The current input text is saved to a temporary file and loaded into the editor. When you save and exit, the TUI loads the changes back into the compose field.
+- **Composing/Editing**: When in compose mode (`c` or `C`), press **`Ctrl+g`** to open the external editor. The current input text is saved to a temporary file and loaded into the editor. When you save and exit, the TUI loads the changes back into the compose field.
 - **Viewing**: When in message mode (`m`) or message details popup (`v`), press **`Ctrl+g`** to open the selected message's full content in the external editor in read-only mode. Edits made in the editor are discarded when you exit, returning you directly to your previous position in the TUI.
 
 The external editor command can be configured in your `config.json` via the `"external_editor"` option. If not specified, it falls back to the `$EDITOR` environment variable, then `$VISUAL` environment variable, and defaults to `"vim"`.
@@ -473,18 +474,20 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `/`          | Open search input (in Normal Mode)                        |
 | `Esc`        | Clear active search, or leave conversation for dashboard   |
 | `s`          | Open chat search / chat creation popup                    |
-| `F`          | Filter chats by read state, type, favorite, and text      |
+| `v` / `V`    | Filter chats by read state, type, favorite, and text      |
 | `U`          | Replace any active chat view/filter with unread-only chats |
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
 | `a`          | Open actions for the selected chat                         |
-| `f`          | Toggle ★ favourite on selected chat (chats only)          |
+| `*`          | Toggle ★ favourite on selected chat (chats only)          |
 | `o`          | Open selected chat directly in Teams web in the configured browser |
 | `O`          | Open selected chat in the Teams desktop client            |
-| `r`          | Mark selected chat read (Normal Mode)                     |
+| `i`          | Mark selected chat read (Normal Mode)                     |
 | `u`          | Mark selected chat unread (Normal Mode)                   |
+| `c` / `C`    | Compose a new message in the current conversation          |
+| `r` / `R`    | Reply to the newest loaded message                         |
+| `f` / `F`    | Forward the newest loaded message through the chat chooser |
 | `E`          | Export complete selected chat as Markdown (Normal Mode)   |
 | `h`          | Toggle hide/unhide on selected channel (channel mode)     |
-| `i`          | Enter compose mode                                        |
 | `Ctrl+V`     | Paste image from clipboard (in Compose Mode)              |
 | `Ctrl+f`     | Browse and attach file from computer (in Compose Mode)    |
 | `Ctrl+g`     | Compose/edit message in external editor (in Compose Mode) |
@@ -500,23 +503,25 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `Ctrl+g`     | View selected message in external editor (in Message Mode / Message View Popup) |
 | `Tab`        | Switch to attachment cursor in `v` popup (in Message View Popup) |
 | `Enter`      | Download selected attachment (in `v` attachment cursor)   |
-| `r`          | React to selected message (in Message Mode)               |
+| `+` / `a`    | React to selected message (in Message Mode)               |
+| `c` / `C`    | Compose without quoting (Message Mode / Message View)     |
+| `r` / `R`    | Reply to selected message (Message Mode / Message View)   |
+| `f` / `F`    | Forward selected message (Message Mode / Message View)    |
 | `y`          | Copy (yank) message text (in Message Mode)                |
 | `u`          | Copy (yank) URL from message (in Message Mode / History Search) |
 | `o`          | Open URL from message (in Message Mode / History Search / URL list) |
 | `g`          | Go to/jump to message in normal view (in History Search results) |
 | `d`          | Delete selected message (in Message Mode)                 |
 | `e`          | Edit selected message (in Message Mode)                   |
-| `a`          | Answer (reply) to selected message (in Message Mode)      |
 | `p`          | Show presence status of sender (`presence_enabled`)       |
-| `i`          | Show profile info of sender (`user_profile_enabled`)      |
+| `I`          | Show profile info of sender (`user_profile_enabled`)      |
 | `1-6`        | Send reaction (in Reaction Mode)                          |
 | `q`          | Leave conversation for dashboard; press again to quit     |
 | `Ctrl+C`     | Quit immediately                                           |
 
 ### Chat List Filter
 
-Press `F` from normal mode. Filters are local and combine with AND semantics, so
+Press `v` or `V` from normal mode. Filters are local and combine with AND semantics, so
 an unread + group + favorites filter shows only chats matching all three.
 Press `U` from normal mode to replace the current filter or bookmark immediately
 with unread-only chats.
@@ -559,9 +564,12 @@ navigate with `j`/`k` and run it with `Enter`.
 | Action key | Action                                      |
 | ---------- | ------------------------------------------- |
 | `o` / `O`  | Open directly in Teams web / Teams desktop  |
-| `r` / `u`  | Mark read / unread                          |
-| `f`        | Toggle favorite                             |
-| `c`        | Capture in the dated Markdown thread list   |
+| `c` / `C`  | Compose a message                           |
+| `r` / `R`  | Reply to the latest message                 |
+| `f` / `F`  | Forward the latest message                 |
+| `i` / `u`  | Mark read / unread                          |
+| `*`        | Toggle favorite                             |
+| `w`        | Capture in the dated Markdown thread list   |
 | `e`        | Export the complete Markdown transcript     |
 | `y`        | Copy the Teams web link                     |
 

@@ -29,6 +29,7 @@ func (m Model) leaveActiveConversation() Model {
 	m.app.MessagePopupMode = false
 	m.app.MessageSelectedIndex = 0
 	m.app.ReplyToMessage = nil
+	m.app.PendingForwardText = ""
 	m.app.SearchMode = false
 	m.app.SearchActive = false
 	m.app.SearchQuery = ""

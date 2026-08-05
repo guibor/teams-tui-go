@@ -16,6 +16,9 @@ type threadActionID string
 const (
 	threadActionOpenBrowser threadActionID = "open-browser"
 	threadActionOpenTeams   threadActionID = "open-teams"
+	threadActionCompose     threadActionID = "compose"
+	threadActionReply       threadActionID = "reply"
+	threadActionForward     threadActionID = "forward"
 	threadActionRead        threadActionID = "read"
 	threadActionUnread      threadActionID = "unread"
 	threadActionFavorite    threadActionID = "favorite"
@@ -34,10 +37,13 @@ func threadActions() []threadAction {
 	return []threadAction{
 		{Key: "o", Label: "Open in browser", ID: threadActionOpenBrowser},
 		{Key: "O", Label: "Open in Teams desktop", ID: threadActionOpenTeams},
-		{Key: "r", Label: "Mark read", ID: threadActionRead},
+		{Key: "c", Label: "Compose message", ID: threadActionCompose},
+		{Key: "r", Label: "Reply to latest message", ID: threadActionReply},
+		{Key: "f", Label: "Forward latest message", ID: threadActionForward},
+		{Key: "i", Label: "Mark read", ID: threadActionRead},
 		{Key: "u", Label: "Mark unread", ID: threadActionUnread},
-		{Key: "f", Label: "Toggle favorite", ID: threadActionFavorite},
-		{Key: "c", Label: "Capture in Markdown thread list", ID: threadActionCapture},
+		{Key: "*", Label: "Toggle favorite", ID: threadActionFavorite},
+		{Key: "w", Label: "Capture in Markdown thread list", ID: threadActionCapture},
 		{Key: "e", Label: "Export complete Markdown transcript", ID: threadActionExport},
 		{Key: "y", Label: "Copy Teams link", ID: threadActionCopyLink},
 	}
@@ -108,6 +114,25 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		m.app.SetStatus("Opening chat in Teams...", 0)
 		return m, openWithCommandCmd(deepLink, m.app.TeamsAppCommand)
 
+	case threadActionCompose:
+		return m.beginCompose("")
+
+	case threadActionReply:
+		message, ok := m.newestLoadedMessage()
+		if !ok {
+			m.app.SetStatus("No loaded message to reply to", 3*time.Second)
+			return m, nil
+		}
+		return m.beginReply(message)
+
+	case threadActionForward:
+		message, ok := m.newestLoadedMessage()
+		if !ok {
+			m.app.SetStatus("No loaded message to forward", 3*time.Second)
+			return m, nil
+		}
+		return m.beginForward(message)
+
 	case threadActionRead:
 		m.app.SetStatus("Marking chat read...", 0)
 		return m, setChatReadStateCmd(m.clientID, chatValue.ID, m.userID, false)
@@ -163,7 +188,8 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 
 func (m Model) handleThreadActionPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	actions := threadActions()
-	switch msg.String() {
+	key := msg.String()
+	switch key {
 	case "esc", "q", "a":
 		m.app.ThreadActionPopupMode = false
 		return m, nil
@@ -185,8 +211,11 @@ func (m Model) handleThreadActionPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.executeThreadAction(actions[index].ID)
 	}
 
+	if key == "C" || key == "R" || key == "F" {
+		key = strings.ToLower(key)
+	}
 	for _, action := range actions {
-		if msg.String() == action.Key {
+		if key == action.Key {
 			m.app.ThreadActionPopupMode = false
 			return m.executeThreadAction(action.ID)
 		}
