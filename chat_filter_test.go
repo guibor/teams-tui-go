@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,6 +125,35 @@ func TestThreadActionMenuCapturesSelectedChat(t *testing.T) {
 	model, _ = model.updateInternal(msg)
 	if _, err := os.Stat(app.ThreadCaptureFile); err != nil {
 		t.Fatalf("capture action did not create file: %v", err)
+	}
+}
+
+func TestThreadActionMenuCapturesSelectedChatAsOrg(t *testing.T) {
+	app := NewApp()
+	title := "Capture me in Org"
+	app.Chats = []Chat{{ID: "chat-org", CachedDisplayName: &title}}
+	app.SelectedIndex = 0
+	app.ThreadCaptureFormat = ThreadCaptureOrg
+	app.ThreadCaptureOrgFile = filepath.Join(t.TempDir(), "threads.org")
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.handleNormalModeKey(filterTestKey('a'))
+	model, cmd := model.handleThreadActionPopupKey(filterTestKey('a'))
+	if cmd == nil || app.ThreadActionPopupMode {
+		t.Fatal("Org capture action did not close the menu and return a command")
+	}
+	rawMsg := cmd()
+	msg, ok := rawMsg.(MsgThreadCaptured)
+	if !ok {
+		t.Fatalf("Org capture command returned %T", rawMsg)
+	}
+	model, _ = model.updateInternal(msg)
+	data, err := os.ReadFile(app.ThreadCaptureOrgFile)
+	if err != nil {
+		t.Fatalf("Org capture action did not create file: %v", err)
+	}
+	if !strings.Contains(string(data), "** TODO Teams: Capture me in Org") {
+		t.Fatalf("Org capture did not use Org format:\n%s", data)
 	}
 }
 

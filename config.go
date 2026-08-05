@@ -152,21 +152,31 @@ const appDirName = "teams-tui-go"
 // defaultClientID is the Microsoft Teams client ID fallback.
 const defaultClientID = "d3590ed6-52b3-4102-aeff-aad2292ab01c"
 
+// ThreadCaptureFormat selects the syntax and destination for thread-list captures.
+type ThreadCaptureFormat string
+
+const (
+	ThreadCaptureMarkdown ThreadCaptureFormat = "markdown"
+	ThreadCaptureOrg      ThreadCaptureFormat = "org"
+)
+
 // Config holds persistent application settings.
 type Config struct {
-	ClientID                *string           `json:"client_id,omitempty"`
-	NotificationMode        *NotificationMode `json:"notification_mode,omitempty"`
-	NotificationShowPreview *bool             `json:"notification_show_preview,omitempty"`
-	NotificationPreviewLen  *int              `json:"notification_preview_len,omitempty"`
-	MessageLimit            *int              `json:"message_limit,omitempty"`
-	SearchContextLimit      *int              `json:"search_context_limit,omitempty"`
-	ChatLimit               *int              `json:"chat_limit,omitempty"`
-	MarkReadOnOpen          *bool             `json:"mark_read_on_open,omitempty"`
-	ExportDirectory         *string           `json:"export_directory,omitempty"`
-	ThreadCaptureFile       *string           `json:"thread_capture_file,omitempty"`
-	ChatIconTheme           *string           `json:"chat_icon_theme,omitempty"`
-	ShowChatDates           *bool             `json:"show_chat_dates,omitempty"`
-	CustomChatIcons         map[string]string `json:"custom_chat_icons,omitempty"`
+	ClientID                *string              `json:"client_id,omitempty"`
+	NotificationMode        *NotificationMode    `json:"notification_mode,omitempty"`
+	NotificationShowPreview *bool                `json:"notification_show_preview,omitempty"`
+	NotificationPreviewLen  *int                 `json:"notification_preview_len,omitempty"`
+	MessageLimit            *int                 `json:"message_limit,omitempty"`
+	SearchContextLimit      *int                 `json:"search_context_limit,omitempty"`
+	ChatLimit               *int                 `json:"chat_limit,omitempty"`
+	MarkReadOnOpen          *bool                `json:"mark_read_on_open,omitempty"`
+	ExportDirectory         *string              `json:"export_directory,omitempty"`
+	ThreadCaptureFormat     *ThreadCaptureFormat `json:"thread_capture_format,omitempty"`
+	ThreadCaptureFile       *string              `json:"thread_capture_file,omitempty"`
+	ThreadCaptureOrgFile    *string              `json:"thread_capture_org_file,omitempty"`
+	ChatIconTheme           *string              `json:"chat_icon_theme,omitempty"`
+	ShowChatDates           *bool                `json:"show_chat_dates,omitempty"`
+	CustomChatIcons         map[string]string    `json:"custom_chat_icons,omitempty"`
 
 	// Optional feature flags — each defaults to false (disabled).
 	// When enabled, the corresponding Graph API permission must be granted
@@ -330,9 +340,19 @@ func InitConfig() {
 		cfg.ExportDirectory = &dir
 		modified = true
 	}
+	if cfg.ThreadCaptureFormat == nil {
+		format := ThreadCaptureMarkdown
+		cfg.ThreadCaptureFormat = &format
+		modified = true
+	}
 	if cfg.ThreadCaptureFile == nil {
 		path := "~/Documents/teams-threads.md"
 		cfg.ThreadCaptureFile = &path
+		modified = true
+	}
+	if cfg.ThreadCaptureOrgFile == nil {
+		path := "~/Documents/teams-threads.org"
+		cfg.ThreadCaptureOrgFile = &path
 		modified = true
 	}
 	if cfg.ChatIconTheme == nil {
@@ -517,6 +537,22 @@ func ResolveExportDirectory() string {
 	return "~/Downloads"
 }
 
+func normalizeThreadCaptureFormat(format ThreadCaptureFormat) ThreadCaptureFormat {
+	if strings.EqualFold(strings.TrimSpace(string(format)), string(ThreadCaptureOrg)) {
+		return ThreadCaptureOrg
+	}
+	return ThreadCaptureMarkdown
+}
+
+// ResolveThreadCaptureFormat returns the configured capture syntax.
+func ResolveThreadCaptureFormat() ThreadCaptureFormat {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ThreadCaptureFormat != nil {
+		return normalizeThreadCaptureFormat(*cfg.ThreadCaptureFormat)
+	}
+	return ThreadCaptureMarkdown
+}
+
 // ResolveThreadCaptureFile returns the Markdown file used for thread captures.
 func ResolveThreadCaptureFile() string {
 	cfg := LoadConfig()
@@ -524,6 +560,15 @@ func ResolveThreadCaptureFile() string {
 		return *cfg.ThreadCaptureFile
 	}
 	return "~/Documents/teams-threads.md"
+}
+
+// ResolveThreadCaptureOrgFile returns the Org file used for thread captures.
+func ResolveThreadCaptureOrgFile() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ThreadCaptureOrgFile != nil && strings.TrimSpace(*cfg.ThreadCaptureOrgFile) != "" {
+		return *cfg.ThreadCaptureOrgFile
+	}
+	return "~/Documents/teams-threads.org"
 }
 
 // ResolveShowChatDates returns whether chat rows include the last-message timestamp.

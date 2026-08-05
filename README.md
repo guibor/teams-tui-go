@@ -211,17 +211,25 @@ wider message pane.
 Press `E` to fetch the complete selected chat, follow every Graph pagination
 link, and write a chronological Markdown transcript. Exports default to
 `~/Downloads`; change `export_directory` to use another location. Press `a`
-then `a` to add the selected chat as a checkbox under today's heading in a
-deduplicated thread list. That file defaults to `~/Documents/teams-threads.md`.
+then `a` to add the selected chat under today's heading in a deduplicated
+thread list. Markdown checkboxes are the default. Set `thread_capture_format`
+to `org` to write an Org `TODO` capture with a timestamp, Teams properties,
+and source link to `thread_capture_org_file` instead.
 
   ```json
   {
 	"mark_read_on_open": false,
 	"show_chat_dates": false,
 	"export_directory": "~/Downloads",
-	"thread_capture_file": "~/Documents/teams-threads.md"
+	"thread_capture_format": "markdown",
+	"thread_capture_file": "~/Documents/teams-threads.md",
+	"thread_capture_org_file": "~/Documents/teams-threads.org"
   }
   ```
+
+`thread_capture_format` accepts `markdown` or `org` and is read at startup.
+The two destination settings are kept separately, so switching formats does
+not mix Org syntax into the Markdown list or discard either file.
 
 ### Search Context Limit
 Configure how many context messages (before and after each search match) to display in the search history popup in `~/.config/teams-tui-go/config.json`:
@@ -580,7 +588,7 @@ navigate with `j`/`k` and run it with `Enter`.
 | `f` / `F`  | Forward the latest message                 |
 | `i` / `u`  | Mark read / unread                          |
 | `*`        | Toggle favorite                             |
-| `a`        | Capture in the dated Markdown thread list (`aa`) |
+| `a`        | Capture in the configured dated thread list (`aa`) |
 | `e`        | Export the complete Markdown transcript     |
 | `y`        | Copy the Teams web link                     |
 
@@ -597,6 +605,7 @@ navigate with `j`/`k` and run it with `Enter`.
 | `~/.cache/teams-tui-go/teams-tui-go.db`       | SQLite database caching messages    |
 | `~/Downloads/*.md`                            | Complete chat exports by default    |
 | `~/Documents/teams-threads.md`                 | Dated thread-capture checklist by default |
+| `~/Documents/teams-threads.org`                | Dated Org TODO captures when configured |
 
 ---
 

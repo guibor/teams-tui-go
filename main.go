@@ -151,9 +151,9 @@ func exportChatMarkdownCmd(clientID string, chat Chat, directory string) tea.Cmd
 	}
 }
 
-func captureChatMarkdownCmd(chat Chat, path string) tea.Cmd {
+func captureChatCmd(chat Chat, format ThreadCaptureFormat, path string) tea.Cmd {
 	return func() tea.Msg {
-		resolved, added, err := CaptureChatMarkdown(path, chat, time.Now())
+		resolved, added, err := CaptureChat(path, format, chat, time.Now())
 		return MsgThreadCaptured{Path: resolved, Added: added, Err: err}
 	}
 }
@@ -851,7 +851,9 @@ func main() {
 	app.ChannelMsgRefreshMin = ResolveChannelMsgRefreshMin()
 	app.MarkReadOnOpen = ResolveMarkReadOnOpen()
 	app.ExportDirectory = ResolveExportDirectory()
+	app.ThreadCaptureFormat = ResolveThreadCaptureFormat()
 	app.ThreadCaptureFile = ResolveThreadCaptureFile()
+	app.ThreadCaptureOrgFile = ResolveThreadCaptureOrgFile()
 	app.ShowChatDates = ResolveShowChatDates()
 	if configPath, err := GetConfigPath(); err == nil {
 		app.ConfigPath = configPath

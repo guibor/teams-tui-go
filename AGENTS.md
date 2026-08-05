@@ -30,7 +30,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 ### Configuration (`config.go`)
 - App data: `~/.config/teams-tui-go/` (via `GetAppDir()`)
 - Cache: `~/.cache/teams-tui-go/` (via `GetCacheDir()`)
-- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadCaptureFile *string` (default `~/Documents/teams-threads.md`), separate browser/Teams-app commands, and optional feature flags.
+- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadCaptureFormat *ThreadCaptureFormat` (default `markdown`), separate Markdown/Org capture destinations, separate browser/Teams-app commands, and optional feature flags.
 - `ResolveClientID()`, `ResolveMessageLimit()`, `ResolveSearchContextLimit()`, `ResolveChatLimit()`, and `ResolveExternalEditor()` implement the full precedence chain. External-editor strings may contain simple whitespace-separated arguments; `buildExternalEditorCommand()` appends the temporary message path without invoking a shell.
 - `InitConfig()` is run at application startup to populate any missing configuration keys in `config.json` with their default values and persist them to disk. It defaults `ChatIconTheme` to `"unicode"` and all feature flags to `false`.
 - `BuildScopes()` assembles the OAuth2 scope string dynamically: always includes the four basic scopes (`User.Read Chat.ReadWrite offline_access`) and appends optional scopes for each enabled feature flag.
@@ -156,7 +156,8 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **Full Markdown Export**:
 	- Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.
 - **Thread Capture**:
-	- Normal-mode `aa` (action-menu key `a`) calls `CaptureChatMarkdown()` in `capture.go`, which atomically records a private (`0600`) checklist entry under the local marking date in `thread_capture_file`.
+	- Normal-mode `aa` (action-menu key `a`) calls `CaptureChat()` in `capture.go`. `thread_capture_format` selects a Markdown checklist in `thread_capture_file` or an Org TODO capture in `thread_capture_org_file`; Markdown remains the default.
+	- Org entries mirror Org capture conventions with `CAPTURED`, Teams identity/title/URL properties, and a source link. Both formats group entries under the local marking date and write atomically with private (`0600`) permissions.
 	- A stable encoded chat marker deduplicates the same chat within a day while allowing it to be marked again on another day.
 
 ### Main / Entry Point (`main.go`)

@@ -43,7 +43,7 @@ func threadActions() []threadAction {
 		{Key: "i", Label: "Mark read", ID: threadActionRead},
 		{Key: "u", Label: "Mark unread", ID: threadActionUnread},
 		{Key: "*", Label: "Toggle favorite", ID: threadActionFavorite},
-		{Key: "a", Label: "Capture in Markdown thread list", ID: threadActionCapture},
+		{Key: "a", Label: "Capture in configured thread list", ID: threadActionCapture},
 		{Key: "e", Label: "Export complete Markdown transcript", ID: threadActionExport},
 		{Key: "y", Label: "Copy Teams link", ID: threadActionCopyLink},
 	}
@@ -164,7 +164,11 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 
 	case threadActionCapture:
 		m.app.SetStatus("Capturing thread...", 0)
-		return m, captureChatMarkdownCmd(chatValue, m.app.ThreadCaptureFile)
+		path := m.app.ThreadCaptureFile
+		if normalizeThreadCaptureFormat(m.app.ThreadCaptureFormat) == ThreadCaptureOrg {
+			path = m.app.ThreadCaptureOrgFile
+		}
+		return m, captureChatCmd(chatValue, m.app.ThreadCaptureFormat, path)
 
 	case threadActionExport:
 		m.app.SetStatus("Exporting complete chat history...", 0)

@@ -7067,7 +7067,7 @@ func (m Model) getHelpContentLines() []string {
 			{"o / O", "Open in browser / Teams desktop"},
 			{"c / r / f", "Compose / reply / forward"},
 			{"i / u / *", "Mark read / unread / toggle favorite"},
-			{"a", "Capture in the dated Markdown thread list"},
+			{"a", "Capture in the configured dated thread list"},
 			{"e / y", "Export complete transcript / copy Teams link"},
 			{"j / k / Enter", "Navigate and run an action"},
 			{"ESC", "Cancel"},

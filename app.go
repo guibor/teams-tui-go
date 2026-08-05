@@ -143,7 +143,9 @@ type App struct {
 	NotificationPreviewLen     int
 	MarkReadOnOpen             bool
 	ExportDirectory            string
+	ThreadCaptureFormat        ThreadCaptureFormat
 	ThreadCaptureFile          string
+	ThreadCaptureOrgFile       string
 	ShowChatDates              bool
 	VisualBellUntil            *time.Time
 	StatusUntil                *time.Time

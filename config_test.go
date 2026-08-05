@@ -37,6 +37,49 @@ func TestResolveShowChatDates(t *testing.T) {
 	}
 }
 
+func TestResolveThreadCaptureSettings(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	InitConfig()
+	if got := ResolveThreadCaptureFormat(); got != ThreadCaptureMarkdown {
+		t.Fatalf("capture format = %q, want markdown", got)
+	}
+	if got := ResolveThreadCaptureFile(); got != "~/Documents/teams-threads.md" {
+		t.Fatalf("Markdown capture file = %q", got)
+	}
+	if got := ResolveThreadCaptureOrgFile(); got != "~/Documents/teams-threads.org" {
+		t.Fatalf("Org capture file = %q", got)
+	}
+
+	cfg := LoadConfig()
+	format := ThreadCaptureFormat(" ORG ")
+	markdownPath := "~/notes/threads.md"
+	orgPath := "~/notes/threads.org"
+	cfg.ThreadCaptureFormat = &format
+	cfg.ThreadCaptureFile = &markdownPath
+	cfg.ThreadCaptureOrgFile = &orgPath
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	if got := ResolveThreadCaptureFormat(); got != ThreadCaptureOrg {
+		t.Fatalf("capture format = %q, want org", got)
+	}
+	if got := ResolveThreadCaptureFile(); got != markdownPath {
+		t.Fatalf("Markdown capture file = %q, want %q", got, markdownPath)
+	}
+	if got := ResolveThreadCaptureOrgFile(); got != orgPath {
+		t.Fatalf("Org capture file = %q, want %q", got, orgPath)
+	}
+
+	invalid := ThreadCaptureFormat("html")
+	cfg.ThreadCaptureFormat = &invalid
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatalf("SaveConfig invalid format: %v", err)
+	}
+	if got := ResolveThreadCaptureFormat(); got != ThreadCaptureMarkdown {
+		t.Fatalf("invalid capture format resolved to %q, want markdown", got)
+	}
+}
+
 func TestInitConfig(t *testing.T) {
 	// Set XDG_CONFIG_HOME to a temporary directory to avoid writing to the user's actual config.
 	tmpDir, err := os.MkdirTemp("", "teams-tui-config-test")
@@ -97,8 +140,14 @@ func TestInitConfig(t *testing.T) {
 	if cfg.ExportDirectory == nil || *cfg.ExportDirectory != "~/Downloads" {
 		t.Errorf("expected export directory ~/Downloads, got %v", cfg.ExportDirectory)
 	}
+	if cfg.ThreadCaptureFormat == nil || *cfg.ThreadCaptureFormat != ThreadCaptureMarkdown {
+		t.Errorf("expected default thread capture format markdown, got %v", cfg.ThreadCaptureFormat)
+	}
 	if cfg.ThreadCaptureFile == nil || *cfg.ThreadCaptureFile != "~/Documents/teams-threads.md" {
 		t.Errorf("expected default thread capture file, got %v", cfg.ThreadCaptureFile)
+	}
+	if cfg.ThreadCaptureOrgFile == nil || *cfg.ThreadCaptureOrgFile != "~/Documents/teams-threads.org" {
+		t.Errorf("expected default Org thread capture file, got %v", cfg.ThreadCaptureOrgFile)
 	}
 	if cfg.ChannelMsgRefreshMin == nil || *cfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected channel message refresh min 2, got %v", cfg.ChannelMsgRefreshMin)
@@ -176,8 +225,14 @@ func TestInitConfig(t *testing.T) {
 	if updatedCfg.ExportDirectory == nil || *updatedCfg.ExportDirectory != "~/Downloads" {
 		t.Errorf("expected default export directory ~/Downloads, got %v", updatedCfg.ExportDirectory)
 	}
+	if updatedCfg.ThreadCaptureFormat == nil || *updatedCfg.ThreadCaptureFormat != ThreadCaptureMarkdown {
+		t.Errorf("expected default thread capture format markdown, got %v", updatedCfg.ThreadCaptureFormat)
+	}
 	if updatedCfg.ThreadCaptureFile == nil || *updatedCfg.ThreadCaptureFile != "~/Documents/teams-threads.md" {
 		t.Errorf("expected default thread capture file, got %v", updatedCfg.ThreadCaptureFile)
+	}
+	if updatedCfg.ThreadCaptureOrgFile == nil || *updatedCfg.ThreadCaptureOrgFile != "~/Documents/teams-threads.org" {
+		t.Errorf("expected default Org thread capture file, got %v", updatedCfg.ThreadCaptureOrgFile)
 	}
 	if updatedCfg.ChannelMsgRefreshMin == nil || *updatedCfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected default channel message refresh min 2, got %v", updatedCfg.ChannelMsgRefreshMin)
