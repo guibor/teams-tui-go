@@ -203,10 +203,15 @@ immediately before each chat title. Current-year rows use `Aug 03 17:45`; older
 rows include the year as in `2025-12-31 17:45`. The choice persists as
 `show_chat_dates` in `config.json`.
 
+Chat and channel names in the sidebar always occupy one row and end in an
+ellipsis when the available terminal-cell width is exhausted, including while
+selected. The complete selected conversation name appears at the top of the
+wider message pane.
+
 Press `E` to fetch the complete selected chat, follow every Graph pagination
 link, and write a chronological Markdown transcript. Exports default to
 `~/Downloads`; change `export_directory` to use another location. Press `a`
-then `c` to add the selected chat as a checkbox under today's heading in a
+then `a` to add the selected chat as a checkbox under today's heading in a
 deduplicated thread list. That file defaults to `~/Documents/teams-threads.md`.
 
   ```json
@@ -575,7 +580,7 @@ navigate with `j`/`k` and run it with `Enter`.
 | `f` / `F`  | Forward the latest message                 |
 | `i` / `u`  | Mark read / unread                          |
 | `*`        | Toggle favorite                             |
-| `w`        | Capture in the dated Markdown thread list   |
+| `a`        | Capture in the dated Markdown thread list (`aa`) |
 | `e`        | Export the complete Markdown transcript     |
 | `y`        | Copy the Teams web link                     |
 

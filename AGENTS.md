@@ -95,6 +95,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **Sidebar State Styling**:
   - Read rows are muted; unread rows use a cyan state dot and bright bold names.
   - Chat-type icons have separate colors and the default single-width Unicode set is `@` (1:1), `&` (group), `◷` (meeting), and `#` (channel).
+  - Chat/channel rows reserve cells for markers, icon, optional timestamp, and reaction before truncating the visual name with `ansi.Truncate`; constrain content before applying a selected row's fixed `Width(w)` so selection can never introduce a wrapped overflow row. `renderConversationHeader()` shows the complete active name above the right-pane transcript.
 - **Read Logic**:
   - `lastMsgID` and `lastMsgTime` track latest content
   - `lastReadMsgID` tracks what was read locally in this session
@@ -155,7 +156,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **Full Markdown Export**:
 	- Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.
 - **Thread Capture**:
-	- Action-menu `w` calls `CaptureChatMarkdown()` in `capture.go`, which atomically records a private (`0600`) checklist entry under the local marking date in `thread_capture_file`.
+	- Normal-mode `aa` (action-menu key `a`) calls `CaptureChatMarkdown()` in `capture.go`, which atomically records a private (`0600`) checklist entry under the local marking date in `thread_capture_file`.
 	- A stable encoded chat marker deduplicates the same chat within a day while allowing it to be marked again on another day.
 
 ### Main / Entry Point (`main.go`)

@@ -185,7 +185,7 @@ func TestThreadActionKeysMatchMailStyleBindings(t *testing.T) {
 		threadActionRead:     "i",
 		threadActionUnread:   "u",
 		threadActionFavorite: "*",
-		threadActionCapture:  "w",
+		threadActionCapture:  "a",
 	}
 	for action, key := range want {
 		if keys[action] != key {

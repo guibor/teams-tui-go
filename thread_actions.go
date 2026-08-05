@@ -43,7 +43,7 @@ func threadActions() []threadAction {
 		{Key: "i", Label: "Mark read", ID: threadActionRead},
 		{Key: "u", Label: "Mark unread", ID: threadActionUnread},
 		{Key: "*", Label: "Toggle favorite", ID: threadActionFavorite},
-		{Key: "w", Label: "Capture in Markdown thread list", ID: threadActionCapture},
+		{Key: "a", Label: "Capture in Markdown thread list", ID: threadActionCapture},
 		{Key: "e", Label: "Export complete Markdown transcript", ID: threadActionExport},
 		{Key: "y", Label: "Copy Teams link", ID: threadActionCopyLink},
 	}
@@ -188,7 +188,7 @@ func (m Model) handleThreadActionPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	actions := threadActions()
 	key := msg.String()
 	switch key {
-	case "esc", "q", "a":
+	case "esc", "q":
 		m.app.ThreadActionPopupMode = false
 		return m, nil
 	case "j", "down", "tab":

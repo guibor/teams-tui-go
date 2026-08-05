@@ -112,7 +112,7 @@ func TestThreadActionMenuCapturesSelectedChat(t *testing.T) {
 	if !app.ThreadActionPopupMode {
 		t.Fatal("a did not open the thread action menu")
 	}
-	model, cmd := model.handleThreadActionPopupKey(filterTestKey('w'))
+	model, cmd := model.handleThreadActionPopupKey(filterTestKey('a'))
 	if cmd == nil || app.ThreadActionPopupMode {
 		t.Fatal("capture action did not close the menu and return a command")
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/gen2brain/beeep"
 	"github.com/nospor/teams-tui-go/filepicker"
 )
@@ -3366,6 +3367,41 @@ func (m Model) View() string {
 	return result + imageSeq
 }
 
+func (m Model) activeConversationTitle() string {
+	if entry := m.activeChannelEntry(); entry != nil {
+		return "# " + entry.teamName + " » " + entry.channelName
+	}
+	if chat := m.app.GetSelectedChat(); chat != nil {
+		return chatExportTitle(*chat)
+	}
+	return "Messages"
+}
+
+func (m Model) renderConversationHeader(w int, detail string) string {
+	if w < 1 {
+		w = 1
+	}
+	nameStyle := lipgloss.NewStyle().Foreground(colCyan).Bold(true)
+	if m.channelSelectedIndex >= 0 {
+		nameStyle = nameStyle.Foreground(colBlue)
+	}
+	nameLines := wordWrap(m.activeConversationTitle(), w)
+	rendered := make([]string, 0, len(nameLines)+1)
+	for _, line := range nameLines {
+		visual, rtl := bidiVisualLine(line)
+		styled := nameStyle.Render(visual)
+		if rtl {
+			styled = padLeft(styled, w)
+		}
+		rendered = append(rendered, styled)
+	}
+	if detail != "" {
+		detail = ansi.Truncate(detail, w, "…")
+		rendered = append(rendered, lipgloss.NewStyle().Foreground(colDimGray).Render(detail))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, rendered...)
+}
+
 // renderRightPanel renders the messages panel (with optional input area).
 func (m Model) renderRightPanel(w, h int) string {
 	if m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0 {
@@ -3373,24 +3409,23 @@ func (m Model) renderRightPanel(w, h int) string {
 	}
 
 	if !m.app.InputMode {
-		title := "Messages (i:compose, a:actions, m:select, r/u:read state, K/J:scroll, /:search, ?:help)"
+		detail := "c:compose · a:actions · m:select · i/u:read state · K/J:scroll · /:search · ?:help"
 		if m.channelSelectedIndex >= 0 {
-			chans := m.allChannels()
-			if m.channelSelectedIndex < len(chans) {
-				entry := chans[m.channelSelectedIndex]
-				title = lipgloss.NewStyle().Foreground(lipgloss.Color("#5F87FF")).Bold(true).Render("#") +
-					" " + entry.teamName + " » " + entry.channelName +
-					lipgloss.NewStyle().Foreground(colDimGray).Render("  (K/J:scroll, m:select, ?:help)")
-			}
+			detail = "c:compose · m:select · K/J:scroll · /:search · ?:help"
 		} else if m.app.MessageSelectionMode {
-			title = "MESSAGE MODE (j/k:nav, r:react, y:yank, u:url, o:open, d:delete, e:edit, a:answer, v:view, ctrl+g: editor, p:presence, i:profile, ESC/m:exit)"
+			detail = "MESSAGE MODE · j/k:nav · r:react · y:yank · u:url · o:open · d:delete · e:edit · a:answer · v:view · ESC/m:exit"
 		}
-		msgContent := m.renderActiveConversationMessages(w, h-1)
+		header := m.renderConversationHeader(w, detail)
+		messageHeight := h - lipgloss.Height(header)
+		if messageHeight < 1 {
+			messageHeight = 1
+		}
+		msgContent := m.renderActiveConversationMessages(w, messageHeight)
 		return normalBorder.Width(w).Height(h).
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(colGreen).
 			Render(lipgloss.JoinVertical(lipgloss.Left,
-				lipgloss.NewStyle().Foreground(colDimGray).Render(title),
+				header,
 				msgContent,
 			))
 	}
@@ -3457,12 +3492,11 @@ func (m Model) renderRightPanel(w, h int) string {
 		msgH = 1
 	}
 
-	msgContent := m.renderActiveConversationMessages(w, msgH-1)
-	title := "Messages (ESC to cancel)"
+	detail := "COMPOSING · ESC to cancel"
 	if m.app.EditingMessageID != nil {
-		title = "EDITING MESSAGE (ESC to cancel)"
+		detail = "EDITING MESSAGE · ESC to cancel"
 	} else if m.app.ChannelReplyToID != "" {
-		title = "REPLYING TO THREAD (ESC to cancel)"
+		detail = "REPLYING TO THREAD · ESC to cancel"
 	} else if m.app.ReplyToMessage != nil {
 		ref := m.app.ReplyToMessage
 		sender := "someone"
@@ -3472,11 +3506,17 @@ func (m Model) renderRightPanel(w, h int) string {
 				sender = "yourself"
 			}
 		}
-		title = "REPLYING TO " + sender + " (ESC to cancel)"
+		detail = "REPLYING TO " + sender + " · ESC to cancel"
 	}
+	header := m.renderConversationHeader(w, detail)
+	messageHeight := msgH - lipgloss.Height(header)
+	if messageHeight < 1 {
+		messageHeight = 1
+	}
+	msgContent := m.renderActiveConversationMessages(w, messageHeight)
 	msgBox := normalBorder.Width(w).Height(msgH).
 		Render(lipgloss.JoinVertical(lipgloss.Left,
-			lipgloss.NewStyle().Foreground(colDimGray).Render(title),
+			header,
 			msgContent,
 		))
 
@@ -4173,10 +4213,15 @@ func (m Model) renderChatList(w, h int) string {
 		if m.app.ShowChatDates {
 			dateColumn = lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf("%16s ", chatLastMessageTimestamp(c, renderedAt)))
 		}
-		base := selectionMarker + favoriteMarker + unreadMarker + typeTag + " " + dateColumn + nameStyle.Render(displayName)
+		prefix := selectionMarker + favoriteMarker + unreadMarker + typeTag + " " + dateColumn
+		suffix := ""
 		if reactionEmoji != "" {
-			base += " " + reactionEmoji
+			suffix = " " + reactionEmoji
 		}
+		nameWidth := w - lipgloss.Width(prefix) - lipgloss.Width(suffix)
+		displayName = ansi.Truncate(displayName, nameWidth, "…")
+		base := prefix + nameStyle.Render(displayName) + suffix
+		base = ansi.Truncate(base, w, "")
 		rowStyle := lipgloss.NewStyle().MaxWidth(w)
 		if selected {
 			rowStyle = rowStyle.Background(colDarkGray).Width(w)
@@ -4265,8 +4310,10 @@ func (m Model) renderChatList(w, h int) string {
 					nameStyle = lipgloss.NewStyle().Foreground(colWhite).Bold(true)
 				}
 				channelName, _ := bidiVisualLine(entry.teamName + " » " + entry.channelName)
-				labelStr := selectionMarker + unreadMarker + iconStyle.Render("#") + " " +
-					nameStyle.Render(channelName)
+				prefix := selectionMarker + unreadMarker + iconStyle.Render("#") + " "
+				channelName = ansi.Truncate(channelName, w-lipgloss.Width(prefix), "…")
+				labelStr := prefix + nameStyle.Render(channelName)
+				labelStr = ansi.Truncate(labelStr, w, "")
 				rowStyle := lipgloss.NewStyle().MaxWidth(w)
 				if selected {
 					rowStyle = rowStyle.Background(colDarkGray).Width(w)
@@ -7020,7 +7067,7 @@ func (m Model) getHelpContentLines() []string {
 			{"o / O", "Open in browser / Teams desktop"},
 			{"c / r / f", "Compose / reply / forward"},
 			{"i / u / *", "Mark read / unread / toggle favorite"},
-			{"w", "Capture in the dated Markdown thread list"},
+			{"a", "Capture in the dated Markdown thread list"},
 			{"e / y", "Export complete transcript / copy Teams link"},
 			{"j / k / Enter", "Navigate and run an action"},
 			{"ESC", "Cancel"},
