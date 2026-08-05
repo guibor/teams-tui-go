@@ -64,7 +64,8 @@ func (m Model) openChatChooser(forwardText string) (Model, tea.Cmd) {
 }
 
 func (m Model) newestLoadedMessage() (Message, bool) {
-	if len(m.app.Messages) == 0 {
+	conversationID := m.activeConversationID()
+	if !m.app.MessagesBelongTo(conversationID) || len(m.app.Messages) == 0 {
 		return Message{}, false
 	}
 	return m.app.Messages[0], true

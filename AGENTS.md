@@ -48,6 +48,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 
 ### Application State (`app.go`)
 - `App` struct holds all runtime state: chats, messages, selection, input mode, notification mode, etc.
+- `MessagesConversationID` is the immutable owner of the right-pane transcript. `ActivateMessagesConversation()` clears the prior transcript and conversation-local cursor state whenever ownership changes; `SetMessages()` may merge only for the same owner, and `AppendOlderMessages()` rejects stale pages.
 - `NotificationMode` enum is JSON-serialised as a string ("None", "Console", "System", "Both")
 - `CurrentUserName` is used for filtering and message alignment; it is **not displayed in the UI**
 - `FeatureFlags` struct (populated once at startup in `main.go` from `ResolveFeatureXxx()`) exposes booleans for each optional feature. **Always read feature state from `app.Features`** — never call `ResolveFeatureXxx()` inside the Bubble Tea event loop.
@@ -85,6 +86,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 	- `Model.chatCache` retains hydrated chats independently of `App.Chats`, which contains only the currently visible list. Never rebuild from the visible list alone.
 	- `rebuildChatList()` applies stable/favorite ordering before filtering, preserves the selected chat by ID whenever it remains visible, and preserves `SelectedIndex == -1` so background refreshes cannot leave the dashboard.
 	- `MsgMessagesLoaded` carries the immutable chat ID. Never infer response identity from a current sidebar index because filtering and refreshes can replace the chat at that position.
+	- If a refresh or read-state transition removes the selected chat, route the replacement through `loadChatMessages()` immediately. The selected chat ID, `MessagesConversationID`, and rendered transcript must agree before message actions are enabled.
 - **Open in Teams**:
 	- Normal-mode `o` passes the selected chat's opaque Graph `webUrl` to the configured browser command.
 	- Normal-mode `O` changes only the official Teams URL scheme from `https` to `msteams` and dispatches it through `teams_app_command`; retain the Graph-provided host, path, and query.

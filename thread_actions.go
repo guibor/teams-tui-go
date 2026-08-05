@@ -153,12 +153,10 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		m = m.rebuildChatList()
 		selected := m.app.GetSelectedChat()
 		if selected == nil {
-			m.app.Messages = nil
-			m.app.NextLink = ""
-			m.app.SetLoadingMessages(false)
+			m.app.ClearMessagesConversation()
 			return m, nil
 		}
-		if selected.ID != chatValue.ID {
+		if selected.ID != chatValue.ID || !m.app.MessagesBelongTo(selected.ID) {
 			m.app.SnapToBottom = true
 			return m.loadChatMessages(selected.ID)
 		}

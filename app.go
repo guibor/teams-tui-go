@@ -122,6 +122,7 @@ type App struct {
 	CurrentUserName            *string
 	CurrentUserID              string // used for markChatRead
 	Messages                   []Message
+	MessagesConversationID     string // chat/channel that owns Messages
 	LoadingMessages            bool
 	SearchLoadingMessages      bool
 	InputMode                  bool
@@ -317,8 +318,54 @@ func (a *App) SetCurrentUser(name string) {
 	a.CurrentUserName = &name
 }
 
-// SetMessages updates the current message list, merging new messages with existing ones.
-func (a *App) SetMessages(messages []Message, nextLink string) {
+// ActivateMessagesConversation makes conversationID the owner of the right
+// pane. Switching owners clears transient state so messages from two chats can
+// never be displayed or merged together.
+func (a *App) ActivateMessagesConversation(conversationID string) {
+	if a.MessagesConversationID == conversationID {
+		return
+	}
+	a.MessagesConversationID = conversationID
+	a.Messages = nil
+	a.NextLink = ""
+	a.PendingScrollID = ""
+	a.ScrollOffset = 0
+	a.MaxScroll = 0
+	a.SnapToBottom = true
+	a.MessageSelectedIndex = 0
+	a.MessageSelectionMode = false
+	a.MessagePopupMode = false
+	a.AttachmentCursorMode = false
+	a.AttachmentSelectedIndex = 0
+}
+
+// ClearMessagesConversation removes the right-pane owner and transcript.
+func (a *App) ClearMessagesConversation() {
+	a.MessagesConversationID = ""
+	a.Messages = nil
+	a.NextLink = ""
+	a.PendingScrollID = ""
+	a.ScrollOffset = 0
+	a.MaxScroll = 0
+	a.SnapToBottom = true
+	a.MessageSelectedIndex = 0
+	a.MessageSelectionMode = false
+	a.MessagePopupMode = false
+	a.AttachmentCursorMode = false
+	a.AttachmentSelectedIndex = 0
+	a.SetLoadingMessages(false)
+}
+
+// MessagesBelongTo reports whether the right-pane transcript belongs to the
+// given chat or channel.
+func (a *App) MessagesBelongTo(conversationID string) bool {
+	return conversationID != "" && a.MessagesConversationID == conversationID
+}
+
+// SetMessages updates one conversation's message list. A response for a new
+// owner replaces the pane; only responses for the same owner are merged.
+func (a *App) SetMessages(conversationID string, messages []Message, nextLink string) {
+	a.ActivateMessagesConversation(conversationID)
 	if len(a.Messages) == 0 {
 		a.Messages = append([]Message(nil), messages...)
 		sortMessagesNewestFirst(a.Messages)
@@ -377,12 +424,17 @@ done:
 	a.LoadingMessages = false
 }
 
-// AppendOlderMessages adds older messages to the end of the current list.
-func (a *App) AppendOlderMessages(messages []Message, nextLink string) {
+// AppendOlderMessages adds an older page only while the same conversation
+// still owns the right pane. It returns false for a stale page.
+func (a *App) AppendOlderMessages(conversationID string, messages []Message, nextLink string) bool {
+	if !a.MessagesBelongTo(conversationID) {
+		return false
+	}
 	a.Messages = append(a.Messages, messages...)
 	sortMessagesNewestFirst(a.Messages)
 	a.NextLink = nextLink
 	a.LoadingMessages = false
+	return true
 }
 
 // SetLoadingMessages toggles the loading indicator.

@@ -385,6 +385,11 @@ func NewModel(app *App, clientID, userID string) Model {
 	fp.Styles.Cursor = lipgloss.NewStyle().Foreground(colGreen).Bold(true)
 	fp.Styles.Selected = lipgloss.NewStyle().Foreground(colGreen).Bold(true)
 	fp.Styles.Permission = lipgloss.NewStyle().Foreground(colDimGray)
+	if app.MessagesConversationID == "" && len(app.Messages) > 0 {
+		if chat := app.GetSelectedChat(); chat != nil {
+			app.MessagesConversationID = chat.ID
+		}
+	}
 
 	return Model{
 		app:                  app,
@@ -627,7 +632,8 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 
 				isActiveChat := false
 				if m.channelSelectedIndex < 0 {
-					if selChat := m.app.GetSelectedChat(); selChat != nil && selChat.ID == c.ID && m.focused {
+					if selChat := m.app.GetSelectedChat(); selChat != nil && selChat.ID == c.ID &&
+						m.app.MessagesBelongTo(c.ID) && m.focused {
 						isActiveChat = true
 					}
 				}
@@ -743,9 +749,23 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 
-		// Refresh messages if selected chat is set.
-		if chat := m.app.GetSelectedChat(); chat != nil {
-			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
+		// A filtered refresh can remove the selected chat while retaining the
+		// same numeric index. Switch the transcript immediately by identity so
+		// the old chat cannot remain visible or be merged into the replacement.
+		if m.channelSelectedIndex >= 0 {
+			break
+		} else if chat := m.app.GetSelectedChat(); chat != nil {
+			if chat.ID != selectedID || !m.app.MessagesBelongTo(chat.ID) {
+				var loadCmd tea.Cmd
+				m, loadCmd = m.loadChatMessages(chat.ID)
+				if loadCmd != nil {
+					cmds = append(cmds, loadCmd)
+				}
+			} else {
+				cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
+			}
+		} else if selectedID != "" {
+			m.app.ClearMessagesConversation()
 		}
 
 	case MsgBackgroundMessagesLoaded:
@@ -902,9 +922,9 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		m.app.SetLoadingMessages(false)
 		prev := m.app.Messages
 		// Only update if content changed.
-		if !messagesEqual(prev, msg.Messages) {
+		if !m.app.MessagesBelongTo(loadedChatID) || !messagesEqual(prev, msg.Messages) {
 			isNewMessage := len(prev) == 0 || (len(msg.Messages) > 0 && prev[0].ID != msg.Messages[0].ID)
-			m.app.SetMessages(msg.Messages, msg.NextLink)
+			m.app.SetMessages(loadedChatID, msg.Messages, msg.NextLink)
 
 			// Re-apply any pending optimistic edits that the API may not have
 			// reflected yet (Graph API has eventual consistency after PATCH).
@@ -1068,7 +1088,9 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			if len(m.app.Messages) > 0 {
 				m.app.PendingScrollID = m.app.Messages[len(m.app.Messages)-1].ID
 			}
-			m.app.AppendOlderMessages(msg.Messages, msg.NextLink)
+			if !m.app.AppendOlderMessages(convID, msg.Messages, msg.NextLink) {
+				break
+			}
 			m.updateScroll()
 			// Update the per-chat cache with the newly paginated messages.
 			m.app.CachedMessages[convID] = m.app.Messages
@@ -1092,9 +1114,11 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				existingIDs[mObj.ID] = true
 			}
 			var toAdd []Message
-			for _, mainM := range m.app.Messages {
-				if !existingIDs[mainM.ID] {
-					toAdd = append(toAdd, mainM)
+			if m.app.MessagesBelongTo(convID) {
+				for _, mainM := range m.app.Messages {
+					if !existingIDs[mainM.ID] {
+						toAdd = append(toAdd, mainM)
+					}
 				}
 			}
 			m.app.HistoryMessages[convID] = mergeHistoryMessages(msg.Messages, toAdd)
@@ -1185,12 +1209,11 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				}
 			}
 
-			m.app.Messages = nil
-			m.app.NextLink = ""
-			m.app.SetLoadingMessages(true)
-			m.app.SnapToBottom = true
-
-			cmds = append(cmds, loadMessagesCmd(m.clientID, chat.ID))
+			var loadCmd tea.Cmd
+			m, loadCmd = m.loadChatMessages(chat.ID)
+			if loadCmd != nil {
+				cmds = append(cmds, loadCmd)
+			}
 			if forwardText != "" && selected {
 				m.app.PendingForwardText = ""
 				var composeCmd tea.Cmd
@@ -1247,10 +1270,10 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		}
 		if m.app.ActiveChatFilter.ReadState == ChatReadUnread || m.app.ActiveChatFilter.ReadState == ChatReadRead {
 			m = m.rebuildChatList()
-			if len(m.app.Chats) == 0 {
-				m.app.Messages = nil
-				m.app.NextLink = ""
-				m.app.SetLoadingMessages(false)
+			if m.channelSelectedIndex >= 0 {
+				break
+			} else if len(m.app.Chats) == 0 {
+				m.app.ClearMessagesConversation()
 			} else if selected := m.app.GetSelectedChat(); selected != nil && selected.ID != selectedBeforeID {
 				m.app.SnapToBottom = true
 				var loadCmd tea.Cmd
@@ -1508,8 +1531,8 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 
 			if isActiveChannel {
 				prev := m.app.Messages
-				if !messagesEqual(prev, msg.Messages) {
-					m.app.SetMessages(msg.Messages, msg.NextLink)
+				if !m.app.MessagesBelongTo(msg.ChannelID) || !messagesEqual(prev, msg.Messages) {
+					m.app.SetMessages(msg.ChannelID, msg.Messages, msg.NextLink)
 				}
 				m.app.SetLoadingMessages(false)
 			}
@@ -3362,7 +3385,7 @@ func (m Model) renderRightPanel(w, h int) string {
 		} else if m.app.MessageSelectionMode {
 			title = "MESSAGE MODE (j/k:nav, r:react, y:yank, u:url, o:open, d:delete, e:edit, a:answer, v:view, ctrl+g: editor, p:presence, i:profile, ESC/m:exit)"
 		}
-		msgContent := m.renderMessages(w, h-1)
+		msgContent := m.renderActiveConversationMessages(w, h-1)
 		return normalBorder.Width(w).Height(h).
 			BorderStyle(lipgloss.RoundedBorder()).
 			BorderForeground(colGreen).
@@ -3434,7 +3457,7 @@ func (m Model) renderRightPanel(w, h int) string {
 		msgH = 1
 	}
 
-	msgContent := m.renderMessages(w, msgH-1)
+	msgContent := m.renderActiveConversationMessages(w, msgH-1)
 	title := "Messages (ESC to cancel)"
 	if m.app.EditingMessageID != nil {
 		title = "EDITING MESSAGE (ESC to cancel)"
@@ -3880,9 +3903,7 @@ func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	}
 	if len(m.app.Chats) == 0 {
 		m.app.SelectedIndex = -1
-		m.app.Messages = nil
-		m.app.NextLink = ""
-		m.app.SetLoadingMessages(false)
+		m.app.ClearMessagesConversation()
 		return m, nil
 	}
 
@@ -4277,6 +4298,14 @@ func chatLastMessageTimestamp(chat Chat, now time.Time) string {
 // ---------------------------------------------------------------------------
 // Messages rendering
 // ---------------------------------------------------------------------------
+
+func (m Model) renderActiveConversationMessages(w, h int) string {
+	conversationID := m.activeConversationID()
+	if conversationID == "" || !m.app.MessagesBelongTo(conversationID) {
+		return lipgloss.NewStyle().Foreground(colDimGray).Render("Loading messages...")
+	}
+	return m.renderMessages(w, h)
+}
 
 func (m Model) renderMessages(w, h int) string {
 	if m.app.LoadingMessages && len(m.app.Messages) == 0 {
@@ -4691,7 +4720,7 @@ func (m Model) markRead() Model {
 				return m
 			}
 			lastID := m.lastMsgID[entry.channelID]
-			if lastID == "" && len(m.app.Messages) > 0 {
+			if lastID == "" && m.app.MessagesBelongTo(entry.channelID) && len(m.app.Messages) > 0 {
 				lastID = m.app.Messages[0].ID
 			}
 			if lastID != "" && m.lastReadMsgID[entry.channelID] != lastID {
@@ -4710,7 +4739,7 @@ func (m Model) markRead() Model {
 	}
 
 	lastID := m.lastMsgID[chat.ID]
-	if lastID == "" && len(m.app.Messages) > 0 {
+	if lastID == "" && m.app.MessagesBelongTo(chat.ID) && len(m.app.Messages) > 0 {
 		lastID = m.app.Messages[0].ID
 	}
 
@@ -4733,7 +4762,7 @@ func (m *Model) markReactionsRead(chatID string) {
 		m.lastReadReactions[chatID] = make(map[string]bool)
 	}
 	messages := m.app.CachedMessages[chatID]
-	if selected := m.app.GetSelectedChat(); selected != nil && selected.ID == chatID {
+	if selected := m.app.GetSelectedChat(); selected != nil && selected.ID == chatID && m.app.MessagesBelongTo(chatID) {
 		messages = m.app.Messages
 	}
 	for _, msgObj := range messages {
@@ -6156,7 +6185,7 @@ func (m Model) updateCachedMessages(chatID string, msgs []Message) Model {
 			isActive = true
 		}
 	}
-	if isActive {
+	if isActive && m.app.MessagesBelongTo(chatID) {
 		m.app.Messages = mergeHistoryMessages(m.app.Messages, msgs)
 	}
 
@@ -7602,6 +7631,7 @@ func (m Model) rebuildMentionSuggestions() Model {
 
 func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 	m.lastMessageRefresh = time.Now()
+	m.app.ActivateMessagesConversation(chatID)
 	// 1. Check in-memory cache first if it has been fully loaded once in this session.
 	if m.app.ChatMessagesLoadedOnce[chatID] {
 		if cached, ok := m.app.CachedMessages[chatID]; ok && len(cached) > 0 {
@@ -7660,6 +7690,7 @@ func (m Model) loadChatMessages(chatID string) (Model, tea.Cmd) {
 
 func (m Model) loadChannelMessages(teamID string, channelID string) (Model, tea.Cmd) {
 	m.lastMessageRefresh = time.Now()
+	m.app.ActivateMessagesConversation(channelID)
 	// 1. Check in-memory cache first
 	if cached, ok := m.app.CachedMessages[channelID]; ok && len(cached) > 0 {
 		prepareChannelMessages(cached, teamID, channelID)

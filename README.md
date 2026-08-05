@@ -37,6 +37,7 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
 - ⬆️ New messages bubble chats to the top of the list
 - 📌 Stable chat ordering — order only changes when new messages arrive
+- 🧷 Selection-safe transcripts — filter and read-state refreshes switch the right pane by chat ID, and stale background responses cannot merge messages from different chats
 - 💾 Provider-aware refresh — external credentials stay with their owner; built-in device-flow tokens refresh from the application cache
 
 **Optional features** (enable per-feature in `config.json`; see [AZURE_SETUP.md](AZURE_SETUP.md)):
@@ -178,6 +179,11 @@ Configure how many chats to load in the sidebar in `~/.config/teams-tui-go/confi
 Navigation is non-destructive by default. Select a chat and press `i` to mark
 it read or `u` to mark it unread. To restore the original mark-on-open behavior,
 set `mark_read_on_open` to `true`.
+
+Filtering and background refreshes preserve selection by chat ID. If the
+selected chat leaves the current view after a read-state change, the next
+visible chat gets a fresh transcript immediately; messages from the previous
+chat are never retained or merged into the replacement pane.
 
 `M-n` and `M-p` select the next and previous chat in the visible list. They use
 the same filtered-list navigation as `j` and `k`; `M-<` and `M->` jump to the

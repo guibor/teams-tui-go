@@ -376,6 +376,111 @@ func TestReadStateChangeLoadsReplacementTranscriptByChatID(t *testing.T) {
 	}
 }
 
+func TestChatRefreshClearsTranscriptWhenFilteredSelectionDisappears(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	first := Chat{
+		ID:                 "first",
+		CachedDisplayName:  filterTestString("First"),
+		LastMessagePreview: filterTestMessage("first-message", "Someone else"),
+	}
+	second := Chat{
+		ID:                 "second",
+		CachedDisplayName:  filterTestString("Second"),
+		LastMessagePreview: filterTestMessage("second-message", "Someone else"),
+	}
+	app.Chats = []Chat{first, second}
+	app.SelectedIndex = 0
+	app.ActiveChatFilter.ReadState = ChatReadUnread
+	app.MessagesConversationID = first.ID
+	app.Messages = []Message{{ID: "first-transcript"}}
+
+	model := NewModel(app, "client", "user")
+	model.latestChats = []Chat{first, second}
+	model.stableChatOrder = []string{first.ID, second.ID}
+	model.lastMsgID[first.ID] = "first-message"
+	model.lastMsgID[second.ID] = "second-message"
+	model.lastReadMsgID[first.ID] = "first-message"
+
+	model, cmd := model.updateInternal(MsgChatsLoaded{Chats: []Chat{first, second}})
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != second.ID {
+		t.Fatalf("refresh selected %#v, want replacement chat %q", selected, second.ID)
+	}
+	if model.app.MessagesConversationID != second.ID {
+		t.Fatalf("transcript owner is %q, want %q", model.app.MessagesConversationID, second.ID)
+	}
+	if len(model.app.Messages) != 0 {
+		t.Fatalf("old transcript remained under replacement selection: %#v", model.app.Messages)
+	}
+	if !model.app.LoadingMessages || cmd == nil {
+		t.Fatalf("replacement transcript was not requested: loading=%v cmd=%v", model.app.LoadingMessages, cmd != nil)
+	}
+}
+
+func TestMessageLoadForNewOwnerReplacesInsteadOfMergingTranscript(t *testing.T) {
+	app := NewApp()
+	app.Chats = []Chat{{ID: "second"}}
+	app.SelectedIndex = 0
+	app.MessagesConversationID = "first"
+	app.Messages = []Message{{ID: "first-transcript"}}
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.updateInternal(MsgMessagesLoaded{
+		ChatID:   "second",
+		Messages: []Message{{ID: "second-transcript"}},
+	})
+
+	if model.app.MessagesConversationID != "second" {
+		t.Fatalf("transcript owner is %q, want second", model.app.MessagesConversationID)
+	}
+	if len(model.app.Messages) != 1 || model.app.Messages[0].ID != "second-transcript" {
+		t.Fatalf("cross-chat transcripts were merged: %#v", model.app.Messages)
+	}
+}
+
+func TestEmptyMessageLoadStillClaimsNewTranscriptOwner(t *testing.T) {
+	app := NewApp()
+	app.Chats = []Chat{{ID: "empty-chat"}}
+	app.SelectedIndex = 0
+	app.MessagesConversationID = "previous-chat"
+	app.Messages = []Message{{ID: "previous-transcript"}}
+	app.SetLoadingMessages(true)
+	model := NewModel(app, "client", "user")
+
+	model, _ = model.updateInternal(MsgMessagesLoaded{ChatID: "empty-chat"})
+
+	if model.app.MessagesConversationID != "empty-chat" || len(model.app.Messages) != 0 {
+		t.Fatalf("empty chat retained prior transcript state: owner=%q messages=%#v",
+			model.app.MessagesConversationID, model.app.Messages)
+	}
+	if model.app.LoadingMessages {
+		t.Fatal("empty chat remained stuck in loading state")
+	}
+}
+
+func TestChatRefreshDoesNotReplaceActiveChannelTranscript(t *testing.T) {
+	app := NewApp()
+	chat := Chat{ID: "chat", LastMessagePreview: filterTestMessage("chat-message", "Someone else")}
+	app.Chats = []Chat{chat}
+	app.SelectedIndex = 0
+	app.MessagesConversationID = "channel"
+	app.Messages = []Message{{ID: "channel-transcript"}}
+	model := NewModel(app, "client", "user")
+	model.channelSelectedIndex = 0
+	model.latestChats = []Chat{chat}
+	model.stableChatOrder = []string{chat.ID}
+	model.lastMsgID[chat.ID] = "chat-message"
+
+	model, _ = model.updateInternal(MsgChatsLoaded{Chats: []Chat{chat}})
+
+	if model.app.MessagesConversationID != "channel" || len(model.app.Messages) != 1 ||
+		model.app.Messages[0].ID != "channel-transcript" {
+		t.Fatalf("chat refresh replaced active channel transcript: owner=%q messages=%#v",
+			model.app.MessagesConversationID, model.app.Messages)
+	}
+}
+
 func TestNormalModeSOpensChatSearchAndCComposes(t *testing.T) {
 	app := NewApp()
 	model := NewModel(app, "client", "user")

@@ -18,13 +18,11 @@ func (m Model) leaveActiveConversation() Model {
 	m.app.SelectedChannelTeamID = ""
 	m.app.SelectedChannelID = ""
 	m.app.ChannelReplyToID = ""
-	m.app.Messages = nil
-	m.app.NextLink = ""
+	m.app.ClearMessagesConversation()
 	m.app.PendingScrollID = ""
 	m.app.ScrollOffset = 0
 	m.app.MaxScroll = 0
 	m.app.SnapToBottom = true
-	m.app.SetLoadingMessages(false)
 	m.app.MessageSelectionMode = false
 	m.app.MessagePopupMode = false
 	m.app.MessageSelectedIndex = 0
