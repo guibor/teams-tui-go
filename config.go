@@ -182,6 +182,8 @@ type Config struct {
 	ChatLimit               *int                 `json:"chat_limit,omitempty"`
 	MarkReadOnOpen          *bool                `json:"mark_read_on_open,omitempty"`
 	ExportDirectory         *string              `json:"export_directory,omitempty"`
+	ThreadAnalysisAgent     *string              `json:"thread_analysis_agent,omitempty"`
+	ThreadAnalysisCommand   *string              `json:"thread_analysis_command,omitempty"`
 	ThreadCaptureFormat     *ThreadCaptureFormat `json:"thread_capture_format,omitempty"`
 	ThreadCaptureFile       *string              `json:"thread_capture_file,omitempty"`
 	ThreadCaptureOrgFile    *string              `json:"thread_capture_org_file,omitempty"`
@@ -350,6 +352,16 @@ func InitConfig() {
 	if cfg.ExportDirectory == nil {
 		dir := "~/Downloads"
 		cfg.ExportDirectory = &dir
+		modified = true
+	}
+	if cfg.ThreadAnalysisAgent == nil {
+		agent := "codex"
+		cfg.ThreadAnalysisAgent = &agent
+		modified = true
+	}
+	if cfg.ThreadAnalysisCommand == nil {
+		command := "mdf-teams-agent-shell"
+		cfg.ThreadAnalysisCommand = &command
 		modified = true
 	}
 	if cfg.ThreadCaptureFormat == nil {
@@ -551,6 +563,31 @@ func ResolveExportDirectory() string {
 		return *cfg.ExportDirectory
 	}
 	return "~/Downloads"
+}
+
+// ResolveThreadAnalysisAgent returns the agent-shell provider identifier used
+// for complete-thread analysis. The installed bridge also accepts aliases such
+// as "agent" (Cursor) and "claude" (Claude Code).
+func ResolveThreadAnalysisAgent() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ThreadAnalysisAgent != nil {
+		if agent := strings.TrimSpace(*cfg.ThreadAnalysisAgent); agent != "" {
+			return agent
+		}
+	}
+	return "codex"
+}
+
+// ResolveThreadAnalysisCommand returns the executable used to hand a complete
+// Markdown export to an agent-shell session.
+func ResolveThreadAnalysisCommand() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ThreadAnalysisCommand != nil {
+		if command := strings.TrimSpace(*cfg.ThreadAnalysisCommand); command != "" {
+			return command
+		}
+	}
+	return "mdf-teams-agent-shell"
 }
 
 func normalizeThreadCaptureFormat(format ThreadCaptureFormat) ThreadCaptureFormat {

@@ -138,16 +138,53 @@ func setChatReadStateCmd(clientID, chatID, userID string, unread bool) tea.Cmd {
 // exportChatMarkdownCmd fetches every page for CHAT and writes a Markdown transcript.
 func exportChatMarkdownCmd(clientID string, chat Chat, directory string) tea.Cmd {
 	return func() tea.Msg {
-		token, err := GetValidTokenSilent(clientID)
+		path, count, err := exportCompleteChatMarkdown(clientID, chat, directory)
+		return MsgThreadExported{Path: path, Count: count, Err: err}
+	}
+}
+
+func exportCompleteChatMarkdown(clientID string, chat Chat, directory string) (string, int, error) {
+	token, err := GetValidTokenSilent(clientID)
+	if err != nil {
+		return "", 0, err
+	}
+	messages, err := GetAllChatMessages(token, chat.ID)
+	if err != nil {
+		return "", 0, err
+	}
+	path, err := ExportChatMarkdown(directory, chat, messages, time.Now())
+	return path, len(messages), err
+}
+
+func buildThreadAnalysisCommand(command, agent, markdownPath string) (*exec.Cmd, error) {
+	parts := strings.Fields(command)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("empty thread_analysis_command")
+	}
+	args := append(append([]string{}, parts[1:]...), "--agent", strings.TrimSpace(agent), markdownPath)
+	return exec.Command(parts[0], args...), nil
+}
+
+// analyzeChatThreadCmd performs the same complete paginated export as E, then
+// invokes the configured bridge without blocking the Bubble Tea event loop.
+func analyzeChatThreadCmd(clientID string, chat Chat, directory, agent, command string) tea.Cmd {
+	return func() tea.Msg {
+		path, count, err := exportCompleteChatMarkdown(clientID, chat, directory)
 		if err != nil {
-			return MsgThreadExported{Err: err}
+			return MsgThreadAnalysisLaunched{Agent: agent, Err: err}
 		}
-		messages, err := GetAllChatMessages(token, chat.ID)
+		cmd, err := buildThreadAnalysisCommand(command, agent, path)
 		if err != nil {
-			return MsgThreadExported{Err: err}
+			return MsgThreadAnalysisLaunched{Path: path, Count: count, Agent: agent, Err: err}
 		}
-		path, err := ExportChatMarkdown(directory, chat, messages, time.Now())
-		return MsgThreadExported{Path: path, Count: len(messages), Err: err}
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			detail := strings.TrimSpace(string(output))
+			if detail != "" {
+				err = fmt.Errorf("%w: %s", err, detail)
+			}
+		}
+		return MsgThreadAnalysisLaunched{Path: path, Count: count, Agent: agent, Err: err}
 	}
 }
 
@@ -851,6 +888,8 @@ func main() {
 	app.ChannelMsgRefreshMin = ResolveChannelMsgRefreshMin()
 	app.MarkReadOnOpen = ResolveMarkReadOnOpen()
 	app.ExportDirectory = ResolveExportDirectory()
+	app.ThreadAnalysisAgent = ResolveThreadAnalysisAgent()
+	app.ThreadAnalysisCommand = ResolveThreadAnalysisCommand()
 	app.ThreadCaptureFormat = ResolveThreadCaptureFormat()
 	app.ThreadCaptureFile = ResolveThreadCaptureFile()
 	app.ThreadCaptureOrgFile = ResolveThreadCaptureOrgFile()

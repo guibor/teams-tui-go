@@ -24,6 +24,7 @@ const (
 	threadActionFavorite    threadActionID = "favorite"
 	threadActionCapture     threadActionID = "capture"
 	threadActionExport      threadActionID = "export"
+	threadActionAnalyze     threadActionID = "analyze"
 	threadActionCopyLink    threadActionID = "copy-link"
 	threadActionArtifacts   threadActionID = "artifacts"
 )
@@ -46,6 +47,7 @@ func threadActions() []threadAction {
 		{Key: "*", Label: "Toggle favorite", ID: threadActionFavorite},
 		{Key: "a", Label: "Capture in configured thread list", ID: threadActionCapture},
 		{Key: "e", Label: "Export complete Markdown transcript", ID: threadActionExport},
+		{Key: "A", Label: "Analyze complete thread with agent-shell", ID: threadActionAnalyze},
 		{Key: "y", Label: "Copy Teams link", ID: threadActionCopyLink},
 		{Key: "t", Label: "Choose recording or transcript", ID: threadActionArtifacts},
 	}
@@ -166,6 +168,16 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 	case threadActionExport:
 		m.app.SetStatus("Exporting complete chat history...", 0)
 		return m, exportChatMarkdownCmd(m.clientID, chatValue, m.app.ExportDirectory)
+
+	case threadActionAnalyze:
+		m.app.SetStatus("Exporting complete chat history for "+m.app.ThreadAnalysisAgent+" analysis...", 0)
+		return m, analyzeChatThreadCmd(
+			m.clientID,
+			chatValue,
+			m.app.ExportDirectory,
+			m.app.ThreadAnalysisAgent,
+			m.app.ThreadAnalysisCommand,
+		)
 
 	case threadActionCopyLink:
 		if chatURL == "" {

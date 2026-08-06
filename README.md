@@ -34,6 +34,7 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread (`i` remains a compatibility alias); merely moving over a chat does not mark it read by default
 - ✉️ Mail-style Actions — use `c`/`C` to compose, uppercase `R` to reply with a quote, and `f`/`F` to forward an editable readable copy through the chat chooser
 - 📥 Full Markdown Export — press `E` to fetch every page of the selected chat and save a chronological Markdown transcript
+- 🤖 Agent Thread Analysis — press `A` to make the same complete export, open the configured agent-shell backend, and submit `$thread-analysis` with the saved path
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
 - ⬆️ New messages bubble chats to the top of the list
 - 📌 Stable chat ordering — order only changes when new messages arrive
@@ -239,6 +240,29 @@ and source link to `thread_capture_org_file` instead.
 `thread_capture_format` accepts `markdown` or `org` and is read at startup.
 The two destination settings are kept separately, so switching formats does
 not mix Org syntax into the Markdown list or discard either file.
+
+Press `A` (or `a A` from thread actions) to fetch and save that same complete
+transcript in the background, then invoke `thread_analysis_command` with
+`--agent AGENT PATH`. The MDF installation uses `mdf-teams-agent-shell`, which
+opens the named Spacemacs server and starts a new agent-shell session whose
+first submitted prompt is exactly:
+
+```text
+$thread-analysis of this thread: /absolute/path/to/export.md
+```
+
+Set `thread_analysis_agent` to `codex`, `agent`/`cursor`, `claude`/
+`claude-code`, `cline`, `goose`, `default`, or another configured agent-shell
+identifier. Export completes before the bridge runs; if launch fails, the
+status line retains the saved Markdown path for manual recovery.
+
+```json
+{
+  "export_directory": "~/Downloads",
+  "thread_analysis_agent": "codex",
+  "thread_analysis_command": "mdf-teams-agent-shell"
+}
+```
 
 ### Search Queries
 
@@ -541,6 +565,7 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `R`          | Reply to the newest loaded message                         |
 | `f` / `F`    | Forward the newest loaded message through the chat chooser |
 | `E`          | Export complete selected chat as Markdown (Normal Mode)   |
+| `A`          | Export complete chat and start agent-shell analysis       |
 | `h`          | Toggle hide/unhide on selected channel (channel mode)     |
 | `Ctrl+V`     | Paste image from clipboard (in Compose Mode)              |
 | `Ctrl+f`     | Browse and attach file from computer (in Compose Mode)    |
@@ -653,6 +678,7 @@ navigate with `j`/`k` and run it with `Enter`.
 | `*`        | Toggle favorite                             |
 | `a`        | Capture in the configured dated thread list (`aa`) |
 | `e`        | Export the complete Markdown transcript     |
+| `A`        | Export and analyze the complete thread (`a A`) |
 | `y`        | Copy the Teams web link                     |
 | `t`        | Choose a recording or transcript            |
 

@@ -87,6 +87,15 @@ type MsgThreadExported struct {
 	Err   error
 }
 
+// MsgThreadAnalysisLaunched reports completion of a full-history export and
+// its handoff to an external agent-shell bridge.
+type MsgThreadAnalysisLaunched struct {
+	Path  string
+	Count int
+	Agent string
+	Err   error
+}
+
 // MsgThreadCaptured reports completion of a local thread-list capture.
 type MsgThreadCaptured struct {
 	Path  string
@@ -1290,6 +1299,17 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SetStatus(fmt.Sprintf("Exported %d messages to %s", msg.Count, msg.Path), 8*time.Second)
 		}
 
+	case MsgThreadAnalysisLaunched:
+		if msg.Err != nil {
+			if msg.Path != "" {
+				m.app.SetStatus(fmt.Sprintf("Exported %d messages to %s; agent launch failed: %v", msg.Count, msg.Path, msg.Err), 10*time.Second)
+			} else {
+				m.app.SetStatus("Thread analysis export failed: "+msg.Err.Error(), 8*time.Second)
+			}
+		} else {
+			m.app.SetStatus(fmt.Sprintf("Started %s analysis of %d messages: %s", msg.Agent, msg.Count, msg.Path), 9*time.Second)
+		}
+
 	case MsgThreadCaptured:
 		if msg.Err != nil {
 			m.app.SetStatus("Capture failed: "+msg.Err.Error(), 7*time.Second)
@@ -2166,6 +2186,15 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		if m.app.GetSelectedChat() != nil {
 			return m.executeThreadAction(threadActionExport)
+		}
+
+	case "A":
+		if m.channelSelectedIndex >= 0 {
+			m.app.SetStatus("Agent thread analysis currently supports chats", 5*time.Second)
+			break
+		}
+		if m.app.GetSelectedChat() != nil {
+			return m.executeThreadAction(threadActionAnalyze)
 		}
 
 	case "p":
@@ -7269,6 +7298,7 @@ func (m Model) getHelpContentLines() []string {
 			{"r / i", "Mark selected chat read"},
 			{"u", "Mark selected chat unread"},
 			{"E", "Export complete chat history as Markdown"},
+			{"A", "Export complete chat and analyze in agent-shell"},
 			{"h", "Toggle hide/unhide channel (channels only)"},
 			{"p", "Presence status of chat participants (chats only, feature: presence_enabled)"},
 			{"n", "Cycle notification mode"},
@@ -7349,6 +7379,7 @@ func (m Model) getHelpContentLines() []string {
 			{"c / R / f", "Compose / reply / forward"},
 			{"r / u / *", "Mark read / unread / toggle favorite"},
 			{"a", "Capture in the configured dated thread list"},
+			{"A", "Export complete transcript and analyze with agent-shell"},
 			{"e / y", "Export complete transcript / copy Teams link"},
 			{"t", "Choose a recording or transcript"},
 			{"j / k / Enter", "Navigate and run an action"},
@@ -7388,6 +7419,7 @@ func (m Model) getHelpContentLines() []string {
 	}
 	contentLines = append(contentLines,
 		fmt.Sprintf("  chat_limit               %d", ResolveChatLimit()),
+		fmt.Sprintf("  thread_analysis_agent    %s", m.app.ThreadAnalysisAgent),
 		fmt.Sprintf("  terminal_image_protocol  %s", resolveTerminalImageProtocol()),
 		fmt.Sprintf("  file_preview_enabled      %s", featureState(m.app.Features.FilePreview)),
 		fmt.Sprintf("  file_preview_in_terminal  %s", featureState(m.app.Features.FilePreviewInTerminal)),

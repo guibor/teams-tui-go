@@ -144,6 +144,8 @@ type App struct {
 	NotificationPreviewLen     int
 	MarkReadOnOpen             bool
 	ExportDirectory            string
+	ThreadAnalysisAgent        string
+	ThreadAnalysisCommand      string
 	ThreadCaptureFormat        ThreadCaptureFormat
 	ThreadCaptureFile          string
 	ThreadCaptureOrgFile       string

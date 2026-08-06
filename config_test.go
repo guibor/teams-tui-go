@@ -140,6 +140,12 @@ func TestInitConfig(t *testing.T) {
 	if cfg.ExportDirectory == nil || *cfg.ExportDirectory != "~/Downloads" {
 		t.Errorf("expected export directory ~/Downloads, got %v", cfg.ExportDirectory)
 	}
+	if cfg.ThreadAnalysisAgent == nil || *cfg.ThreadAnalysisAgent != "codex" {
+		t.Errorf("expected default thread analysis agent codex, got %v", cfg.ThreadAnalysisAgent)
+	}
+	if cfg.ThreadAnalysisCommand == nil || *cfg.ThreadAnalysisCommand != "mdf-teams-agent-shell" {
+		t.Errorf("expected default thread analysis command, got %v", cfg.ThreadAnalysisCommand)
+	}
 	if cfg.ThreadCaptureFormat == nil || *cfg.ThreadCaptureFormat != ThreadCaptureMarkdown {
 		t.Errorf("expected default thread capture format markdown, got %v", cfg.ThreadCaptureFormat)
 	}
@@ -227,6 +233,12 @@ func TestInitConfig(t *testing.T) {
 	}
 	if updatedCfg.ExportDirectory == nil || *updatedCfg.ExportDirectory != "~/Downloads" {
 		t.Errorf("expected default export directory ~/Downloads, got %v", updatedCfg.ExportDirectory)
+	}
+	if updatedCfg.ThreadAnalysisAgent == nil || *updatedCfg.ThreadAnalysisAgent != "codex" {
+		t.Errorf("expected default thread analysis agent codex, got %v", updatedCfg.ThreadAnalysisAgent)
+	}
+	if updatedCfg.ThreadAnalysisCommand == nil || *updatedCfg.ThreadAnalysisCommand != "mdf-teams-agent-shell" {
+		t.Errorf("expected default thread analysis command, got %v", updatedCfg.ThreadAnalysisCommand)
 	}
 	if updatedCfg.ThreadCaptureFormat == nil || *updatedCfg.ThreadCaptureFormat != ThreadCaptureMarkdown {
 		t.Errorf("expected default thread capture format markdown, got %v", updatedCfg.ThreadCaptureFormat)
@@ -576,6 +588,42 @@ func TestResolveExternalEditor(t *testing.T) {
 	resolved = ResolveExternalEditor()
 	if resolved != "neovim" {
 		t.Errorf("expected config file editor to resolve to 'neovim', got %q", resolved)
+	}
+}
+
+func TestResolveThreadAnalysisSettings(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldXdg := os.Getenv("XDG_CONFIG_HOME")
+	defer os.Setenv("XDG_CONFIG_HOME", oldXdg)
+	os.Setenv("XDG_CONFIG_HOME", tmpDir)
+
+	if got := ResolveThreadAnalysisAgent(); got != "codex" {
+		t.Fatalf("default agent = %q, want codex", got)
+	}
+	if got := ResolveThreadAnalysisCommand(); got != "mdf-teams-agent-shell" {
+		t.Fatalf("default command = %q, want mdf-teams-agent-shell", got)
+	}
+
+	appDir, err := GetAppDir()
+	if err != nil {
+		t.Fatalf("GetAppDir failed: %v", err)
+	}
+	agent := "claude"
+	command := "/opt/local/bin/teams agent bridge"
+	cfg := Config{ThreadAnalysisAgent: &agent, ThreadAnalysisCommand: &command}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "config.json"), data, 0o600); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	if got := ResolveThreadAnalysisAgent(); got != agent {
+		t.Fatalf("configured agent = %q, want %q", got, agent)
+	}
+	if got := ResolveThreadAnalysisCommand(); got != command {
+		t.Fatalf("configured command = %q, want %q", got, command)
 	}
 }
 

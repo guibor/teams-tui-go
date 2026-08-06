@@ -30,7 +30,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 ### Configuration (`config.go`)
 - App data: `~/.config/teams-tui-go/` (via `GetAppDir()`)
 - Cache: `~/.cache/teams-tui-go/` (via `GetCacheDir()`)
-- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadCaptureFormat *ThreadCaptureFormat` (default `markdown`), separate Markdown/Org capture destinations, separate browser/Teams-app commands, and optional feature flags.
+- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadAnalysisAgent *string` (default `codex`), `ThreadAnalysisCommand *string` (default `mdf-teams-agent-shell`), `ThreadCaptureFormat *ThreadCaptureFormat` (default `markdown`), separate Markdown/Org capture destinations, separate browser/Teams-app commands, and optional feature flags.
 - `ResolveClientID()`, `ResolveMessageLimit()`, `ResolveSearchContextLimit()`, `ResolveChatLimit()`, and `ResolveExternalEditor()` implement the full precedence chain. External-editor strings may contain simple whitespace-separated arguments; `buildExternalEditorCommand()` appends the temporary message path without invoking a shell.
 - `InitConfig()` is run at application startup to populate any missing configuration keys in `config.json` with their default values and persist them to disk. It defaults `ChatIconTheme` to `"unicode"` and all feature flags to `false`.
 - `BuildScopes()` assembles the OAuth2 scope string dynamically: always includes the four basic scopes (`User.Read Chat.ReadWrite offline_access`) and appends optional scopes for each enabled feature flag.
@@ -155,6 +155,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - Bubble Tea 1.x does not expose enhanced modified-Return keys directly. `isEnhancedCtrlEnter()` normalizes Kitty/iTerm `CSI 13;5u` and xterm modifyOtherKeys `CSI 27;5;13~` into `Ctrl+J` before normal key dispatch.
 - **Full Markdown Export**:
 	- Normal-mode `E` fetches every message page for the selected chat, deduplicates and sorts chronologically, then writes a private (`0600`) Markdown file below `export_directory`.
+	- Normal-mode `A` and thread action `a A` use the same complete export, then asynchronously execute `thread_analysis_command --agent AGENT PATH`. `MsgThreadAnalysisLaunched` distinguishes export failure (no path) from launch failure (recoverable saved path). Never invoke the bridge before a successful export or pass the Markdown path through a shell.
 - **Thread Capture**:
 	- Normal-mode `aa` (action-menu key `a`) calls `CaptureChat()` in `capture.go`. `thread_capture_format` selects a Markdown checklist in `thread_capture_file` or an Org TODO capture in `thread_capture_org_file`; Markdown remains the default.
 	- Org entries mirror Org capture conventions with `CAPTURED`, Teams identity/title/URL properties, and a source link. Both formats group entries under the local marking date and write atomically with private (`0600`) permissions.
