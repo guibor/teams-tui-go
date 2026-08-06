@@ -13,7 +13,7 @@ func (m Model) hasActiveConversation() bool {
 }
 
 func (m Model) leaveActiveConversation() Model {
-	m.app.SelectedIndex = -1
+	m.app.ClearSelectedChat()
 	m.channelSelectedIndex = -1
 	m.app.SelectedChannelTeamID = ""
 	m.app.SelectedChannelID = ""

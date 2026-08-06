@@ -358,7 +358,7 @@ func TestReadStateChangeForBackgroundChatDoesNotResetSelectedTranscript(t *testi
 	model.lastMsgID[second.ID] = "message-2"
 	app.ActiveChatFilter.ReadState = ChatReadUnread
 	model = model.rebuildChatList()
-	app.SelectedIndex = 1
+	app.SetSelectedChatIndex(1)
 	app.Messages = []Message{{ID: "selected-transcript"}}
 
 	model, cmd := model.updateInternal(MsgChatReadStateChanged{ChatID: first.ID})

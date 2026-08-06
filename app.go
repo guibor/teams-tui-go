@@ -118,7 +118,8 @@ type App struct {
 	Chats                      []Chat
 	Status                     string
 	SearchStatus               string
-	SelectedIndex              int
+	SelectedIndex              int    // derived visible-row cursor for rendering
+	SelectedChatID             string // canonical selected chat identity
 	CurrentUserName            *string
 	CurrentUserID              string // used for markChatRead
 	Messages                   []Message
@@ -312,6 +313,7 @@ func NewApp() *App {
 // SetChats replaces the chat list and updates the status line.
 func (a *App) SetChats(chats []Chat) {
 	a.Chats = chats
+	a.SyncSelectedChat()
 	a.SetStatus(fmt.Sprintf("Loaded %d chats", len(chats)), 5*time.Second)
 }
 
@@ -460,9 +462,63 @@ func (a *App) SetSearchStatus(msg string, duration time.Duration) {
 	}
 }
 
+// SyncSelectedChat reconciles the derived row cursor with the canonical chat
+// identity. An existing identity always wins over a stale numeric index.
+func (a *App) SyncSelectedChat() bool {
+	if a.SelectedChatID != "" {
+		for index := range a.Chats {
+			if a.Chats[index].ID == a.SelectedChatID {
+				a.SelectedIndex = index
+				return true
+			}
+		}
+		a.SelectedIndex = -1
+		return false
+	}
+	if a.SelectedIndex >= 0 && a.SelectedIndex < len(a.Chats) {
+		a.SelectedChatID = a.Chats[a.SelectedIndex].ID
+		return true
+	}
+	a.SelectedIndex = -1
+	return false
+}
+
+// SetSelectedChatIndex selects one visible row and records its stable identity.
+func (a *App) SetSelectedChatIndex(index int) bool {
+	if index < 0 || index >= len(a.Chats) {
+		a.ClearSelectedChat()
+		return false
+	}
+	a.SelectedIndex = index
+	a.SelectedChatID = a.Chats[index].ID
+	return true
+}
+
+// SetSelectedChatID selects a visible chat by identity.
+func (a *App) SetSelectedChatID(chatID string) bool {
+	if chatID == "" {
+		a.ClearSelectedChat()
+		return false
+	}
+	for index := range a.Chats {
+		if a.Chats[index].ID == chatID {
+			a.SelectedChatID = chatID
+			a.SelectedIndex = index
+			return true
+		}
+	}
+	return false
+}
+
+// ClearSelectedChat returns the chat sidebar to its unselected dashboard state.
+func (a *App) ClearSelectedChat() {
+	a.SelectedChatID = ""
+	a.SelectedIndex = -1
+}
+
 // GetSelectedChat returns the currently highlighted chat, or nil.
 func (a *App) GetSelectedChat() *Chat {
-	if len(a.Chats) == 0 || a.SelectedIndex < 0 || a.SelectedIndex >= len(a.Chats) {
+	if !a.SyncSelectedChat() {
 		return nil
 	}
 	return &a.Chats[a.SelectedIndex]
@@ -473,7 +529,13 @@ func (a *App) NextChat() {
 	if len(a.Chats) == 0 {
 		return
 	}
-	a.SelectedIndex = (a.SelectedIndex + 1) % len(a.Chats)
+	index := a.SelectedIndex
+	if !a.SyncSelectedChat() {
+		index = -1
+	} else {
+		index = a.SelectedIndex
+	}
+	a.SetSelectedChatIndex((index + 1) % len(a.Chats))
 }
 
 // PreviousChat moves the selection one step up, wrapping around.
@@ -481,7 +543,11 @@ func (a *App) PreviousChat() {
 	if len(a.Chats) == 0 {
 		return
 	}
-	a.SelectedIndex = (a.SelectedIndex - 1 + len(a.Chats)) % len(a.Chats)
+	if !a.SyncSelectedChat() {
+		a.SetSelectedChatIndex(len(a.Chats) - 1)
+		return
+	}
+	a.SetSelectedChatIndex((a.SelectedIndex - 1 + len(a.Chats)) % len(a.Chats))
 }
 
 // ToggleNotificationMode cycles None → Console → System → Both → None.
