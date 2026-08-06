@@ -39,9 +39,9 @@ func threadActions() []threadAction {
 		{Key: "o", Label: "Open in browser", ID: threadActionOpenBrowser},
 		{Key: "O", Label: "Open in Teams desktop", ID: threadActionOpenTeams},
 		{Key: "c", Label: "Compose message", ID: threadActionCompose},
-		{Key: "r", Label: "Reply to latest message", ID: threadActionReply},
+		{Key: "R", Label: "Reply to latest message", ID: threadActionReply},
 		{Key: "f", Label: "Forward latest message", ID: threadActionForward},
-		{Key: "i", Label: "Mark read", ID: threadActionRead},
+		{Key: "r", Label: "Mark read", ID: threadActionRead},
 		{Key: "u", Label: "Mark unread", ID: threadActionUnread},
 		{Key: "*", Label: "Toggle favorite", ID: threadActionFavorite},
 		{Key: "a", Label: "Capture in configured thread list", ID: threadActionCapture},
@@ -153,16 +153,7 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		}
 		_ = SaveFavourites(m.favourites)
 		m = m.rebuildChatList()
-		selected := m.app.GetSelectedChat()
-		if selected == nil {
-			m.app.ClearMessagesConversation()
-			return m, nil
-		}
-		if selected.ID != chatValue.ID || !m.app.MessagesBelongTo(selected.ID) {
-			m.app.SnapToBottom = true
-			return m.loadChatMessages(selected.ID)
-		}
-		return m, nil
+		return m.reconcileSelectedChatConversation()
 
 	case threadActionCapture:
 		m.app.SetStatus("Capturing thread...", 0)
@@ -218,8 +209,13 @@ func (m Model) handleThreadActionPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m.executeThreadAction(actions[index].ID)
 	}
 
-	if key == "C" || key == "R" || key == "F" {
-		key = strings.ToLower(key)
+	switch key {
+	case "C":
+		key = "c"
+	case "F":
+		key = "f"
+	case "i":
+		key = "r"
 	}
 	for _, action := range actions {
 		if key == action.Key {

@@ -31,13 +31,14 @@ Authenticates through an external short-lived token provider or the built-in **O
 - ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
 
 - 🔵 Read-State Styling — unread chats use a cyan dot with bright bold text; read chats are deliberately muted
-- 📬 Explicit Read State — press `i` to mark a chat read or `u` to mark it unread; merely moving over a chat does not mark it read by default
-- ✉️ Mail-style Actions — use `c`/`C` to compose, `r`/`R` to reply with a quote, and `f`/`F` to forward an editable readable copy through the chat chooser
+- 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread (`i` remains a compatibility alias); merely moving over a chat does not mark it read by default
+- ✉️ Mail-style Actions — use `c`/`C` to compose, uppercase `R` to reply with a quote, and `f`/`F` to forward an editable readable copy through the chat chooser
 - 📥 Full Markdown Export — press `E` to fetch every page of the selected chat and save a chronological Markdown transcript
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
 - ⬆️ New messages bubble chats to the top of the list
 - 📌 Stable chat ordering — order only changes when new messages arrive
-- 🧷 Selection-safe transcripts — filter and read-state refreshes switch the right pane by chat ID, and stale background responses cannot merge messages from different chats
+- 🧷 Selection-safe transcripts — filter and read-state refreshes reconcile the highlighted chat ID, transcript owner, and message conversation metadata; stale background responses cannot merge messages from different chats
+- ↔️ RTL-safe compose — Hebrew and mixed-direction drafts use the same visual bidi renderer as messages while retaining logical Unicode order for editing and sending
 - 🗓️ Clear conversation reading — day separators, explicit headers for each channel reply, concise conversation metadata, and one-for-one system events
 - 🎥 Meeting resources — press `T` (or `a t`) to choose any loaded recording/transcript event, open its best available link, or copy the link
 - 💾 Provider-aware refresh — external credentials stay with their owner; built-in device-flow tokens refresh from the application cache
@@ -47,7 +48,7 @@ Authenticates through an external short-lived token provider or the built-in **O
   - **Terminal Image Preview** (`file_preview_in_terminal`) — Displays the highlighted image inside the details popup using Kitty graphics in compatible terminals and Sixel in Emacs EAT (requires `file_preview_enabled: true`)
 - ⬆️ **File Browsing & Uploading** (`file_upload_enabled`) — Press `Ctrl+f` in compose mode to open a file browser and attach small files (up to 50MB) from your computer. Files are uploaded to OneDrive/SharePoint and attached to your message.
 - 🟢 **User Presence** (`presence_enabled`) — press `p` in message selection mode to see real-time availability of the message sender
-- 👤 **User Profile** (`user_profile_enabled`) — press `i` in message selection mode to view extended profile info (name, email, job title, department)
+- 👤 **User Profile** (`user_profile_enabled`) — press `I` in message selection mode to view extended profile info (name, email, job title, department)
 - 🏢 **Teams Channels** (`teams_channels_enabled`) — Teams channels appear in the main sidebar below your chats; navigate with `j`/`k` and read messages just like chats. Supports background polling, global activity sorting (most active unhidden channels on top), unread indicators, and user-toggleable hidden channels (press `h` to toggle).
 
 ---
@@ -178,8 +179,8 @@ Configure how many chats to load in the sidebar in `~/.config/teams-tui-go/confi
 
 ### Read State and Markdown Exports
 
-Navigation is non-destructive by default. Select a chat and press `i` to mark
-it read or `u` to mark it unread. To restore the original mark-on-open behavior,
+Navigation is non-destructive by default. Select a chat and press `r` to mark
+it read (`i` is also accepted) or `u` to mark it unread. To restore the original mark-on-open behavior,
 set `mark_read_on_open` to `true`.
 
 Filtering and background refreshes preserve selection by chat ID. If the
@@ -534,10 +535,10 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `*`          | Toggle ★ favourite on selected chat (chats only)          |
 | `o`          | Open selected chat directly in Teams web in the configured browser |
 | `O`          | Open selected chat in the Teams desktop client            |
-| `i`          | Mark selected chat read (Normal Mode)                     |
+| `r` / `i`    | Mark selected chat read (`i` is a compatibility alias)    |
 | `u`          | Mark selected chat unread (Normal Mode)                   |
 | `c` / `C`    | Compose a new message in the current conversation          |
-| `r` / `R`    | Reply to the newest loaded message                         |
+| `R`          | Reply to the newest loaded message                         |
 | `f` / `F`    | Forward the newest loaded message through the chat chooser |
 | `E`          | Export complete selected chat as Markdown (Normal Mode)   |
 | `h`          | Toggle hide/unhide on selected channel (channel mode)     |
@@ -558,7 +559,8 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `Enter`      | Download selected attachment (in `v` attachment cursor)   |
 | `+` / `a`    | React to selected message (in Message Mode)               |
 | `c` / `C`    | Compose without quoting (Message Mode / Message View)     |
-| `r` / `R`    | Reply to selected message (Message Mode / Message View)   |
+| `r` / `i`    | Mark the selected message's conversation read            |
+| `R`          | Reply to selected message (Message Mode / Message View)   |
 | `f` / `F`    | Forward selected message (Message Mode / Message View)    |
 | `y`          | Copy (yank) message text (in Message Mode)                |
 | `u`          | Copy (yank) URL from message (in Message Mode / History Search) |
@@ -645,9 +647,9 @@ navigate with `j`/`k` and run it with `Enter`.
 | ---------- | ------------------------------------------- |
 | `o` / `O`  | Open directly in Teams web / Teams desktop  |
 | `c` / `C`  | Compose a message                           |
-| `r` / `R`  | Reply to the latest message                 |
+| `R`        | Reply to the latest message                 |
 | `f` / `F`  | Forward the latest message                 |
-| `i` / `u`  | Mark read / unread                          |
+| `r` / `u`  | Mark read / unread (`i` also marks read)    |
 | `*`        | Toggle favorite                             |
 | `a`        | Capture in the configured dated thread list (`aa`) |
 | `e`        | Export the complete Markdown transcript     |

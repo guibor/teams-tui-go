@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestSelectedChatIdentitySurvivesVisibleListReordering(t *testing.T) {
 	app := NewApp()
@@ -13,6 +16,56 @@ func TestSelectedChatIdentitySurvivesVisibleListReordering(t *testing.T) {
 	selected := app.GetSelectedChat()
 	if selected == nil || selected.ID != "second" || app.SelectedIndex != 1 {
 		t.Fatalf("selection drifted after reorder: selected=%#v index=%d", selected, app.SelectedIndex)
+	}
+}
+
+func TestSidebarRenderingRepairsStaleRowIndexFromSelectedIdentity(t *testing.T) {
+	firstName := "First"
+	secondName := "Second"
+	app := NewApp()
+	app.SetChats([]Chat{
+		{ID: "first", CachedDisplayName: &firstName},
+		{ID: "second", CachedDisplayName: &secondName},
+	})
+	app.SetSelectedChatID("second")
+	app.SelectedIndex = 0
+	app.SetMessages("second", []Message{{ID: "second-message", ChatID: "second"}}, "")
+	model := NewModel(app, "client", "user")
+
+	lines := strings.Split(stripANSI(model.renderChatList(50, 10)), "\n")
+	if app.SelectedIndex != 1 {
+		t.Fatalf("render retained stale row index %d, want 1", app.SelectedIndex)
+	}
+	for _, line := range lines {
+		if strings.Contains(line, firstName) && strings.Contains(line, "›") {
+			t.Fatalf("stale first row remained highlighted: %q", line)
+		}
+		if strings.Contains(line, secondName) && !strings.Contains(line, "›") {
+			t.Fatalf("canonical second row was not highlighted: %q", line)
+		}
+	}
+	if got := model.activeConversationTitle(); got != secondName {
+		t.Fatalf("right-pane title = %q, want %q", got, secondName)
+	}
+}
+
+func TestMismatchedMessageMetadataForcesTranscriptReload(t *testing.T) {
+	app := NewApp()
+	app.SetChats([]Chat{{ID: "first"}, {ID: "second"}})
+	app.SetSelectedChatID("second")
+	app.MessagesConversationID = "second"
+	app.Messages = []Message{{ID: "wrong-message", ChatID: "first"}}
+	model := NewModel(app, "client", "user")
+
+	model, cmd := model.reconcileSelectedChatConversation()
+	if cmd == nil {
+		t.Fatal("mismatched transcript did not trigger a reload")
+	}
+	if model.app.MessagesConversationID != "second" || len(model.app.Messages) != 0 {
+		t.Fatalf("mismatched transcript was not cleared: owner=%q messages=%#v", model.app.MessagesConversationID, model.app.Messages)
+	}
+	if !model.app.LoadingMessages {
+		t.Fatal("replacement transcript was not marked loading")
 	}
 }
 

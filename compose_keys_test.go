@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +19,34 @@ func newComposeKeyTestModel(value string) Model {
 	model.textarea.CursorEnd()
 	model.textarea.Focus()
 	return model
+}
+
+func TestComposeRendersHebrewVisuallyWithoutChangingLogicalText(t *testing.T) {
+	logical := "שלום עולם"
+	model := newComposeKeyTestModel(logical)
+	model.app.MessagesConversationID = "chat-1"
+
+	rendered := stripANSI(model.renderRightPanel(60, 15))
+	if !strings.Contains(rendered, "םלוע םולש") {
+		t.Fatalf("compose view did not apply RTL visual ordering: %q", rendered)
+	}
+	if got := model.textarea.Value(); got != logical {
+		t.Fatalf("compose rendering changed logical text to %q, want %q", got, logical)
+	}
+}
+
+func TestComposeRendersHebrewInsideEnglishSentence(t *testing.T) {
+	logical := "Hello שלום world"
+	model := newComposeKeyTestModel(logical)
+	model.app.MessagesConversationID = "chat-1"
+
+	rendered := stripANSI(model.renderRightPanel(60, 15))
+	if !strings.Contains(rendered, "Hello םולש world") {
+		t.Fatalf("compose view did not reorder the Hebrew run in mixed text: %q", rendered)
+	}
+	if got := model.textarea.Value(); got != logical {
+		t.Fatalf("compose rendering changed mixed logical text to %q", got)
+	}
 }
 
 func TestComposeEnterInsertsOneNewline(t *testing.T) {

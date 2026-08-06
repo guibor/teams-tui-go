@@ -98,6 +98,12 @@ func bidiVisualLines(lines []string) []string {
 	return visual
 }
 
+// bidiVisualText applies terminal bidi ordering to every rendered line while
+// preserving the logical source string held by the input component.
+func bidiVisualText(text string) string {
+	return strings.Join(bidiVisualLines(strings.Split(text, "\n")), "\n")
+}
+
 func bidiVisualOrder(levels []int, paragraphLevel int) []int {
 	indices := make([]int, len(levels))
 	maxLevel := paragraphLevel

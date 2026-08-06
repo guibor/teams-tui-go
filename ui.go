@@ -755,14 +755,14 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		}
 
 		// A filtered refresh can remove the selected chat while retaining the
-		// same numeric index. Switch the transcript immediately by identity so
-		// the old chat cannot remain visible or be merged into the replacement.
+		// same numeric index. Reconcile the pane by identity before any response
+		// can be presented under the replacement row.
 		if m.channelSelectedIndex >= 0 {
 			break
 		} else if chat := m.app.GetSelectedChat(); chat != nil {
-			if chat.ID != selectedID || !m.app.MessagesBelongTo(chat.ID) {
+			if !m.app.MessagesBelongTo(chat.ID) {
 				var loadCmd tea.Cmd
-				m, loadCmd = m.loadChatMessages(chat.ID)
+				m, loadCmd = m.reconcileSelectedChatConversation()
 				if loadCmd != nil {
 					cmds = append(cmds, loadCmd)
 				}
@@ -773,7 +773,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 					cmds = append(cmds, loadCmd)
 				}
 			}
-		} else if selectedID != "" {
+		} else {
 			m.app.ClearMessagesConversation()
 		}
 
@@ -1259,10 +1259,6 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.SetStatus("Could not mark chat "+action+": "+msg.Err.Error(), 6*time.Second)
 			break
 		}
-		selectedBeforeID := ""
-		if selected := m.app.GetSelectedChat(); selected != nil {
-			selectedBeforeID = selected.ID
-		}
 		if msg.Unread {
 			m.lastReadMsgID[msg.ChatID] = ""
 			m.manuallyUnread[msg.ChatID] = true
@@ -1275,19 +1271,14 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.markReactionsRead(msg.ChatID)
 			m.app.SetStatus("Marked chat read", 3*time.Second)
 		}
-		if m.app.ActiveChatFilter.ReadState == ChatReadUnread || m.app.ActiveChatFilter.ReadState == ChatReadRead {
-			m = m.rebuildChatList()
-			if m.channelSelectedIndex >= 0 {
-				break
-			} else if len(m.app.Chats) == 0 {
-				m.app.ClearMessagesConversation()
-			} else if selected := m.app.GetSelectedChat(); selected != nil && selected.ID != selectedBeforeID {
-				m.app.SnapToBottom = true
-				var loadCmd tea.Cmd
-				m, loadCmd = m.loadChatMessages(selected.ID)
-				if loadCmd != nil {
-					cmds = append(cmds, loadCmd)
-				}
+		// Re-run the complete filter, not only its dedicated read-state field:
+		// structured queries such as is:unread depend on the same state.
+		m = m.rebuildChatList()
+		if m.channelSelectedIndex < 0 {
+			var loadCmd tea.Cmd
+			m, loadCmd = m.reconcileSelectedChatConversation()
+			if loadCmd != nil {
+				cmds = append(cmds, loadCmd)
 			}
 		}
 
@@ -2136,7 +2127,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "O":
 		return m.executeThreadAction(threadActionOpenTeams)
 
-	case "r", "R":
+	case "R":
 		message, ok := m.newestLoadedMessage()
 		if !ok {
 			m.app.SetStatus("No loaded message to reply to", 3*time.Second)
@@ -2152,7 +2143,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m.beginForward(message)
 
-	case "i":
+	case "r", "i":
 		return m.markActiveConversationRead()
 
 	case "u":
@@ -2581,7 +2572,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m, composeCmd := m.beginCompose("")
 		return m, tea.Batch(clearTerminalImagesCmd(), composeCmd)
 
-	case "r", "R":
+	case "R":
 		if m.app.AttachmentCursorMode || m.app.MessageSelectedIndex >= len(m.app.Messages) {
 			return m, nil
 		}
@@ -2595,7 +2586,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m, forwardCmd := m.beginForward(m.app.Messages[m.app.MessageSelectedIndex])
 		return m, tea.Batch(clearTerminalImagesCmd(), forwardCmd)
 
-	case "i":
+	case "r", "i":
 		return m.markActiveConversationRead()
 
 	case "enter":
@@ -2751,7 +2742,7 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "c", "C":
 		return m.beginCompose("")
 
-	case "i":
+	case "r", "i":
 		return m.markActiveConversationRead()
 
 	case "y":
@@ -2814,7 +2805,7 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case "r", "R":
+	case "R":
 		if m.app.MessageSelectedIndex < len(m.app.Messages) {
 			return m.beginReply(m.app.Messages[m.app.MessageSelectedIndex])
 		}
@@ -3113,6 +3104,15 @@ func (m Model) handleUrlSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 // the new model plus any commands.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	updatedModel, cmd := m.updateInternal(msg)
+	var reconcileCmd tea.Cmd
+	updatedModel, reconcileCmd = updatedModel.reconcileSelectedChatConversation()
+	if reconcileCmd != nil {
+		if cmd == nil {
+			cmd = reconcileCmd
+		} else {
+			cmd = tea.Batch(cmd, reconcileCmd)
+		}
+	}
 	updatedModel = updatedModel.writeAppState()
 	return updatedModel, cmd
 }
@@ -3176,6 +3176,10 @@ func (m Model) writeAppState() Model {
 func (m Model) View() string {
 	if m.width == 0 {
 		return "Loading..."
+	}
+	if m.channelSelectedIndex < 0 && !m.app.SyncSelectedChat() {
+		m.app.ClearSelectedChat()
+		m.app.ClearMessagesConversation()
 	}
 
 	chatW := chatPanelWidth(m.width)
@@ -3490,14 +3494,14 @@ func (m Model) conversationMetadataDetail() string {
 
 // renderRightPanel renders the messages panel (with optional input area).
 func (m Model) renderRightPanel(w, h int) string {
-	if m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0 {
+	if m.activeConversationID() == "" {
 		return m.renderDashboard(w, h)
 	}
 
 	if !m.app.InputMode {
 		detail := m.conversationMetadataDetail()
 		if m.app.MessageSelectionMode {
-			detail = "MESSAGE MODE · j/k:nav · r:react · y:yank · u:url · o:open · d:delete · e:edit · a:answer · v:view · ESC/m:exit"
+			detail = "MESSAGE MODE · j/k:nav · r:read · R:reply · f:forward · +:react · y:yank · v:view · ESC/m:exit"
 		}
 		header := m.renderConversationHeader(w, detail)
 		messageHeight := h - lipgloss.Height(header)
@@ -3648,7 +3652,7 @@ func (m Model) renderRightPanel(w, h int) string {
 		m.textarea.SetHeight(inputH - 4) // hint + quote + separator lines
 	}
 
-	inputParts = append(inputParts, m.textarea.View())
+	inputParts = append(inputParts, bidiVisualText(m.textarea.View()))
 
 	inputBox := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
@@ -3827,6 +3831,26 @@ func (m Model) activeConversationID() string {
 	return ""
 }
 
+// reconcileSelectedChatConversation enforces the sidebar/right-pane identity
+// invariant after any update. It never lets a transcript whose owner or
+// message metadata differs from the selected visible chat remain on screen.
+func (m Model) reconcileSelectedChatConversation() (Model, tea.Cmd) {
+	if m.channelSelectedIndex >= 0 {
+		return m, nil
+	}
+	if !m.app.SyncSelectedChat() {
+		m.app.ClearSelectedChat()
+		m.app.ClearMessagesConversation()
+		return m, nil
+	}
+	selectedID := m.app.SelectedChatID
+	if m.app.MessagesBelongTo(selectedID) {
+		return m, nil
+	}
+	m.app.SnapToBottom = true
+	return m.loadChatMessages(selectedID)
+}
+
 // teamsChatURL returns Graph's opaque Teams deep link for a chat.
 func teamsChatURL(chat *Chat) string {
 	if chat == nil {
@@ -3992,12 +4016,6 @@ func (m Model) startChatFilterInput() (Model, tea.Cmd) {
 
 func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	wasChannelMode := m.channelSelectedIndex >= 0
-	previousChatID := ""
-	if !wasChannelMode {
-		if chat := m.app.GetSelectedChat(); chat != nil {
-			previousChatID = chat.ID
-		}
-	}
 
 	m.app.ActiveChatFilter = cloneChatListFilter(m.app.DraftChatFilter)
 	m.app.ActiveChatBookmark = ""
@@ -4014,20 +4032,11 @@ func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	}
 	if len(m.app.Chats) == 0 {
 		m.app.ClearSelectedChat()
-		m.app.ClearMessagesConversation()
-		return m, nil
 	}
-
-	selected := m.app.GetSelectedChat()
-	if selected == nil {
+	if selected := m.app.GetSelectedChat(); selected == nil && len(m.app.Chats) > 0 {
 		m.app.SetSelectedChatIndex(0)
-		selected = m.app.GetSelectedChat()
 	}
-	if selected != nil && selected.ID != previousChatID {
-		m.app.SnapToBottom = true
-		return m.loadChatMessages(selected.ID)
-	}
-	return m, nil
+	return m.reconcileSelectedChatConversation()
 }
 
 func (m Model) handleChatFilterPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -4160,11 +4169,15 @@ func (m Model) renderChatFilterPopup(w, h int) string {
 }
 
 func (m Model) renderChatList(w, h int) string {
+	selectedChatID := ""
+	if m.channelSelectedIndex < 0 && m.app.SyncSelectedChat() {
+		selectedChatID = m.app.SelectedChatID
+	}
 	totalChats := len(m.chatCache)
 	if totalChats < len(m.app.Chats) {
 		totalChats = len(m.app.Chats)
 	}
-	titleText := fmt.Sprintf("Chats %d · D dates · F filter · ? help", len(m.app.Chats))
+	titleText := fmt.Sprintf("Chats %d · D dates · v filter · ? help", len(m.app.Chats))
 	if m.app.ActiveChatBookmark != "" {
 		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, m.app.ActiveChatBookmark)
 	} else if chatFilterIsActive(m.app.ActiveChatFilter) {
@@ -4260,7 +4273,7 @@ func (m Model) renderChatList(w, h int) string {
 		reactionEmoji := m.getLatestUnreadReactionEmoji(c)
 		isFav := m.favourites[c.ID]
 
-		selected := i == m.app.SelectedIndex && m.channelSelectedIndex < 0
+		selected := c.ID == selectedChatID && m.channelSelectedIndex < 0
 		selectionMarker := "  "
 		if selected {
 			selectionMarker = lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("› ")
@@ -7242,7 +7255,7 @@ func (m Model) getHelpContentLines() []string {
 			{"Tab", "Switch between Chats & Channels"},
 			{"m", "Enter message selection mode"},
 			{"c / C", "Compose new message"},
-			{"r / R", "Reply to newest loaded message"},
+			{"R", "Reply to newest loaded message"},
 			{"f / F", "Forward newest loaded message"},
 			{"s", "Fuzzy-search chats and loaded messages"},
 			{"/", "Search message history"},
@@ -7253,7 +7266,7 @@ func (m Model) getHelpContentLines() []string {
 			{"T", "Choose a loaded meeting recording or transcript"},
 			{"*", "Toggle favourite (chats only)"},
 			{"o / O", "Open selected chat in Teams web / Teams desktop"},
-			{"i", "Mark selected chat read"},
+			{"r / i", "Mark selected chat read"},
 			{"u", "Mark selected chat unread"},
 			{"E", "Export complete chat history as Markdown"},
 			{"h", "Toggle hide/unhide channel (channels only)"},
@@ -7274,9 +7287,9 @@ func (m Model) getHelpContentLines() []string {
 			{"o", "Open URLs"},
 			{"+ / a", "React to message"},
 			{"c / C", "Compose without quote"},
-			{"r / R", "Reply (quote) message"},
+			{"R", "Reply (quote) message"},
 			{"f / F", "Forward message"},
-			{"i", "Mark conversation read"},
+			{"r / i", "Mark conversation read"},
 			{"d", "Delete message"},
 			{"e", "Edit message"},
 			{"p", "Presence status (feature: presence_enabled)"},
@@ -7288,9 +7301,9 @@ func (m Model) getHelpContentLines() []string {
 			{"< / >, H / L", "Select oldest / newest loaded message"},
 			{"J / K", "Scroll message body"},
 			{"c / C", "Compose without quote"},
-			{"r / R", "Reply to message"},
+			{"R", "Reply to message"},
 			{"f / F", "Forward message"},
-			{"i", "Mark conversation read"},
+			{"r / i", "Mark conversation read"},
 			{"Tab", "Switch to attachment cursor mode"},
 			{"Enter", "Download selected attachment (feature: file_preview_enabled)"},
 			{"ESC / q / v", "Close popup"},
@@ -7333,8 +7346,8 @@ func (m Model) getHelpContentLines() []string {
 		}},
 		{"Thread Actions (a)", [][2]string{
 			{"o / O", "Open in browser / Teams desktop"},
-			{"c / r / f", "Compose / reply / forward"},
-			{"i / u / *", "Mark read / unread / toggle favorite"},
+			{"c / R / f", "Compose / reply / forward"},
+			{"r / u / *", "Mark read / unread / toggle favorite"},
 			{"a", "Capture in the configured dated thread list"},
 			{"e / y", "Export complete transcript / copy Teams link"},
 			{"t", "Choose a recording or transcript"},

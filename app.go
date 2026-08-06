@@ -332,7 +332,7 @@ func (a *App) SetCurrentUser(name string) {
 // pane. Switching owners clears transient state so messages from two chats can
 // never be displayed or merged together.
 func (a *App) ActivateMessagesConversation(conversationID string) {
-	if a.MessagesConversationID == conversationID {
+	if a.MessagesConversationID == conversationID && messagesMatchConversation(a.Messages, conversationID) {
 		return
 	}
 	a.MessagesConversationID = conversationID
@@ -369,7 +369,24 @@ func (a *App) ClearMessagesConversation() {
 // MessagesBelongTo reports whether the right-pane transcript belongs to the
 // given chat or channel.
 func (a *App) MessagesBelongTo(conversationID string) bool {
-	return conversationID != "" && a.MessagesConversationID == conversationID
+	return conversationID != "" && a.MessagesConversationID == conversationID &&
+		messagesMatchConversation(a.Messages, conversationID)
+}
+
+func messagesMatchConversation(messages []Message, conversationID string) bool {
+	if conversationID == "" {
+		return len(messages) == 0
+	}
+	for _, message := range messages {
+		if message.ChatID != "" && message.ChatID != conversationID {
+			return false
+		}
+		if message.ChannelIdentity != nil && message.ChannelIdentity.ChannelID != "" &&
+			message.ChannelIdentity.ChannelID != conversationID {
+			return false
+		}
+	}
+	return true
 }
 
 // SetMessages updates one conversation's message list. A response for a new
@@ -478,7 +495,7 @@ func (a *App) SyncSelectedChat() bool {
 				return true
 			}
 		}
-		a.SelectedIndex = -1
+		a.ClearSelectedChat()
 		return false
 	}
 	if a.SelectedIndex >= 0 && a.SelectedIndex < len(a.Chats) {

@@ -36,13 +36,15 @@ func newWorkflowTestModel() Model {
 }
 
 func TestNormalMailStyleMessageBindings(t *testing.T) {
-	t.Run("i marks read", func(t *testing.T) {
-		model := newWorkflowTestModel()
-		model, cmd := model.handleNormalModeKey(filterTestKey('i'))
-		if cmd == nil || model.app.Status != "Marking chat read..." {
-			t.Fatalf("i returned cmd=%v status=%q, want explicit read action", cmd != nil, model.app.Status)
-		}
-	})
+	for _, key := range []rune{'r', 'i'} {
+		t.Run(string(key)+" marks read", func(t *testing.T) {
+			model := newWorkflowTestModel()
+			model, cmd := model.handleNormalModeKey(filterTestKey(key))
+			if cmd == nil || model.app.Status != "Marking chat read..." || model.app.InputMode {
+				t.Fatalf("%c returned cmd=%v status=%q input=%v, want explicit read action", key, cmd != nil, model.app.Status, model.app.InputMode)
+			}
+		})
+	}
 
 	for _, key := range []rune{'c', 'C'} {
 		t.Run(string(key)+" composes", func(t *testing.T) {
@@ -54,15 +56,13 @@ func TestNormalMailStyleMessageBindings(t *testing.T) {
 		})
 	}
 
-	for _, key := range []rune{'r', 'R'} {
-		t.Run(string(key)+" replies", func(t *testing.T) {
-			model := newWorkflowTestModel()
-			model, _ = model.handleNormalModeKey(filterTestKey(key))
-			if !model.app.InputMode || model.app.ReplyToMessage == nil || model.app.ReplyToMessage.ID != "newest" {
-				t.Fatalf("%c did not reply to newest loaded message", key)
-			}
-		})
-	}
+	t.Run("R replies", func(t *testing.T) {
+		model := newWorkflowTestModel()
+		model, _ = model.handleNormalModeKey(filterTestKey('R'))
+		if !model.app.InputMode || model.app.ReplyToMessage == nil || model.app.ReplyToMessage.ID != "newest" {
+			t.Fatal("R did not reply to newest loaded message")
+		}
+	})
 
 	for _, key := range []rune{'f', 'F'} {
 		t.Run(string(key)+" forwards", func(t *testing.T) {
@@ -90,14 +90,19 @@ func TestDisplacedChatBindingsRemainAvailable(t *testing.T) {
 }
 
 func TestMessageSelectionMailStyleBindings(t *testing.T) {
-	for _, key := range []rune{'r', 'R'} {
-		model := newWorkflowTestModel()
-		model.app.MessageSelectionMode = true
-		model.app.MessageSelectedIndex = 1
-		model, _ = model.handleMessageSelectionModeKey(filterTestKey(key))
-		if model.app.ReplyToMessage == nil || model.app.ReplyToMessage.ID != "older" || !model.app.InputMode {
-			t.Fatalf("%c did not reply to the selected message", key)
-		}
+	model := newWorkflowTestModel()
+	model.app.MessageSelectionMode = true
+	model.app.MessageSelectedIndex = 1
+	model, _ = model.handleMessageSelectionModeKey(filterTestKey('R'))
+	if model.app.ReplyToMessage == nil || model.app.ReplyToMessage.ID != "older" || !model.app.InputMode {
+		t.Fatal("R did not reply to the selected message")
+	}
+
+	model = newWorkflowTestModel()
+	model.app.MessageSelectionMode = true
+	model, cmd := model.handleMessageSelectionModeKey(filterTestKey('r'))
+	if cmd == nil || model.app.InputMode || model.app.Status != "Marking chat read..." {
+		t.Fatalf("r did not mark the selected message's conversation read: cmd=%v input=%v status=%q", cmd != nil, model.app.InputMode, model.app.Status)
 	}
 
 	for _, key := range []rune{'f', 'F'} {
@@ -110,11 +115,29 @@ func TestMessageSelectionMailStyleBindings(t *testing.T) {
 		}
 	}
 
-	model := newWorkflowTestModel()
+	model = newWorkflowTestModel()
 	model.app.MessageSelectionMode = true
 	model, _ = model.handleMessageSelectionModeKey(filterTestKey('+'))
 	if !model.app.ReactionMode {
 		t.Fatal("+ did not preserve reaction access")
+	}
+}
+
+func TestMessagePopupDistinguishesReadFromReply(t *testing.T) {
+	model := newWorkflowTestModel()
+	model.app.MessagePopupMode = true
+	model.app.MessageSelectedIndex = 1
+	model, _ = model.handleMessagePopupKey(filterTestKey('R'))
+	if model.app.ReplyToMessage == nil || model.app.ReplyToMessage.ID != "older" || !model.app.InputMode {
+		t.Fatal("R did not reply to the popup message")
+	}
+
+	model = newWorkflowTestModel()
+	model.app.MessagePopupMode = true
+	model.app.MessageSelectedIndex = 1
+	model, cmd := model.handleMessagePopupKey(filterTestKey('r'))
+	if cmd == nil || model.app.InputMode || model.app.Status != "Marking chat read..." {
+		t.Fatalf("r did not mark the popup conversation read: cmd=%v input=%v status=%q", cmd != nil, model.app.InputMode, model.app.Status)
 	}
 }
 
@@ -180,9 +203,9 @@ func TestThreadActionKeysMatchMailStyleBindings(t *testing.T) {
 	}
 	want := map[threadActionID]string{
 		threadActionCompose:  "c",
-		threadActionReply:    "r",
+		threadActionReply:    "R",
 		threadActionForward:  "f",
-		threadActionRead:     "i",
+		threadActionRead:     "r",
 		threadActionUnread:   "u",
 		threadActionFavorite: "*",
 		threadActionCapture:  "a",
@@ -191,6 +214,15 @@ func TestThreadActionKeysMatchMailStyleBindings(t *testing.T) {
 		if keys[action] != key {
 			t.Fatalf("action %s key = %q, want %q", action, keys[action], key)
 		}
+	}
+}
+
+func TestThreadActionPopupLowercaseRMarksRead(t *testing.T) {
+	model := newWorkflowTestModel()
+	model.app.ThreadActionPopupMode = true
+	model, cmd := model.handleThreadActionPopupKey(filterTestKey('r'))
+	if cmd == nil || model.app.InputMode || model.app.Status != "Marking chat read..." {
+		t.Fatalf("r returned cmd=%v input=%v status=%q, want read action", cmd != nil, model.app.InputMode, model.app.Status)
 	}
 }
 

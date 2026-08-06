@@ -345,6 +345,39 @@ func TestReadStateChangeImmediatelyReappliesUnreadFilter(t *testing.T) {
 	}
 }
 
+func TestReadStateChangeReappliesStructuredUnreadQuery(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	model := NewModel(app, "client", "user")
+	first := Chat{ID: "first", LastMessagePreview: filterTestMessage("message-1", "Someone else")}
+	second := Chat{ID: "second", LastMessagePreview: filterTestMessage("message-2", "Someone else")}
+	model.latestChats = []Chat{first, second}
+	model.stableChatOrder = []string{first.ID, second.ID}
+	model.lastMsgID[first.ID] = "message-1"
+	model.lastMsgID[second.ID] = "message-2"
+	app.ActiveChatFilter.Query = "is:unread"
+	model = model.rebuildChatList()
+	app.SetSelectedChatID(first.ID)
+	app.SetMessages(first.ID, []Message{{ID: "first-transcript", ChatID: first.ID}}, "")
+	app.ChatMessagesLoadedOnce[second.ID] = true
+	app.CachedMessages[second.ID] = []Message{{ID: "second-transcript", ChatID: second.ID}}
+
+	model, cmd := model.updateInternal(MsgChatReadStateChanged{ChatID: first.ID})
+	if cmd != nil {
+		t.Fatal("cached query-filter replacement unexpectedly requested a network load")
+	}
+	if len(app.Chats) != 1 || app.Chats[0].ID != second.ID {
+		t.Fatalf("structured is:unread query retained the read chat: %#v", app.Chats)
+	}
+	if selected := app.GetSelectedChat(); selected == nil || selected.ID != second.ID {
+		t.Fatalf("structured query selected %#v, want %q", selected, second.ID)
+	}
+	if !app.MessagesBelongTo(second.ID) || len(app.Messages) != 1 || app.Messages[0].ID != "second-transcript" {
+		t.Fatalf("structured query transcript does not match selection: owner=%q messages=%#v", app.MessagesConversationID, app.Messages)
+	}
+}
+
 func TestReadStateChangeForBackgroundChatDoesNotResetSelectedTranscript(t *testing.T) {
 	app := NewApp()
 	currentUser := "Me"
@@ -359,7 +392,7 @@ func TestReadStateChangeForBackgroundChatDoesNotResetSelectedTranscript(t *testi
 	app.ActiveChatFilter.ReadState = ChatReadUnread
 	model = model.rebuildChatList()
 	app.SetSelectedChatIndex(1)
-	app.Messages = []Message{{ID: "selected-transcript"}}
+	app.SetMessages(second.ID, []Message{{ID: "selected-transcript", ChatID: second.ID}}, "")
 
 	model, cmd := model.updateInternal(MsgChatReadStateChanged{ChatID: first.ID})
 	if cmd != nil {
