@@ -15,7 +15,7 @@ type chatBookmarkPreset struct {
 	Filter ChatListFilter
 }
 
-func chatBookmarkPresets() []chatBookmarkPreset {
+func builtinChatBookmarkPresets() []chatBookmarkPreset {
 	preset := func(key, name string, configure func(*ChatListFilter)) chatBookmarkPreset {
 		filter := newChatListFilter()
 		if configure != nil {
@@ -37,16 +37,48 @@ func chatBookmarkPresets() []chatBookmarkPreset {
 	}
 }
 
+func bookmarkFilter(config ChatBookmarkConfig) ChatListFilter {
+	filter := newChatListFilter()
+	filter.Query = config.Query
+	filter.ReadState = config.ReadState
+	filter.FavouritesOnly = config.FavouritesOnly
+	filter.TodayOnly = config.TodayOnly
+	for _, chatType := range config.ChatTypes {
+		filter.ChatTypes[chatType] = true
+	}
+	return filter
+}
+
+func (m Model) chatBookmarkPresets() []chatBookmarkPreset {
+	presets := builtinChatBookmarkPresets()
+	for _, config := range m.app.ChatBookmarks {
+		custom := chatBookmarkPreset{Key: config.Key, Name: config.Name, Filter: bookmarkFilter(config)}
+		replaced := false
+		for index := range presets {
+			if presets[index].Key == custom.Key {
+				presets[index] = custom
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			presets = append(presets, custom)
+		}
+	}
+	return presets
+}
+
 func (m Model) applyChatBookmark(preset chatBookmarkPreset) (Model, tea.Cmd) {
 	m.app.ChatBookmarkPopupMode = false
 	m.app.DraftChatFilter = cloneChatListFilter(preset.Filter)
 	updated, cmd := m.applyChatFilter()
+	updated.app.ActiveChatBookmark = preset.Name
 	updated.app.SetStatus(fmt.Sprintf("Bookmark %s: %d shown", preset.Name, len(updated.app.Chats)), 4*time.Second)
 	return updated, cmd
 }
 
 func (m Model) handleChatBookmarkPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	presets := chatBookmarkPresets()
+	presets := m.chatBookmarkPresets()
 	switch msg.String() {
 	case "esc", "q", "b":
 		m.app.ChatBookmarkPopupMode = false
@@ -80,7 +112,7 @@ func (m Model) renderChatBookmarkPopup(w, h int) string {
 	if w < 42 {
 		w = 42
 	}
-	presets := chatBookmarkPresets()
+	presets := m.chatBookmarkPresets()
 	lines := []string{
 		lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("Chat bookmarks"),
 		lipgloss.NewStyle().Foreground(colDimGray).Render("b followed by the highlighted shortcut"),

@@ -160,6 +160,17 @@ const (
 	ThreadCaptureOrg      ThreadCaptureFormat = "org"
 )
 
+// ChatBookmarkConfig defines a user bookmark shown in the b popup.
+type ChatBookmarkConfig struct {
+	Key            string         `json:"key"`
+	Name           string         `json:"name"`
+	Query          string         `json:"query,omitempty"`
+	ReadState      ChatReadFilter `json:"read_state,omitempty"`
+	ChatTypes      []string       `json:"chat_types,omitempty"`
+	FavouritesOnly bool           `json:"favourites_only,omitempty"`
+	TodayOnly      bool           `json:"today_only,omitempty"`
+}
+
 // Config holds persistent application settings.
 type Config struct {
 	ClientID                *string              `json:"client_id,omitempty"`
@@ -177,6 +188,7 @@ type Config struct {
 	ChatIconTheme           *string              `json:"chat_icon_theme,omitempty"`
 	ShowChatDates           *bool                `json:"show_chat_dates,omitempty"`
 	CustomChatIcons         map[string]string    `json:"custom_chat_icons,omitempty"`
+	ChatBookmarks           []ChatBookmarkConfig `json:"chat_bookmarks"`
 
 	// Optional feature flags — each defaults to false (disabled).
 	// When enabled, the corresponding Graph API permission must be granted
@@ -363,6 +375,10 @@ func InitConfig() {
 	if cfg.ShowChatDates == nil {
 		show := false
 		cfg.ShowChatDates = &show
+		modified = true
+	}
+	if cfg.ChatBookmarks == nil {
+		cfg.ChatBookmarks = []ChatBookmarkConfig{}
 		modified = true
 	}
 	// Feature flags default to false (disabled) — written so users can see them in config.json.
@@ -575,6 +591,39 @@ func ResolveThreadCaptureOrgFile() string {
 func ResolveShowChatDates() bool {
 	cfg := LoadConfig()
 	return cfg != nil && cfg.ShowChatDates != nil && *cfg.ShowChatDates
+}
+
+// ResolveChatBookmarks returns validated custom bookmarks from config.json.
+func ResolveChatBookmarks() []ChatBookmarkConfig {
+	cfg := LoadConfig()
+	if cfg == nil {
+		return nil
+	}
+	bookmarks := make([]ChatBookmarkConfig, 0, len(cfg.ChatBookmarks))
+	for _, bookmark := range cfg.ChatBookmarks {
+		bookmark.Key = strings.TrimSpace(bookmark.Key)
+		bookmark.Name = strings.TrimSpace(bookmark.Name)
+		if len([]rune(bookmark.Key)) != 1 || bookmark.Name == "" {
+			continue
+		}
+		switch bookmark.ReadState {
+		case ChatReadUnread, ChatReadRead:
+		default:
+			bookmark.ReadState = ChatReadAll
+		}
+		chatTypes := make([]string, 0, len(bookmark.ChatTypes))
+		seen := make(map[string]bool)
+		for _, chatType := range bookmark.ChatTypes {
+			chatType = strings.TrimSpace(chatType)
+			if chatType != "" && !seen[chatType] {
+				seen[chatType] = true
+				chatTypes = append(chatTypes, chatType)
+			}
+		}
+		bookmark.ChatTypes = chatTypes
+		bookmarks = append(bookmarks, bookmark)
+	}
+	return bookmarks
 }
 
 // ResolveChannelMsgRefreshMin returns the channel messages refresh interval in minutes.

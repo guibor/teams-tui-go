@@ -357,12 +357,12 @@ func NewModel(app *App, clientID, userID string) Model {
 	ti.Width = 40
 
 	tiUser := textinput.New()
-	tiUser.Placeholder = "Filter local chats, or enter exact email to open..."
+	tiUser.Placeholder = "Fuzzy search chats/messages, or enter an exact email..."
 	tiUser.CharLimit = 100
 	tiUser.Width = 40
 
 	tiFilter := textinput.New()
-	tiFilter.Placeholder = "Name, topic, member, or email contains..."
+	tiFilter.Placeholder = "Fuzzy query: words, from:, type:, is:, after:..."
 	tiFilter.CharLimit = 100
 	tiFilter.Width = 44
 
@@ -1180,6 +1180,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			m.app.UserSearchMode = false
 			m.app.UserSearchQuery = ""
 			m.app.UserSearchLocalResults = nil
+			m.app.UserSearchMessageResults = nil
 			m.app.UserSearchChannelResults = nil
 			m.app.UserSearchDirectoryResults = nil
 			forwardText := m.app.PendingForwardText
@@ -1206,6 +1207,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			selected := m.app.SetSelectedChatID(chat.ID)
 			if !selected {
 				m.app.ActiveChatFilter = newChatListFilter()
+				m.app.ActiveChatBookmark = ""
 				m = m.rebuildChatList()
 				selected = m.app.SetSelectedChatID(chat.ID)
 			}
@@ -3833,26 +3835,12 @@ func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
 		return false
 	}
 
-	query := strings.ToLower(strings.TrimSpace(filter.Query))
-	if query == "" {
+	query := parseSearchQuery(filter.Query)
+	if len(query.Terms) == 0 {
 		return true
 	}
-	var searchable []string
-	if chat.CachedDisplayName != nil {
-		searchable = append(searchable, *chat.CachedDisplayName)
-	}
-	if chat.Topic != nil {
-		searchable = append(searchable, *chat.Topic)
-	}
-	for _, member := range chat.Members {
-		if member.DisplayName != nil {
-			searchable = append(searchable, *member.DisplayName)
-		}
-		if member.Email != nil {
-			searchable = append(searchable, *member.Email)
-		}
-	}
-	return strings.Contains(strings.ToLower(strings.Join(searchable, "\n")), query)
+	_, matched := query.Match(chatSearchTarget(chat, unread, m.favourites[chat.ID]))
+	return matched
 }
 
 func chatHasActivityOn(chat Chat, day time.Time) bool {
@@ -3938,6 +3926,7 @@ func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	}
 
 	m.app.ActiveChatFilter = cloneChatListFilter(m.app.DraftChatFilter)
+	m.app.ActiveChatBookmark = ""
 	m.app.ChatFilterPopupMode = false
 	m.app.ChatFilterInputMode = false
 	m.chatFilterInput.Blur()
@@ -4102,7 +4091,9 @@ func (m Model) renderChatList(w, h int) string {
 		totalChats = len(m.app.Chats)
 	}
 	titleText := fmt.Sprintf("Chats %d · D dates · F filter · ? help", len(m.app.Chats))
-	if chatFilterIsActive(m.app.ActiveChatFilter) {
+	if m.app.ActiveChatBookmark != "" {
+		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, m.app.ActiveChatBookmark)
+	} else if chatFilterIsActive(m.app.ActiveChatFilter) {
 		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, chatFilterSummary(m.app.ActiveChatFilter))
 	}
 	title := lipgloss.NewStyle().Foreground(colDimGray).MaxWidth(w).Render(titleText)
@@ -4430,7 +4421,7 @@ func (m Model) renderMessages(w, h int) string {
 				senderName = "Me"
 			}
 			if m.app.SearchActive && m.app.SearchQuery != "" {
-				senderName = highlightQuery(senderName, m.app.SearchQuery)
+				senderName = highlightSearchQuery(senderName, m.app.SearchQuery)
 			}
 			senderName, senderIsRTL := bidiVisualLine(senderName)
 			headerAlignRight := alignRight || senderIsRTL
@@ -4679,13 +4670,13 @@ func (m Model) getWrappedMessageLines(msg *Message, maxW int, searchQuery string
 
 	body := msg.GetPlainText()
 	if searchActive && searchQuery != "" {
-		body = highlightQuery(body, searchQuery)
+		body = highlightSearchQuery(body, searchQuery)
 	}
 
 	if msg.Subject != "" {
 		subjText := msg.Subject
 		if searchActive && searchQuery != "" {
-			subjText = highlightQuery(subjText, searchQuery)
+			subjText = highlightSearchQuery(subjText, searchQuery)
 		}
 		subjStyled := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render(subjText)
 		if body != "" {
@@ -5228,31 +5219,47 @@ func (m *Model) notify(senderName string, msg Message) {
 	}
 }
 
-// messageMatches reports whether the given message contains the case-insensitive query in its body, subject, or attachment names.
-func (m Model) messageMatches(msg *Message, query string) bool {
-	if query == "" {
-		return true
+func (m Model) chatForSearch(conversationID string) Chat {
+	if chat, ok := m.chatCache[conversationID]; ok {
+		return chat
 	}
-	normQuery := normalizeString(strings.TrimSpace(strings.ToLower(query)))
-
-	// Check subject
-	if msg.Subject != "" && strings.Contains(msg.GetNormalizedSubject(), normQuery) {
-		return true
+	if m.app == nil {
+		return Chat{ID: conversationID}
 	}
-
-	// Check body
-	if strings.Contains(msg.GetNormalizedText(), normQuery) {
-		return true
-	}
-
-	// Check attachments
-	for _, att := range msg.Attachments {
-		if att.Name != nil && strings.Contains(normalizeString(strings.ToLower(*att.Name)), normQuery) {
-			return true
+	for _, chat := range m.app.Chats {
+		if chat.ID == conversationID {
+			return chat
 		}
 	}
+	return Chat{ID: conversationID}
+}
 
-	return false
+// messageMatches applies the shared structured and fuzzy query grammar.
+func (m Model) messageMatches(msg *Message, query string) bool {
+	parsed := parseSearchQuery(query)
+	if len(parsed.Terms) == 0 {
+		return true
+	}
+	conversationID := ""
+	if m.app != nil {
+		conversationID = m.activeConversationID()
+	}
+	chat := m.chatForSearch(conversationID)
+	unread := false
+	favorite := false
+	if m.app != nil {
+		unread = m.isUnread(chat)
+		favorite = m.favourites[chat.ID]
+	}
+	_, matched := parsed.Match(messageSearchTarget(msg, chat, unread, favorite))
+	return matched
+}
+
+func highlightSearchQuery(text, query string) string {
+	for _, term := range parseSearchQuery(query).HighlightTerms() {
+		text = highlightQuery(text, term)
+	}
+	return text
 }
 
 // highlightQuery highlights occurrences of query inside text without breaking ANSI sequences.
@@ -5601,12 +5608,12 @@ func (m Model) renderSearchPopup(w, h int) string {
 				item := results[i]
 				body := item.Message.GetPlainText()
 				if item.IsMatch {
-					body = highlightQuery(body, m.app.SearchQuery)
+					body = highlightSearchQuery(body, m.app.SearchQuery)
 				}
 				if item.Message.Subject != "" {
 					subjText := item.Message.Subject
 					if item.IsMatch {
-						subjText = highlightQuery(subjText, m.app.SearchQuery)
+						subjText = highlightSearchQuery(subjText, m.app.SearchQuery)
 					}
 					if body != "" {
 						body = subjText + "\n" + body
@@ -5691,13 +5698,13 @@ func (m Model) renderSearchPopup(w, h int) string {
 			if m.isOwn(item.Message) {
 				senderName := "Me"
 				if item.IsMatch {
-					senderName = highlightQuery(senderName, m.app.SearchQuery)
+					senderName = highlightSearchQuery(senderName, m.app.SearchQuery)
 				}
 				header = lipgloss.NewStyle().Foreground(colGreen).Render(prefix + dateStr + " " + senderName)
 			} else {
 				senderName := sender
 				if item.IsMatch {
-					senderName = highlightQuery(senderName, m.app.SearchQuery)
+					senderName = highlightSearchQuery(senderName, m.app.SearchQuery)
 				}
 				senderName, _ = bidiVisualLine(senderName)
 				header = lipgloss.NewStyle().Foreground(colCyan).Render(prefix + senderName + " " + dateStr)
@@ -5706,13 +5713,13 @@ func (m Model) renderSearchPopup(w, h int) string {
 			// Render body
 			body := item.Message.GetPlainText()
 			if item.IsMatch {
-				body = highlightQuery(body, m.app.SearchQuery)
+				body = highlightSearchQuery(body, m.app.SearchQuery)
 			}
 
 			if item.Message.Subject != "" {
 				subjText := item.Message.Subject
 				if item.IsMatch {
-					subjText = highlightQuery(subjText, m.app.SearchQuery)
+					subjText = highlightSearchQuery(subjText, m.app.SearchQuery)
 				}
 				subjStyled := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Render(subjText)
 				if body != "" {
@@ -6254,6 +6261,7 @@ type UserSearchItemType int
 
 const (
 	UserSearchItemLocal UserSearchItemType = iota
+	UserSearchItemMessage
 	UserSearchItemDirectory
 	UserSearchItemDirect
 	UserSearchItemChannel
@@ -6262,6 +6270,7 @@ const (
 type UserSearchItem struct {
 	Type        UserSearchItemType
 	LocalChat   *Chat
+	Message     *MessageSearchResult
 	DirUser     *User
 	DirectEmail string
 	Channel     *channelEntry
@@ -6277,6 +6286,14 @@ func (m Model) getUserSearchItems() []UserSearchItem {
 			LocalChat: &m.app.UserSearchLocalResults[i],
 		})
 	}
+	if m.app.PendingForwardText == "" {
+		for i := range m.app.UserSearchMessageResults {
+			items = append(items, UserSearchItem{
+				Type:    UserSearchItemMessage,
+				Message: &m.app.UserSearchMessageResults[i],
+			})
+		}
+	}
 
 	// Channels
 	for i := range m.app.UserSearchChannelResults {
@@ -6289,45 +6306,132 @@ func (m Model) getUserSearchItems() []UserSearchItem {
 	return items
 }
 
+func (m Model) knownChatsForSearch() []Chat {
+	known := make(map[string]Chat)
+	for _, chat := range m.app.Chats {
+		known[chat.ID] = chat
+	}
+	for _, chat := range m.latestChats {
+		known[chat.ID] = chat
+	}
+	for id, chat := range m.chatCache {
+		known[id] = chat
+	}
+
+	ordered := make([]Chat, 0, len(known))
+	used := make(map[string]bool)
+	for _, id := range m.stableChatOrder {
+		if chat, ok := known[id]; ok && !used[id] {
+			ordered = append(ordered, chat)
+			used[id] = true
+		}
+	}
+	var rest []Chat
+	for id, chat := range known {
+		if !used[id] {
+			rest = append(rest, chat)
+		}
+	}
+	sort.Slice(rest, func(i, j int) bool {
+		return strings.ToLower(chatDisplayName(rest[i])) < strings.ToLower(chatDisplayName(rest[j]))
+	})
+	return append(ordered, rest...)
+}
+
+func chatDisplayName(chat Chat) string {
+	if chat.CachedDisplayName != nil && strings.TrimSpace(*chat.CachedDisplayName) != "" {
+		return *chat.CachedDisplayName
+	}
+	if chat.Topic != nil && strings.TrimSpace(*chat.Topic) != "" {
+		return *chat.Topic
+	}
+	return chat.ID
+}
+
+func (m Model) knownMessagesForSearch(chat Chat) []Message {
+	seen := make(map[string]bool)
+	var messages []Message
+	add := func(candidates []Message) {
+		for _, message := range candidates {
+			key := message.ID
+			if key == "" {
+				key = message.CreatedDateTime + "\x00" + message.SenderName() + "\x00" + message.GetPlainText()
+			}
+			if !seen[key] {
+				seen[key] = true
+				messages = append(messages, message)
+			}
+		}
+	}
+	add(m.app.CachedMessages[chat.ID])
+	add(m.app.HistoryMessages[chat.ID])
+	if m.app.MessagesBelongTo(chat.ID) {
+		add(m.app.Messages)
+	}
+	if chat.LastMessagePreview != nil {
+		add([]Message{*chat.LastMessagePreview})
+	}
+	return messages
+}
+
 func (m *Model) updateUserSearchLocalResults() {
-	query := normalizeString(strings.ToLower(strings.TrimSpace(m.app.UserSearchQuery)))
-	if query == "" {
+	parsed := parseSearchQuery(m.app.UserSearchQuery)
+	if len(parsed.Terms) == 0 {
 		m.app.UserSearchLocalResults = nil
+		m.app.UserSearchMessageResults = nil
 		m.app.UserSearchChannelResults = nil
 		return
 	}
 
-	var matches []Chat
-	for _, c := range m.app.Chats {
-		name := ""
-		if c.CachedDisplayName != nil {
-			name = normalizeString(strings.ToLower(*c.CachedDisplayName))
+	type scoredChat struct {
+		chat  Chat
+		score int
+	}
+	var chatMatches []scoredChat
+	var messageMatches []MessageSearchResult
+	for _, chat := range m.knownChatsForSearch() {
+		unread := m.isUnread(chat)
+		favorite := m.favourites[chat.ID]
+		if score, matched := parsed.Match(chatSearchTarget(chat, unread, favorite)); matched {
+			chatMatches = append(chatMatches, scoredChat{chat: chat, score: score})
 		}
-
-		memberMatch := false
-		for _, mem := range c.Members {
-			if mem.DisplayName != nil && strings.Contains(normalizeString(strings.ToLower(*mem.DisplayName)), query) {
-				memberMatch = true
-				break
-			}
-			if mem.Email != nil && strings.Contains(normalizeString(strings.ToLower(*mem.Email)), query) {
-				memberMatch = true
-				break
-			}
+		if m.app.PendingForwardText != "" {
+			continue
 		}
-
-		if strings.Contains(name, query) || memberMatch {
-			matches = append(matches, c)
+		for _, message := range m.knownMessagesForSearch(chat) {
+			if score, matched := parsed.Match(messageSearchTarget(&message, chat, unread, favorite)); matched {
+				messageMatches = append(messageMatches, MessageSearchResult{
+					ChatID:   chat.ID,
+					ChatName: chatDisplayName(chat),
+					Message:  message,
+					Score:    score,
+				})
+			}
 		}
 	}
-	m.app.UserSearchLocalResults = matches
+	sort.SliceStable(chatMatches, func(i, j int) bool { return chatMatches[i].score > chatMatches[j].score })
+	m.app.UserSearchLocalResults = nil
+	for index, match := range chatMatches {
+		if index >= 20 {
+			break
+		}
+		m.app.UserSearchLocalResults = append(m.app.UserSearchLocalResults, match.chat)
+	}
+	sortMessageSearchResults(messageMatches)
+	if len(messageMatches) > 40 {
+		messageMatches = messageMatches[:40]
+	}
+	m.app.UserSearchMessageResults = messageMatches
 
 	var chanMatches []channelEntry
 	if m.app.Features.TeamsChannels {
 		for _, ch := range m.allChannels() {
-			chanName := normalizeString(strings.ToLower(ch.channelName))
-			teamName := normalizeString(strings.ToLower(ch.teamName))
-			if strings.Contains(chanName, query) || strings.Contains(teamName, query) {
+			target := searchTarget{
+				Text:         []string{ch.channelName, ch.teamName},
+				Conversation: []string{ch.channelName, ch.teamName},
+				Kind:         "channel",
+			}
+			if _, matched := parsed.Match(target); matched {
 				chanMatches = append(chanMatches, ch)
 			}
 		}
@@ -6368,6 +6472,27 @@ func (m Model) handleUserSearchInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) revealChatFromSearch(chatID string) (Model, bool) {
+	if m.app.SetSelectedChatID(chatID) {
+		return m, true
+	}
+	m.app.ActiveChatFilter = newChatListFilter()
+	m.app.ActiveChatBookmark = ""
+	m = m.rebuildChatList()
+	return m, m.app.SetSelectedChatID(chatID)
+}
+
+func (m Model) closeUserSearch() Model {
+	m.channelSelectedIndex = -1
+	m.app.SelectedChannelTeamID = ""
+	m.app.SelectedChannelID = ""
+	m.app.UserSearchPopupMode = false
+	m.app.UserSearchMode = false
+	m.app.PendingForwardText = ""
+	m.app.SnapToBottom = true
+	return m
+}
+
 func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	items := m.getUserSearchItems()
 
@@ -6404,22 +6529,10 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if item.Type == UserSearchItemLocal {
 			forwardText := m.app.PendingForwardText
 			targetID := item.LocalChat.ID
-			idx := -1
-			for i, c := range m.app.Chats {
-				if c.ID == targetID {
-					idx = i
-					break
-				}
-			}
-			if idx != -1 {
-				m.app.SetSelectedChatIndex(idx)
-				m.channelSelectedIndex = -1
-				m.app.SelectedChannelTeamID = ""
-				m.app.SelectedChannelID = ""
-				m.app.UserSearchPopupMode = false
-				m.app.UserSearchMode = false
-				m.app.PendingForwardText = ""
-				m.app.SnapToBottom = true
+			var selected bool
+			m, selected = m.revealChatFromSearch(targetID)
+			if selected {
+				m = m.closeUserSearch()
 				m, loadCmd := m.loadChatMessages(targetID)
 				if forwardText != "" {
 					var composeCmd tea.Cmd
@@ -6428,6 +6541,29 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 				}
 				return m, loadCmd
 			}
+		} else if item.Type == UserSearchItemMessage {
+			result := *item.Message
+			var selected bool
+			m, selected = m.revealChatFromSearch(result.ChatID)
+			if !selected {
+				return m, nil
+			}
+			chat := m.chatForSearch(result.ChatID)
+			knownMessages := m.knownMessagesForSearch(chat)
+			m = m.closeUserSearch()
+			m, loadCmd := m.loadChatMessages(result.ChatID)
+			m.app.Messages = mergeHistoryMessages(m.app.Messages, knownMessages)
+			m.app.CachedMessages[result.ChatID] = mergeHistoryMessages(m.app.CachedMessages[result.ChatID], knownMessages)
+			for index := range m.app.Messages {
+				if m.app.Messages[index].ID == result.Message.ID {
+					m.app.MessageSelectionMode = true
+					m.app.MessageSelectedIndex = index
+					m.app.PendingScrollID = result.Message.ID
+					m.app.SnapToBottom = false
+					break
+				}
+			}
+			return m, loadCmd
 		} else if item.Type == UserSearchItemChannel {
 			forwardText := m.app.PendingForwardText
 			chans := m.allChannels()
@@ -6462,8 +6598,8 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 func (m Model) renderUserSearchPopup(w, h int) string {
 	titleStyle := lipgloss.NewStyle().Foreground(colCyan).Bold(true)
 	forwarding := m.app.PendingForwardText != ""
-	titleText := "Find Local Chat or Start Direct Chat"
-	instructionText := " j/k: Nav | Enter: Open selected chat or typed email | /: Edit | Esc: Close"
+	titleText := "Search Chats and Loaded Messages"
+	instructionText := " j/k: Nav | Enter: Open result or typed email | /: Edit | Esc: Close"
 	if forwarding {
 		titleText = "Forward Message to Chat"
 		instructionText = " j/k: Nav | Enter: Choose destination or typed email | /: Edit | Esc: Cancel"
@@ -6484,13 +6620,13 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 
 	if len(items) == 0 {
 		if m.app.UserSearchQuery == "" {
-			emptyText := "Type a name/email and press Enter/arrows."
+			emptyText := "Type a fuzzy query or an exact email."
 			if forwarding {
 				emptyText = "Type a destination name/email and press Enter/arrows."
 			}
 			list.WriteString(lipgloss.NewStyle().Foreground(colDimGray).Render(emptyText) + "\n")
 		} else {
-			list.WriteString(lipgloss.NewStyle().Foreground(colDimGray).Render("No matching local chats or channels found.") + "\n")
+			list.WriteString(lipgloss.NewStyle().Foreground(colDimGray).Render("No matching chats, loaded messages, or channels found.") + "\n")
 		}
 		for l := 1; l < msgH; l++ {
 			list.WriteString("\n")
@@ -6521,6 +6657,24 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 				chatName, _ = bidiVisualLine(chatName)
 				tag := lipgloss.NewStyle().Foreground(colGreen).Render("[Local Chat]")
 				lineStr := fmt.Sprintf("%s %s %s", prefix, chatName, tag)
+				if isSelected {
+					line = lipgloss.NewStyle().Background(colDarkGray).Render(lineStr)
+				} else {
+					line = lineStr
+				}
+			case UserSearchItemMessage:
+				sender := item.Message.Message.SenderName()
+				if sender == "" {
+					sender = "Teams"
+				}
+				snippet := strings.Join(strings.Fields(item.Message.Message.GetPlainText()), " ")
+				available := w - lipgloss.Width(prefix) - lipgloss.Width(item.Message.ChatName) - lipgloss.Width(sender) - 18
+				if available < 12 {
+					available = 12
+				}
+				snippet = truncate(snippet, available)
+				tag := lipgloss.NewStyle().Foreground(colYellow).Render("[Message]")
+				lineStr := fmt.Sprintf("%s%s · %s: %s %s", prefix, item.Message.ChatName, sender, snippet, tag)
 				if isSelected {
 					line = lipgloss.NewStyle().Background(colDarkGray).Render(lineStr)
 				} else {

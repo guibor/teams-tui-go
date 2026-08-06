@@ -855,6 +855,7 @@ func main() {
 	app.ThreadCaptureFile = ResolveThreadCaptureFile()
 	app.ThreadCaptureOrgFile = ResolveThreadCaptureOrgFile()
 	app.ShowChatDates = ResolveShowChatDates()
+	app.ChatBookmarks = ResolveChatBookmarks()
 	if configPath, err := GetConfigPath(); err == nil {
 		app.ConfigPath = configPath
 	}

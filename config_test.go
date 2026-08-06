@@ -149,6 +149,9 @@ func TestInitConfig(t *testing.T) {
 	if cfg.ThreadCaptureOrgFile == nil || *cfg.ThreadCaptureOrgFile != "~/Documents/teams-threads.org" {
 		t.Errorf("expected default Org thread capture file, got %v", cfg.ThreadCaptureOrgFile)
 	}
+	if cfg.ChatBookmarks == nil || len(cfg.ChatBookmarks) != 0 {
+		t.Errorf("expected visible empty chat_bookmarks array, got %#v", cfg.ChatBookmarks)
+	}
 	if cfg.ChannelMsgRefreshMin == nil || *cfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected channel message refresh min 2, got %v", cfg.ChannelMsgRefreshMin)
 	}

@@ -54,6 +54,7 @@ func (m Model) openChatChooser(forwardText string) (Model, tea.Cmd) {
 	m.app.UserSearchQuery = ""
 	m.app.UserSearchStatus = ""
 	m.app.UserSearchLocalResults = nil
+	m.app.UserSearchMessageResults = nil
 	m.app.UserSearchChannelResults = nil
 	m.app.UserSearchDirectoryResults = nil
 	m.app.UserSearchSelectedIndex = 0

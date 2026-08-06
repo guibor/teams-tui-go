@@ -184,6 +184,7 @@ type App struct {
 	UserSearchStatus           string
 	UserSearchStatusUntil      *time.Time
 	UserSearchLocalResults     []Chat
+	UserSearchMessageResults   []MessageSearchResult
 	UserSearchChannelResults   []channelEntry
 	UserSearchDirectoryResults []User
 	UserSearchSelectedIndex    int
@@ -193,6 +194,8 @@ type App struct {
 	ChatFilterSelectedIndex    int
 	ChatBookmarkPopupMode      bool
 	ChatBookmarkSelectedIndex  int
+	ChatBookmarks              []ChatBookmarkConfig
+	ActiveChatBookmark         string
 	ThreadActionPopupMode      bool
 	ThreadActionSelectedIndex  int
 	ActiveChatFilter           ChatListFilter
