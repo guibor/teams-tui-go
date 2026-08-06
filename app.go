@@ -198,6 +198,9 @@ type App struct {
 	ActiveChatBookmark         string
 	ThreadActionPopupMode      bool
 	ThreadActionSelectedIndex  int
+	ArtifactPopupMode          bool
+	ArtifactSelectedIndex      int
+	Artifacts                  []ConversationArtifact
 	ActiveChatFilter           ChatListFilter
 	DraftChatFilter            ChatListFilter
 	AppStartTime               time.Time

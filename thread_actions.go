@@ -25,6 +25,7 @@ const (
 	threadActionCapture     threadActionID = "capture"
 	threadActionExport      threadActionID = "export"
 	threadActionCopyLink    threadActionID = "copy-link"
+	threadActionArtifacts   threadActionID = "artifacts"
 )
 
 type threadAction struct {
@@ -46,6 +47,7 @@ func threadActions() []threadAction {
 		{Key: "a", Label: "Capture in configured thread list", ID: threadActionCapture},
 		{Key: "e", Label: "Export complete Markdown transcript", ID: threadActionExport},
 		{Key: "y", Label: "Copy Teams link", ID: threadActionCopyLink},
+		{Key: "t", Label: "Choose recording or transcript", ID: threadActionArtifacts},
 	}
 }
 
@@ -184,6 +186,9 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		} else {
 			m.app.SetStatus("Teams link copied", 3*time.Second)
 		}
+
+	case threadActionArtifacts:
+		return m.openConversationArtifacts()
 	}
 	return m, nil
 }

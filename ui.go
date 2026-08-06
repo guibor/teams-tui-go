@@ -1778,6 +1778,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.ThreadActionPopupMode {
 		return m.handleThreadActionPopupKey(msg)
 	}
+	if m.app.ArtifactPopupMode {
+		return m.handleConversationArtifactPopupKey(msg)
+	}
 	if m.app.HelpPopupMode {
 		return m.handleHelpPopupKey(msg)
 	}
@@ -2024,6 +2027,9 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		m.app.ThreadActionPopupMode = true
 		m.app.ThreadActionSelectedIndex = 0
 		return m, nil
+
+	case "T":
+		return m.openConversationArtifacts()
 
 	case "/":
 		if m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0 {
@@ -3259,6 +3265,17 @@ func (m Model) View() string {
 		}
 		modal := m.renderThreadActionPopup(popupW, popupH)
 		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
+	} else if m.app.ArtifactPopupMode {
+		popupW := m.width * 65 / 100
+		popupH := m.height * 70 / 100
+		if popupW < 54 {
+			popupW = 54
+		}
+		if popupH < 14 {
+			popupH = 14
+		}
+		modal := m.renderConversationArtifactPopup(popupW, popupH)
+		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 	} else if m.app.HelpPopupMode {
 		popupW := m.width * 70 / 100
 		popupH := m.height * 85 / 100
@@ -3412,6 +3429,65 @@ func (m Model) renderConversationHeader(w int, detail string) string {
 	return lipgloss.JoinVertical(lipgloss.Left, rendered...)
 }
 
+func chatTypeLabel(chatType string) string {
+	switch chatType {
+	case "oneOnOne":
+		return "Direct chat"
+	case "group":
+		return "Group chat"
+	case "meeting":
+		return "Meeting chat"
+	default:
+		return "Chat"
+	}
+}
+
+func countLabel(count int, singular, plural string) string {
+	if count == 1 {
+		return fmt.Sprintf("1 %s", singular)
+	}
+	return fmt.Sprintf("%d %s", count, plural)
+}
+
+func (m Model) conversationMetadataDetail() string {
+	if entry := m.activeChannelEntry(); entry != nil {
+		messageCount := 0
+		if m.app.MessagesBelongTo(entry.channelID) {
+			messageCount = len(m.app.Messages)
+		}
+		return "Channel · " + countLabel(messageCount, "loaded message", "loaded messages")
+	}
+	chat := m.app.GetSelectedChat()
+	if chat == nil {
+		return ""
+	}
+	parts := []string{chatTypeLabel(chat.ChatType)}
+	if len(chat.Members) > 0 {
+		parts = append(parts, countLabel(len(chat.Members), "member", "members"))
+	}
+	messageCount := 0
+	if m.app.MessagesBelongTo(chat.ID) {
+		messageCount = len(m.app.Messages)
+	}
+	parts = append(parts, countLabel(messageCount, "loaded message", "loaded messages"))
+	if m.isUnread(*chat) {
+		parts = append(parts, "Unread")
+	} else {
+		parts = append(parts, "Read")
+	}
+	if m.favourites[chat.ID] {
+		parts = append(parts, "Favorite")
+	}
+	recordings, transcripts := conversationArtifactCounts(m.knownMessagesForSearch(*chat))
+	if recordings > 0 {
+		parts = append(parts, countLabel(recordings, "recording", "recordings"))
+	}
+	if transcripts > 0 {
+		parts = append(parts, countLabel(transcripts, "transcript", "transcripts"))
+	}
+	return strings.Join(parts, " · ")
+}
+
 // renderRightPanel renders the messages panel (with optional input area).
 func (m Model) renderRightPanel(w, h int) string {
 	if m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0 {
@@ -3419,10 +3495,8 @@ func (m Model) renderRightPanel(w, h int) string {
 	}
 
 	if !m.app.InputMode {
-		detail := "c:compose · a:actions · m:select · i/u:read state · K/J:scroll · /:search · ?:help"
-		if m.channelSelectedIndex >= 0 {
-			detail = "c:compose · m:select · K/J:scroll · /:search · ?:help"
-		} else if m.app.MessageSelectionMode {
+		detail := m.conversationMetadataDetail()
+		if m.app.MessageSelectionMode {
 			detail = "MESSAGE MODE · j/k:nav · r:react · y:yank · u:url · o:open · d:delete · e:edit · a:answer · v:view · ESC/m:exit"
 		}
 		header := m.renderConversationHeader(w, detail)
@@ -4051,9 +4125,9 @@ func (m Model) renderChatFilterPopup(w, h int) string {
 		query = "(none)"
 	}
 	if m.app.ChatFilterInputMode {
-		rows = append(rows, "Text contains       "+m.chatFilterInput.View())
+		rows = append(rows, "Query               "+m.chatFilterInput.View())
 	} else {
-		rows = append(rows, "Text contains       "+query)
+		rows = append(rows, "Query               "+query)
 	}
 
 	lines := []string{
@@ -4072,7 +4146,7 @@ func (m Model) renderChatFilterPopup(w, h int) string {
 	}
 	lines = append(lines,
 		"",
-		lipgloss.NewStyle().Foreground(colDimGray).Render("u/r/a read state · t/1/g/m/f toggle · / edit text"),
+		lipgloss.NewStyle().Foreground(colDimGray).Render("u/r/a read state · t/1/g/m/f toggle · / edit query"),
 		lipgloss.NewStyle().Foreground(colDimGray).Render("Space toggle · Enter apply · x clear · Esc cancel"),
 	)
 
@@ -4371,6 +4445,7 @@ func (m Model) renderMessages(w, h int) string {
 	var lines []string
 	var prevSender string
 	var prevTime time.Time
+	var previousDay string
 
 	var selectedStartLine, selectedEndLine int = -1, -1
 	var pendingScrollLine int = -1
@@ -4380,7 +4455,6 @@ func (m Model) renderMessages(w, h int) string {
 	// Iterate in reverse (slice is newest-first) → append → shows newest at bottom.
 	for i := len(msgs) - 1; i >= 0; i-- {
 		msg := msgs[i]
-		m.app.MessageLineOffsets[i] = len(lines)
 
 		alignRight := false
 		if m.channelSelectedIndex >= 0 {
@@ -4389,23 +4463,36 @@ func (m Model) renderMessages(w, h int) string {
 			alignRight = m.isOwn(msg)
 		}
 
-		if m.app.PendingScrollID != "" && msg.ID == m.app.PendingScrollID {
-			pendingScrollLine = len(lines)
-		}
-
 		sender := msg.SenderName()
 
 		msgTime, _ := time.Parse(time.RFC3339Nano, msg.CreatedDateTime)
 		msgTime = msgTime.Local()
+		dayKey := ""
+		if !msgTime.IsZero() {
+			dayKey = msgTime.Format("2006-01-02")
+		}
+		if dayKey != "" && dayKey != previousDay {
+			if len(lines) > 0 {
+				lines = append(lines, "")
+			}
+			lines = append(lines, renderConversationDaySeparator(msgTime, w))
+			previousDay = dayKey
+			prevSender = ""
+			prevTime = time.Time{}
+		}
+		m.app.MessageLineOffsets[i] = len(lines)
+		if m.app.PendingScrollID != "" && msg.ID == m.app.PendingScrollID {
+			pendingScrollLine = len(lines)
+		}
 		senderChanged := sender != prevSender
 		timeGap := !msgTime.IsZero() && !prevTime.IsZero() && (msgTime.Year() != prevTime.Year() ||
 			msgTime.Month() != prevTime.Month() ||
 			msgTime.Day() != prevTime.Day() ||
 			msgTime.Hour() != prevTime.Hour())
 
-		// Channel root messages always get their own header.
-		// Channel replies and regular chat messages group by sender/hour.
-		showHeader := senderChanged || timeGap || msg.IsSystemEvent() || (m.channelSelectedIndex >= 0 && !msg.IsReply)
+		// Every reply is explicit; only ordinary consecutive messages may share
+		// a sender header. System events remain one-for-one.
+		showHeader := msg.IsReply || senderChanged || timeGap || msg.IsSystemEvent() || (m.channelSelectedIndex >= 0 && !msg.IsReply)
 
 		if showHeader {
 			if len(lines) > 0 {
@@ -4579,6 +4666,18 @@ func (m Model) renderMessages(w, h int) string {
 	return strings.Join(lines[start2:end], "\n")
 }
 
+func renderConversationDaySeparator(day time.Time, width int) string {
+	label := " " + day.Format("Mon, Jan 02, 2006") + " "
+	remaining := width - lipgloss.Width(label)
+	if remaining < 0 {
+		return lipgloss.NewStyle().Foreground(colDimGray).Render(strings.TrimSpace(label))
+	}
+	left := remaining / 2
+	right := remaining - left
+	line := strings.Repeat("─", left) + label + strings.Repeat("─", right)
+	return lipgloss.NewStyle().Foreground(colDimGray).Render(line)
+}
+
 // ---------------------------------------------------------------------------
 // Status bar
 // ---------------------------------------------------------------------------
@@ -4669,6 +4768,9 @@ func (m Model) getWrappedMessageLines(msg *Message, maxW int, searchQuery string
 	}
 
 	body := msg.GetPlainText()
+	if msg.IsSystemEvent() && body != "" {
+		body = "• " + body
+	}
 	if searchActive && searchQuery != "" {
 		body = highlightSearchQuery(body, searchQuery)
 	}
@@ -7142,12 +7244,13 @@ func (m Model) getHelpContentLines() []string {
 			{"c / C", "Compose new message"},
 			{"r / R", "Reply to newest loaded message"},
 			{"f / F", "Forward newest loaded message"},
-			{"s", "Open chat search / open chat"},
+			{"s", "Fuzzy-search chats and loaded messages"},
 			{"/", "Search message history"},
 			{"v / V", "Filter chat list by state, type, favorite, or text"},
 			{"U", "Replace the current view with unread-only chats"},
 			{"b", "Open mu4e-style chat bookmarks (bu unread, bi inbox)"},
 			{"a", "Open actions for the selected chat"},
+			{"T", "Choose a loaded meeting recording or transcript"},
 			{"*", "Toggle favourite (chats only)"},
 			{"o / O", "Open selected chat in Teams web / Teams desktop"},
 			{"i", "Mark selected chat read"},
@@ -7193,7 +7296,8 @@ func (m Model) getHelpContentLines() []string {
 			{"ESC / q / v", "Close popup"},
 		}},
 		{"History Search (/)", [][2]string{
-			{"Enter", "Submit query / focus results / Expand context"},
+			{"Query", "Words plus from:/in:/is:/type:/has:/after:/before:"},
+			{"Enter", "Submit query / focus results / expand context"},
 			{"j / k", "Navigate results"},
 			{"y", "Yank selected message"},
 			{"u", "Extract URLs"},
@@ -7202,8 +7306,9 @@ func (m Model) getHelpContentLines() []string {
 			{"ESC", "Close search popup"},
 		}},
 		{"Chat Search (s)", [][2]string{
-			{"Type", "Filter local chats"},
-			{"Enter", "Open selected chat / direct open by email"},
+			{"Type", "Fuzzy query across chats and already-loaded messages"},
+			{"Syntax", "Quotes, -term, from:/in:/is:/type:/has:/after:/before:"},
+			{"Enter", "Open selected result / direct open by email"},
 			{"j / k", "Navigate results"},
 			{"ESC", "Close popup"},
 		}},
@@ -7212,7 +7317,7 @@ func (m Model) getHelpContentLines() []string {
 			{"Space", "Cycle/toggle selected characteristic"},
 			{"u / r / a", "Unread only / read only / all states"},
 			{"t / 1 / g / m / f", "Toggle today / 1:1 / group / meeting / favorites"},
-			{"/", "Edit name, topic, member, or email text"},
+			{"/", "Edit the shared fuzzy/structured query"},
 			{"x", "Clear all filter characteristics"},
 			{"Enter", "Apply filter"},
 			{"ESC", "Cancel without changing active filter"},
@@ -7222,6 +7327,7 @@ func (m Model) getHelpContentLines() []string {
 			{"bi / ba", "Inbox / all chats (clear filters)"},
 			{"bt / bf", "Today's activity / favorites"},
 			{"bd / bg / bm", "Direct / group / meeting chats"},
+			{"config.json", "Add or override presets with chat_bookmarks"},
 			{"j / k / Enter", "Navigate and apply a preset"},
 			{"ESC", "Cancel"},
 		}},
@@ -7231,8 +7337,15 @@ func (m Model) getHelpContentLines() []string {
 			{"i / u / *", "Mark read / unread / toggle favorite"},
 			{"a", "Capture in the configured dated thread list"},
 			{"e / y", "Export complete transcript / copy Teams link"},
+			{"t", "Choose a recording or transcript"},
 			{"j / k / Enter", "Navigate and run an action"},
 			{"ESC", "Cancel"},
+		}},
+		{"Recordings / Transcripts (T)", [][2]string{
+			{"j / k", "Navigate every loaded resource event"},
+			{"Enter / o", "Open direct recording or Teams event link"},
+			{"y", "Copy selected resource link"},
+			{"ESC", "Close"},
 		}},
 		{"Composing Messages", [][2]string{
 			{"Type", "Write a multiline message"},

@@ -15,6 +15,8 @@ type EventMessageDetail struct {
 	CallRecordingDisplayName string        `json:"callRecordingDisplayName,omitempty"`
 	CallRecordingStatus      string        `json:"callRecordingStatus,omitempty"`
 	CallRecordingURL         string        `json:"callRecordingUrl,omitempty"`
+	CallID                   string        `json:"callId,omitempty"`
+	CallTranscriptICalUID    string        `json:"callTranscriptICalUid,omitempty"`
 	ChatDisplayName          string        `json:"chatDisplayName,omitempty"`
 	ChannelDisplayName       string        `json:"channelDisplayName,omitempty"`
 	TeamDisplayName          string        `json:"teamDisplayName,omitempty"`

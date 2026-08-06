@@ -23,7 +23,7 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 🔄 Smart Background Polling & Sleep Mode — active chat messages poll every 3 s and chat list updates every 15 s. Polling auto-pauses when the terminal window is unfocused (blurred) or when you manually enter sleep mode via the `Esc` key.
 - 😊 Emoticon Auto-replacement — popular text emoticons (like `:)`, `:D`, `<3`) are automatically converted to Unicode emojis
 - 🔍 Search History — search messages in any chat, recursively loading and indexing all conversation history in the background
-- 🔍 Chat Search & Open — filter locally loaded chats or open/start a 1:1 chat directly by entering a UPN/email (bypassing directory search)
+- 🔍 Chat and Message Search — fuzzy-search the canonical chat set and already-loaded messages with quoted phrases and structured fields, or open/start a 1:1 chat directly by entering a UPN/email
 - 🧭 Chat List Filters — press `v` or `V` to combine unread/read state, today's activity, chat type, favorites, and name/member text without making another Graph request
 - 🔖 Chat Bookmarks — use mu4e-style prefixes such as `bu` (unread), `bi` (inbox/all), `bt` (today), `bf` (favorites), `bd` (direct), `bg` (groups), and `bm` (meetings)
 - ⭐ Favourites — pin any chat to the top of the sidebar with `*`; favourites are sorted alphabetically and stay anchored regardless of activity
@@ -38,6 +38,8 @@ Authenticates through an external short-lived token provider or the built-in **O
 - ⬆️ New messages bubble chats to the top of the list
 - 📌 Stable chat ordering — order only changes when new messages arrive
 - 🧷 Selection-safe transcripts — filter and read-state refreshes switch the right pane by chat ID, and stale background responses cannot merge messages from different chats
+- 🗓️ Clear conversation reading — day separators, explicit headers for each channel reply, concise conversation metadata, and one-for-one system events
+- 🎥 Meeting resources — press `T` (or `a t`) to choose any loaded recording/transcript event, open its best available link, or copy the link
 - 💾 Provider-aware refresh — external credentials stay with their owner; built-in device-flow tokens refresh from the application cache
 
 **Optional features** (enable per-feature in `config.json`; see [AZURE_SETUP.md](AZURE_SETUP.md)):
@@ -198,6 +200,12 @@ Markdown exports therefore show text such as `Meeting started`,
 `Call transcript available`. Unknown future event types are humanized instead
 of being hidden behind a generic system-event label.
 
+The conversation pane does not collapse duplicate system events. Press `T`, or
+choose `t` from thread actions, to list each loaded recording and transcript
+event separately. Recording events prefer their direct recording URL;
+transcripts open the Teams event/message link because Graph does not expose a
+direct transcript URL in the event detail.
+
 Press `D` to toggle a fixed-width local last-message date and 24-hour time
 immediately before each chat title. Current-year rows use `Aug 03 17:45`; older
 rows include the year as in `2025-12-31 17:45`. The choice persists as
@@ -230,6 +238,31 @@ and source link to `thread_capture_org_file` instead.
 `thread_capture_format` accepts `markdown` or `org` and is read at startup.
 The two destination settings are kept separately, so switching formats does
 not mix Org syntax into the Markdown list or discard either file.
+
+### Search Queries
+
+The global `s` chooser searches every known chat, including chats hidden by the
+active sidebar filter, and messages already loaded during this session. It does
+not create another cache or trigger a network search while typing. Opening a
+result uses the normal conversation load path, which refreshes that chat. The
+current-conversation `/` history search uses the same query grammar while its
+existing recursive history loader continues to fetch older pages.
+
+Free words use ordered fuzzy matching and combine with AND semantics. Quote a
+phrase, prefix a term with `-` to exclude it, and use these fields:
+
+| Syntax | Meaning |
+| --- | --- |
+| `from:alice` | Sender name |
+| `in:"Product planning"` | Conversation name |
+| `is:unread`, `is:read`, `is:favorite` | Chat state |
+| `type:direct`, `type:group`, `type:meeting` | Chat type |
+| `type:message`, `type:event`, `type:channel` | Result type |
+| `has:file`, `has:image`, `has:link` | Message/latest-preview content |
+| `after:2026-08-01`, `before:2026-08-06` | Local message/activity date |
+
+For example, `qtrly from:alice is:unread -has:file` fuzzy-matches “quarterly”
+in unread conversations while excluding file-bearing messages.
 
 ### Search Context Limit
 Configure how many context messages (before and after each search match) to display in the search history popup in `~/.config/teams-tui-go/config.json`:
@@ -492,11 +525,12 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `PgDn` / `J` | Scroll messages down                                      |
 | `/`          | Open search input (in Normal Mode)                        |
 | `Esc`        | Clear active search, or leave conversation for dashboard   |
-| `s`          | Open chat search / chat creation popup                    |
+| `s`          | Fuzzy-search chats and already-loaded messages            |
 | `v` / `V`    | Filter chats by read state, type, favorite, and text      |
 | `U`          | Replace any active chat view/filter with unread-only chats |
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
 | `a`          | Open actions for the selected chat                         |
+| `T`          | Choose a loaded recording or transcript                    |
 | `*`          | Toggle ★ favourite on selected chat (chats only)          |
 | `o`          | Open selected chat directly in Teams web in the configured browser |
 | `O`          | Open selected chat in the Teams desktop client            |
@@ -551,7 +585,7 @@ with unread-only chats.
 | `t`              | Toggle activity-today-only                         |
 | `1` / `g` / `m`  | Toggle 1:1 / group / meeting chat types            |
 | `f`              | Toggle favorites-only                              |
-| `/`              | Edit name, topic, member, or email text            |
+| `/`              | Edit fuzzy/structured query                        |
 | `Space`          | Toggle or cycle the selected filter row            |
 | `x`              | Clear the draft filter                             |
 | `Enter`          | Apply                                               |
@@ -575,6 +609,33 @@ local; applying one does not issue a Graph list request.
 | `bg`     | Groups                              |
 | `bm`     | Meetings                            |
 
+Add custom bookmarks with `chat_bookmarks` in `config.json`. A custom bookmark
+with the same one-character key replaces that built-in entry; other keys are
+appended to the popup.
+
+```json
+{
+  "chat_bookmarks": [
+    {
+      "key": "p",
+      "name": "Product planning",
+      "query": "in:\"Product planning\"",
+      "chat_types": ["group"]
+    },
+    {
+      "key": "u",
+      "name": "Urgent unread",
+      "query": "urgent",
+      "read_state": "unread",
+      "favourites_only": true
+    }
+  ]
+}
+```
+
+Bookmark records support `query`, `read_state`, `chat_types`,
+`favourites_only`, and `today_only`.
+
 ### Thread Actions
 
 Press `a` on a selected chat. Use the action's displayed shortcut directly, or
@@ -591,6 +652,7 @@ navigate with `j`/`k` and run it with `Enter`.
 | `a`        | Capture in the configured dated thread list (`aa`) |
 | `e`        | Export the complete Markdown transcript     |
 | `y`        | Copy the Teams web link                     |
+| `t`        | Choose a recording or transcript            |
 
 ---
 
@@ -598,7 +660,7 @@ navigate with `j`/`k` and run it with `Enter`.
 
 | File                                          | Purpose                             |
 | --------------------------------------------- | ----------------------------------- |
-| `~/.config/teams-tui-go/config.json`           | Client ID, notification mode, limits |
+| `~/.config/teams-tui-go/config.json`           | Authentication, features, limits, bookmarks |
 | `~/.config/teams-tui-go/favourites.json`       | Pinned/favourite chat IDs           |
 | `~/.cache/teams-tui-go/token.json`             | Built-in device-flow tokens; unused with an external provider |
 | `~/.cache/teams-tui-go/profile.json`           | Cached user profile                 |
