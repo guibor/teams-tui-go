@@ -14,7 +14,7 @@ import (
 
 // ---------------------------------------------------------------------------
 // Favourites persistence
-// ---------------------------------------------------------------------------
+// --------------------------------------------------------------------------
 
 // LoadFavourites reads the list of favourite chat IDs from favourites.json.
 // Returns an empty map if the file does not exist or cannot be parsed.
