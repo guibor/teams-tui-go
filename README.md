@@ -189,6 +189,12 @@ selected chat leaves the current view after a read-state change, the next
 visible chat gets a fresh transcript immediately; messages from the previous
 chat are never retained or merged into the replacement pane.
 
+The sidebar has one fixed summary header. Applying a filter/bookmark or toggling
+the date column requests a clean terminal repaint so a stale header cannot
+remain above the current one. The selected chat or channel is rendered as a
+continuous full-width, bold white-on-blue row; marker and icon ANSI resets
+cannot cancel that highlight partway across the line.
+
 `M-n` and `M-p` select the next and previous chat in the visible list. They use
 the same filtered-list navigation as `j` and `k`; `M-<` and `M->` jump to the
 first and last visible item in the active chat or channel section. In the chat

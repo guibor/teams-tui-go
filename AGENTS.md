@@ -95,7 +95,8 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **Sidebar State Styling**:
   - Read rows are muted; unread rows use a cyan state dot and bright bold names.
   - Chat-type icons have separate colors and the default single-width Unicode set is `@` (1:1), `&` (group), `◷` (meeting), and `#` (channel).
-  - Chat/channel rows reserve cells for markers, icon, optional timestamp, and reaction before truncating the visual name with `ansi.Truncate`; constrain content before applying a selected row's fixed `Width(w)` so selection can never introduce a wrapped overflow row. `renderConversationHeader()` shows the complete active name above the right-pane transcript.
+  - `renderSidebarHeader()` owns the only chat-summary header. Filter/bookmark and date-column transitions request `tea.ClearScreen` before repainting so terminals cannot retain a stale duplicate header.
+  - Chat/channel rows reserve cells for markers, icon, optional timestamp, and reaction before truncating the visual name with `ansi.Truncate`. `renderSidebarRow()` renders selected rows from plain visual text under one full-width bold white-on-blue style; do not wrap independently styled ANSI fragments because their reset sequences cancel the background. `renderConversationHeader()` shows the complete active name above the right-pane transcript.
 - **Read Logic**:
   - `lastMsgID` and `lastMsgTime` track latest content
   - `lastReadMsgID` tracks what was read locally in this session

@@ -39,6 +39,7 @@ var (
 	colBlue     = lipgloss.Color("#5F87FF")
 	colMagenta  = lipgloss.Color("#D787FF")
 	colUnread   = lipgloss.Color("#7DD3FC")
+	colSelected = lipgloss.Color("#005F87")
 )
 
 // Panel border styles.
@@ -1997,6 +1998,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		} else {
 			m.app.SetStatus("Chat timestamps hidden", 3*time.Second)
 		}
+		return m, tea.ClearScreen
 
 	case "?":
 		m.app.HelpPopupMode = true
@@ -3772,6 +3774,41 @@ func chatTypeColor(chatType string) lipgloss.Color {
 	}
 }
 
+func renderSidebarHeader(text string, width int) string {
+	if width < 1 {
+		return ""
+	}
+	contentWidth := width - 1
+	if contentWidth < 0 {
+		contentWidth = 0
+	}
+	content := ansi.Truncate(text, contentWidth, "…")
+	return lipgloss.NewStyle().
+		Foreground(colWhite).
+		Background(lipgloss.Color("#20242C")).
+		Bold(true).
+		Width(width).
+		MaxWidth(width).
+		Render(" " + content)
+}
+
+// renderSidebarRow uses one ANSI style for selected rows. Wrapping a string
+// containing independently styled markers would let their reset sequences
+// cancel the outer background after the first marker.
+func renderSidebarRow(styled, plain string, selected bool, width int) string {
+	if selected {
+		plain = ansi.Truncate(plain, width, "")
+		return lipgloss.NewStyle().
+			Foreground(colWhite).
+			Background(colSelected).
+			Bold(true).
+			Width(width).
+			MaxWidth(width).
+			Render(plain)
+	}
+	return lipgloss.NewStyle().MaxWidth(width).Render(ansi.Truncate(styled, width, ""))
+}
+
 // sortTeamsAndChannels is a no-op because sorting is now performed globally inside allChannels.
 func (m Model) sortTeamsAndChannels() {}
 
@@ -4057,7 +4094,7 @@ func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	summary := chatFilterSummary(m.app.ActiveChatFilter)
 	m.app.SetStatus(fmt.Sprintf("Chat filter: %s (%d shown)", summary, len(m.app.Chats)), 4*time.Second)
 	if wasChannelMode {
-		return m, nil
+		return m, tea.ClearScreen
 	}
 	if len(m.app.Chats) == 0 {
 		m.app.ClearSelectedChat()
@@ -4065,7 +4102,8 @@ func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	if selected := m.app.GetSelectedChat(); selected == nil && len(m.app.Chats) > 0 {
 		m.app.SetSelectedChatIndex(0)
 	}
-	return m.reconcileSelectedChatConversation()
+	updated, cmd := m.reconcileSelectedChatConversation()
+	return updated, tea.Sequence(tea.ClearScreen, cmd)
 }
 
 func (m Model) handleChatFilterPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -4212,7 +4250,7 @@ func (m Model) renderChatList(w, h int) string {
 	} else if chatFilterIsActive(m.app.ActiveChatFilter) {
 		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, chatFilterSummary(m.app.ActiveChatFilter))
 	}
-	title := lipgloss.NewStyle().Foreground(colDimGray).MaxWidth(w).Render(titleText)
+	title := renderSidebarHeader(titleText, w)
 
 	// Total lines available = h minus the title row.
 	budget := h - 1
@@ -4274,7 +4312,7 @@ func (m Model) renderChatList(w, h int) string {
 		}
 	}
 
-	lines := []string{title}
+	lines := []string{}
 	if len(m.app.Chats) == 0 {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colDimGray).Render("  No chats match the current filter"))
 	}
@@ -4303,17 +4341,29 @@ func (m Model) renderChatList(w, h int) string {
 		isFav := m.favourites[c.ID]
 
 		selected := c.ID == selectedChatID && m.channelSelectedIndex < 0
-		selectionMarker := "  "
+		selectionMarkerText := "  "
 		if selected {
-			selectionMarker = lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("› ")
+			selectionMarkerText = "› "
 		}
-		favoriteMarker := "  "
+		favoriteMarkerText := "  "
 		if isFav {
-			favoriteMarker = lipgloss.NewStyle().Foreground(colYellow).Render("★ ")
+			favoriteMarkerText = "★ "
 		}
-		unreadMarker := "  "
+		unreadMarkerText := "  "
 		if unread {
-			unreadMarker = lipgloss.NewStyle().Foreground(colUnread).Bold(true).Render("● ")
+			unreadMarkerText = "● "
+		}
+		selectionMarker := selectionMarkerText
+		if selected {
+			selectionMarker = lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render(selectionMarkerText)
+		}
+		favoriteMarker := favoriteMarkerText
+		if isFav {
+			favoriteMarker = lipgloss.NewStyle().Foreground(colYellow).Render(favoriteMarkerText)
+		}
+		unreadMarker := unreadMarkerText
+		if unread {
+			unreadMarker = lipgloss.NewStyle().Foreground(colUnread).Bold(true).Render(unreadMarkerText)
 		}
 		typeTag := lipgloss.NewStyle().
 			Foreground(chatTypeColor(c.ChatType)).
@@ -4324,24 +4374,22 @@ func (m Model) renderChatList(w, h int) string {
 		if unread || reactionEmoji != "" {
 			nameStyle = lipgloss.NewStyle().Foreground(colWhite).Bold(true)
 		}
-		dateColumn := ""
+		dateText := ""
 		if m.app.ShowChatDates {
-			dateColumn = lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf("%16s ", chatLastMessageTimestamp(c, renderedAt)))
+			dateText = fmt.Sprintf("%16s ", chatLastMessageTimestamp(c, renderedAt))
 		}
+		dateColumn := lipgloss.NewStyle().Foreground(colDimGray).Render(dateText)
 		prefix := selectionMarker + favoriteMarker + unreadMarker + typeTag + " " + dateColumn
+		plainPrefix := selectionMarkerText + favoriteMarkerText + unreadMarkerText + chatTypeIcon + " " + dateText
 		suffix := ""
 		if reactionEmoji != "" {
 			suffix = " " + reactionEmoji
 		}
-		nameWidth := w - lipgloss.Width(prefix) - lipgloss.Width(suffix)
+		nameWidth := w - lipgloss.Width(plainPrefix) - lipgloss.Width(suffix)
 		displayName = ansi.Truncate(displayName, nameWidth, "…")
 		base := prefix + nameStyle.Render(displayName) + suffix
-		base = ansi.Truncate(base, w, "")
-		rowStyle := lipgloss.NewStyle().MaxWidth(w)
-		if selected {
-			rowStyle = rowStyle.Background(colDarkGray).Width(w)
-		}
-		label := rowStyle.Render(base)
+		plainBase := plainPrefix + displayName + suffix
+		label := renderSidebarRow(base, plainBase, selected, w)
 		lines = append(lines, label)
 	}
 
@@ -4408,13 +4456,21 @@ func (m Model) renderChatList(w, h int) string {
 				unread := m.lastMsgID[entry.channelID] != "" && m.lastReadMsgID[entry.channelID] != m.lastMsgID[entry.channelID]
 
 				selected := ci == m.channelSelectedIndex
-				selectionMarker := "  "
+				selectionMarkerText := "  "
 				if selected {
-					selectionMarker = lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("› ")
+					selectionMarkerText = "› "
 				}
-				unreadMarker := "  "
+				unreadMarkerText := "  "
 				if unread {
-					unreadMarker = lipgloss.NewStyle().Foreground(colUnread).Bold(true).Render("● ")
+					unreadMarkerText = "● "
+				}
+				selectionMarker := selectionMarkerText
+				if selected {
+					selectionMarker = lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render(selectionMarkerText)
+				}
+				unreadMarker := unreadMarkerText
+				if unread {
+					unreadMarker = lipgloss.NewStyle().Foreground(colUnread).Bold(true).Render(unreadMarkerText)
 				}
 				iconStyle := lipgloss.NewStyle().Foreground(chatTypeColor("channel"))
 				nameStyle := lipgloss.NewStyle().Foreground(colDimGray)
@@ -4426,20 +4482,21 @@ func (m Model) renderChatList(w, h int) string {
 				}
 				channelName, _ := bidiVisualLine(entry.teamName + " » " + entry.channelName)
 				prefix := selectionMarker + unreadMarker + iconStyle.Render("#") + " "
-				channelName = ansi.Truncate(channelName, w-lipgloss.Width(prefix), "…")
+				plainPrefix := selectionMarkerText + unreadMarkerText + "# "
+				channelName = ansi.Truncate(channelName, w-lipgloss.Width(plainPrefix), "…")
 				labelStr := prefix + nameStyle.Render(channelName)
-				labelStr = ansi.Truncate(labelStr, w, "")
-				rowStyle := lipgloss.NewStyle().MaxWidth(w)
-				if selected {
-					rowStyle = rowStyle.Background(colDarkGray).Width(w)
-				}
-				label := rowStyle.Render(labelStr)
+				plainLabel := plainPrefix + channelName
+				label := renderSidebarRow(labelStr, plainLabel, selected, w)
 				lines = append(lines, label)
 			}
 		}
 	}
 
-	return strings.Join(lines, "\n")
+	body := strings.Join(lines, "\n")
+	if body == "" {
+		return title
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, title, body)
 }
 
 func chatLastMessageTimestamp(chat Chat, now time.Time) string {

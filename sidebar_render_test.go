@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -29,6 +30,62 @@ func TestSelectedLongChatNameStaysOnOneSidebarRow(t *testing.T) {
 	}
 	if got := lipgloss.Width(lines[1]); got != width {
 		t.Fatalf("selected row width = %d, want exactly %d cells", got, width)
+	}
+}
+
+func TestSelectedChatUsesOneContinuousFullWidthStyle(t *testing.T) {
+	name := "Selected conversation"
+	app := NewApp()
+	app.Chats = []Chat{{ID: "selected", ChatType: "group", CachedDisplayName: &name}}
+	app.SelectedIndex = 0
+	model := NewModel(app, "client", "user")
+
+	const width = 42
+	lines := strings.Split(model.renderChatList(width, 8), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("sidebar rendered %d lines, want one header and one row", len(lines))
+	}
+	selected := lines[1]
+	if got := lipgloss.Width(selected); got != width {
+		t.Fatalf("selected row width = %d, want %d", got, width)
+	}
+	if !strings.Contains(stripANSI(selected), "› ") {
+		t.Fatalf("selected row omitted its cursor: %q", stripANSI(selected))
+	}
+	want := lipgloss.NewStyle().
+		Foreground(colWhite).
+		Background(colSelected).
+		Bold(true).
+		Width(width).
+		MaxWidth(width).
+		Render(stripANSI(selected))
+	if selected != want {
+		t.Fatalf("selected row was not rendered as one continuous full-width style: %q", selected)
+	}
+	if resets := strings.Count(selected, "\x1b[0m"); resets > 1 {
+		t.Fatalf("selected row contains %d full style resets, so its background is not continuous: %q", resets, selected)
+	}
+}
+
+func TestFullViewRendersFilteredChatHeaderOnce(t *testing.T) {
+	app := NewApp()
+	visible := make([]Chat, 36)
+	for index := range visible {
+		name := fmt.Sprintf("Visible chat %d", index)
+		visible[index] = Chat{ID: fmt.Sprintf("visible-%d", index), CachedDisplayName: &name}
+	}
+	app.SetChats(visible)
+	app.ActiveChatBookmark = "Unread"
+	model := NewModel(app, "client", "user")
+	for index := 0; index < 196; index++ {
+		model.chatCache[fmt.Sprintf("chat-%d", index)] = Chat{ID: fmt.Sprintf("chat-%d", index)}
+	}
+	model.width = 120
+	model.height = 30
+
+	const header = "Chats 36/196 · Unread"
+	if count := strings.Count(stripANSI(model.View()), header); count != 1 {
+		t.Fatalf("full view rendered filtered chat header %d times, want once", count)
 	}
 }
 
