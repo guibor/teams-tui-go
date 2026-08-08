@@ -143,7 +143,7 @@ func TestInitConfig(t *testing.T) {
 	if cfg.ThreadAnalysisAgent == nil || *cfg.ThreadAnalysisAgent != "codex" {
 		t.Errorf("expected default thread analysis agent codex, got %v", cfg.ThreadAnalysisAgent)
 	}
-	if cfg.ThreadAnalysisCommand == nil || *cfg.ThreadAnalysisCommand != "mdf-teams-agent-shell" {
+	if cfg.ThreadAnalysisCommand == nil || *cfg.ThreadAnalysisCommand != "" {
 		t.Errorf("expected default thread analysis command, got %v", cfg.ThreadAnalysisCommand)
 	}
 	if cfg.ThreadCaptureFormat == nil || *cfg.ThreadCaptureFormat != ThreadCaptureMarkdown {
@@ -237,7 +237,7 @@ func TestInitConfig(t *testing.T) {
 	if updatedCfg.ThreadAnalysisAgent == nil || *updatedCfg.ThreadAnalysisAgent != "codex" {
 		t.Errorf("expected default thread analysis agent codex, got %v", updatedCfg.ThreadAnalysisAgent)
 	}
-	if updatedCfg.ThreadAnalysisCommand == nil || *updatedCfg.ThreadAnalysisCommand != "mdf-teams-agent-shell" {
+	if updatedCfg.ThreadAnalysisCommand == nil || *updatedCfg.ThreadAnalysisCommand != "" {
 		t.Errorf("expected default thread analysis command, got %v", updatedCfg.ThreadAnalysisCommand)
 	}
 	if updatedCfg.ThreadCaptureFormat == nil || *updatedCfg.ThreadCaptureFormat != ThreadCaptureMarkdown {
@@ -600,8 +600,8 @@ func TestResolveThreadAnalysisSettings(t *testing.T) {
 	if got := ResolveThreadAnalysisAgent(); got != "codex" {
 		t.Fatalf("default agent = %q, want codex", got)
 	}
-	if got := ResolveThreadAnalysisCommand(); got != "mdf-teams-agent-shell" {
-		t.Fatalf("default command = %q, want mdf-teams-agent-shell", got)
+	if got := ResolveThreadAnalysisCommand(); got != "" {
+		t.Fatalf("default command = %q, want empty", got)
 	}
 
 	appDir, err := GetAppDir()

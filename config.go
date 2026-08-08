@@ -360,7 +360,7 @@ func InitConfig() {
 		modified = true
 	}
 	if cfg.ThreadAnalysisCommand == nil {
-		command := "mdf-teams-agent-shell"
+		command := ""
 		cfg.ThreadAnalysisCommand = &command
 		modified = true
 	}
@@ -587,7 +587,7 @@ func ResolveThreadAnalysisCommand() string {
 			return command
 		}
 	}
-	return "mdf-teams-agent-shell"
+	return ""
 }
 
 func normalizeThreadCaptureFormat(format ThreadCaptureFormat) ThreadCaptureFormat {

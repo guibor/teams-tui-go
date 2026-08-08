@@ -249,9 +249,9 @@ not mix Org syntax into the Markdown list or discard either file.
 
 Press `A` (or `a A` from thread actions) to fetch and save that same complete
 transcript in the background, then invoke `thread_analysis_command` with
-`--agent AGENT PATH`. The MDF installation uses `mdf-teams-agent-shell`, which
-opens the named Spacemacs server and starts a new agent-shell session whose
-first submitted prompt is exactly:
+`--agent AGENT PATH`. The command is intentionally unconfigured by default;
+set it to a local bridge that accepts those arguments and starts the desired
+analysis tool. A bridge can, for example, submit a first prompt such as:
 
 ```text
 $thread-analysis of this thread: /absolute/path/to/export.md
@@ -266,7 +266,7 @@ status line retains the saved Markdown path for manual recovery.
 {
   "export_directory": "~/Downloads",
   "thread_analysis_agent": "codex",
-  "thread_analysis_command": "mdf-teams-agent-shell"
+  "thread_analysis_command": "/usr/local/bin/thread-analysis-bridge"
 }
 ```
 
@@ -320,10 +320,10 @@ Configure the external editor to open when pressing `Ctrl+g` in compose mode in 
 
   ```json
   {
-    "external_editor": "/Users/mdf/bin/spaceclient @spacemacs --wait"
+    "external_editor": "emacsclient --wait"
   }
   ```
-  - `external_editor`: The editor command and optional arguments to run (e.g. `"vim"`, `"nvim -f"`, or `"/Users/mdf/bin/spaceclient @spacemacs --wait"`). The temporary message path is appended as the final argument. If empty/unspecified, it falls back to `$EDITOR`, then `$VISUAL`, and defaults to `"vim"`.
+  - `external_editor`: The editor command and optional arguments to run (e.g. `"vim"`, `"nvim -f"`, or `"emacsclient --wait"`). The temporary message path is appended as the final argument. If empty/unspecified, it falls back to `$EDITOR`, then `$VISUAL`, and defaults to `"vim"`.
 
 ### URL Opening Commands
 Configure the commands used to open URLs when pressing `o` on a message or from the URL selection menu in `~/.config/teams-tui-go/config.json`:

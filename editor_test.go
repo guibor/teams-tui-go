@@ -4,7 +4,7 @@ import "testing"
 
 func TestBuildExternalEditorCommandWithArguments(t *testing.T) {
 	command, err := buildExternalEditorCommand(
-		"/Users/mdf/bin/spaceclient @spacemacs --wait",
+		"/usr/local/bin/emacsclient --wait",
 		"/tmp/teams message.txt",
 	)
 	if err != nil {
@@ -12,8 +12,7 @@ func TestBuildExternalEditorCommandWithArguments(t *testing.T) {
 	}
 
 	want := []string{
-		"/Users/mdf/bin/spaceclient",
-		"@spacemacs",
+		"/usr/local/bin/emacsclient",
 		"--wait",
 		"/tmp/teams message.txt",
 	}

@@ -7,7 +7,7 @@ import (
 
 func TestBuildThreadAnalysisCommandKeepsExportPathAsOneArgument(t *testing.T) {
 	cmd, err := buildThreadAnalysisCommand(
-		"/usr/local/bin/mdf-teams-agent-shell --server spacemacs",
+		"/usr/local/bin/thread-analysis-bridge --profile default",
 		"claude",
 		"/tmp/Team thread with spaces.md",
 	)
@@ -15,9 +15,9 @@ func TestBuildThreadAnalysisCommandKeepsExportPathAsOneArgument(t *testing.T) {
 		t.Fatalf("buildThreadAnalysisCommand failed: %v", err)
 	}
 	want := []string{
-		"/usr/local/bin/mdf-teams-agent-shell",
-		"--server",
-		"spacemacs",
+		"/usr/local/bin/thread-analysis-bridge",
+		"--profile",
+		"default",
 		"--agent",
 		"claude",
 		"/tmp/Team thread with spaces.md",

@@ -19,7 +19,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - External short-lived token provider via `TEAMS_TUI_GO_TOKEN_COMMAND`, with OAuth2 Device Code Flow only when no provider is configured
 - External provider responses contain only `access_token` and Unix-seconds `expires_at`; they are cached in memory and never written to disk
 - External provider failures are fatal and must never fall through to device code
-- `--auth-provider-capabilities` reports the provider protocol and build mode without starting authentication; MDF builds use `external-token-command-v1:external-only`
+- `--auth-provider-capabilities` reports the provider protocol and build mode without starting authentication; external-only distributions report `external-token-command-v1:external-only`
 - `-X main.authMode=external-only` prohibits both the device endpoint and cached device tokens when no external provider is configured
 - Built-in device-flow tokens are stored in `~/.cache/teams-tui-go/token.json`
 - Both providers resolve through `GetValidTokenSilent(clientID)`
@@ -30,7 +30,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 ### Configuration (`config.go`)
 - App data: `~/.config/teams-tui-go/` (via `GetAppDir()`)
 - Cache: `~/.cache/teams-tui-go/` (via `GetCacheDir()`)
-- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadAnalysisAgent *string` (default `codex`), `ThreadAnalysisCommand *string` (default `mdf-teams-agent-shell`), `ThreadCaptureFormat *ThreadCaptureFormat` (default `markdown`), separate Markdown/Org capture destinations, separate browser/Teams-app commands, and optional feature flags.
+- Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadAnalysisAgent *string` (default `codex`), `ThreadAnalysisCommand *string` (empty until the user configures a bridge), `ThreadCaptureFormat *ThreadCaptureFormat` (default `markdown`), separate Markdown/Org capture destinations, separate browser/Teams-app commands, and optional feature flags.
 - `ResolveClientID()`, `ResolveMessageLimit()`, `ResolveSearchContextLimit()`, `ResolveChatLimit()`, and `ResolveExternalEditor()` implement the full precedence chain. External-editor strings may contain simple whitespace-separated arguments; `buildExternalEditorCommand()` appends the temporary message path without invoking a shell.
 - `InitConfig()` is run at application startup to populate any missing configuration keys in `config.json` with their default values and persist them to disk. It defaults `ChatIconTheme` to `"unicode"` and all feature flags to `false`.
 - `BuildScopes()` assembles the OAuth2 scope string dynamically: always includes the four basic scopes (`User.Read Chat.ReadWrite offline_access`) and appends optional scopes for each enabled feature flag.
@@ -148,7 +148,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **External Editor Composing**:
   - Activated by `ctrl+g` in compose mode.
   - Temporarily saves the current textarea value to a temporary file, opens the configured editor (`ExternalEditor`), and updates the textarea value on success.
-  - Commands may include arguments, such as `spaceclient @spacemacs --wait`; the editor must remain running until editing is complete.
+  - Commands may include arguments, such as `emacsclient --wait`; the editor must remain running until editing is complete.
   - Uses Bubble Tea's `tea.ExecProcess` to pause the TUI while the editor executes in the terminal foreground, resuming when the editor process exits.
 - **Compose Send Keys**:
 	- Normal mode `c` / `C` starts an ordinary compose, `r` / `R` quotes the newest loaded message, and `f` / `F` opens the destination chooser with an editable readable forward. Message selection and preview apply reply/forward to the selected message.

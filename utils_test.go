@@ -422,7 +422,7 @@ func TestFilterCurrentMemberPrefersAuthenticatedUserID(t *testing.T) {
 }
 
 func TestFilterCurrentMemberFallsBackToDisplayName(t *testing.T) {
-	currentName := "MDF"
+	currentName := "Current User"
 	otherName := "Ada Lovelace"
 	members := []ChatMember{
 		{DisplayName: &currentName},

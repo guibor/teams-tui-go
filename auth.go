@@ -22,7 +22,7 @@ const (
 	tokenRefreshBuffer      = 5 * time.Minute
 )
 
-// authMode is overridden by the MDF installer with -X main.authMode=external-only.
+// Distributors can override authMode with -X main.authMode=external-only.
 var authMode = "auto"
 
 var (
