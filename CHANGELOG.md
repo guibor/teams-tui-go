@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Advance to the next visible chat after read/unread and completed thread
+  actions, using a pre-action chat ID so active filters cannot skip a row.
+  Compose, reply, forward, and the recording/transcript chooser retain their
+  current conversation while interactive.
+- Make the forward destination chooser preload local chats, support Emacs-style
+  orderless flex completion (including short initials), and accept the best
+  local match with one `Enter`; exact email creation remains the fallback.
+
 ## [1.2.3] - 2026-07-24
 
 ### Features
@@ -944,7 +956,5 @@
 
 
 - **Initial commit** - ([f30e39e](https://github.com/nospor/teams-tui-go/commit/f30e39e2f191df8142a594c5482557760a42025e))
-
-
 
 

@@ -123,10 +123,6 @@ func fuzzyTextScore(text, needle string) (int, bool) {
 	if index := strings.Index(string(haystack), string(wanted)); index >= 0 {
 		return 1000 - index*2 - max(0, len(haystack)-len(wanted)), true
 	}
-	if len(wanted) < 3 {
-		return 0, false
-	}
-
 	wantedIndex := 0
 	start := -1
 	last := -1

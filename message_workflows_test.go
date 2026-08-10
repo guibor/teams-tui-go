@@ -35,6 +35,39 @@ func newWorkflowTestModel() Model {
 	return model
 }
 
+func newWorkflowChatListModel(ids ...string) Model {
+	model := newWorkflowTestModel()
+	chats := make([]Chat, 0, len(ids))
+	for index, id := range ids {
+		name := "Chat " + id
+		preview := workflowTestMessage("message-"+id, "Sender", "Message "+id)
+		preview.ChatID = id
+		chats = append(chats, Chat{
+			ID:                 id,
+			CachedDisplayName:  &name,
+			LastMessagePreview: &preview,
+		})
+		model.lastMsgID[id] = preview.ID
+		if index == 0 {
+			for messageIndex := range model.app.Messages {
+				model.app.Messages[messageIndex].ChatID = id
+			}
+		}
+	}
+	model.stableChatOrder = append(model.stableChatOrder[:0], ids...)
+	model.app.Chats = append([]Chat(nil), chats...)
+	model.latestChats = append([]Chat(nil), chats...)
+	model.chatCache = make(map[string]Chat, len(chats))
+	for _, chat := range chats {
+		model.chatCache[chat.ID] = chat
+	}
+	if len(ids) > 0 {
+		model.app.SetSelectedChatID(ids[0])
+		model.app.MessagesConversationID = ids[0]
+	}
+	return model
+}
+
 func TestNormalMailStyleMessageBindings(t *testing.T) {
 	for _, key := range []rune{'r', 'i'} {
 		t.Run(string(key)+" marks read", func(t *testing.T) {
@@ -72,6 +105,132 @@ func TestNormalMailStyleMessageBindings(t *testing.T) {
 				t.Fatalf("%c did not open the forward destination chooser", key)
 			}
 		})
+	}
+}
+
+func TestReadBindingsAdvanceToNextVisibleChat(t *testing.T) {
+	for _, key := range []rune{'r', 'i'} {
+		t.Run(string(key), func(t *testing.T) {
+			model := newWorkflowChatListModel("chat-1", "chat-2", "chat-3")
+			model, cmd := model.handleNormalModeKey(filterTestKey(key))
+			selected := model.app.GetSelectedChat()
+			if cmd == nil || selected == nil || selected.ID != "chat-2" {
+				t.Fatalf("%c selected %#v with cmd=%v, want chat-2 and read command", key, selected, cmd != nil)
+			}
+			if model.app.MessagesConversationID != "chat-2" {
+				t.Fatalf("%c transcript owner = %q, want chat-2", key, model.app.MessagesConversationID)
+			}
+		})
+	}
+}
+
+func TestReadAdvanceDoesNotSkipAfterUnreadFilterRemovesChat(t *testing.T) {
+	model := newWorkflowChatListModel("chat-1", "chat-2", "chat-3")
+	filter := newChatListFilter()
+	filter.ReadState = ChatReadUnread
+	model.app.ActiveChatFilter = filter
+	model = model.rebuildChatList()
+	model.app.SetSelectedChatID("chat-1")
+
+	model, _ = model.handleNormalModeKey(filterTestKey('r'))
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-2" {
+		t.Fatalf("initial read advance selected %#v, want chat-2", selected)
+	}
+
+	model, _ = model.updateInternal(MsgChatReadStateChanged{ChatID: "chat-1"})
+	if len(model.app.Chats) != 2 || model.app.Chats[0].ID != "chat-2" || model.app.Chats[1].ID != "chat-3" {
+		t.Fatalf("filtered chats after read = %#v, want chat-2 then chat-3", model.app.Chats)
+	}
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-2" {
+		t.Fatalf("post-filter selection = %#v, want chat-2 without skipping", selected)
+	}
+	if model.app.MessagesConversationID != "chat-2" {
+		t.Fatalf("post-filter transcript owner = %q, want chat-2", model.app.MessagesConversationID)
+	}
+}
+
+func TestReadActionWrapsToFirstVisibleChat(t *testing.T) {
+	model := newWorkflowChatListModel("chat-1", "chat-2", "chat-3")
+	model.app.SetSelectedChatID("chat-3")
+	model.app.MessagesConversationID = "chat-3"
+	model, _ = model.handleNormalModeKey(filterTestKey('r'))
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-1" {
+		t.Fatalf("read at end selected %#v, want wrapped chat-1", selected)
+	}
+	if model.app.MessagesConversationID != "chat-1" {
+		t.Fatalf("wrapped transcript owner = %q, want chat-1", model.app.MessagesConversationID)
+	}
+}
+
+func TestThreadActionAdvancePolicy(t *testing.T) {
+	for _, action := range []threadActionID{
+		threadActionOpenBrowser,
+		threadActionOpenTeams,
+		threadActionRead,
+		threadActionUnread,
+		threadActionFavorite,
+		threadActionCapture,
+		threadActionExport,
+		threadActionAnalyze,
+		threadActionCopyLink,
+	} {
+		if !threadActionAdvancesChat(action) {
+			t.Errorf("action %s should advance", action)
+		}
+	}
+	for _, action := range []threadActionID{
+		threadActionCompose,
+		threadActionReply,
+		threadActionForward,
+		threadActionArtifacts,
+	} {
+		if threadActionAdvancesChat(action) {
+			t.Errorf("interactive action %s should retain the current chat", action)
+		}
+	}
+}
+
+func TestCaptureActionAdvancesWhileComposeRetainsChat(t *testing.T) {
+	model := newWorkflowChatListModel("chat-1", "chat-2")
+	model.app.ThreadCaptureFile = t.TempDir() + "/threads.md"
+	model, cmd := model.executeThreadAction(threadActionCapture)
+	if cmd == nil {
+		t.Fatal("capture action returned no command")
+	}
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-2" {
+		t.Fatalf("capture selected %#v, want chat-2", selected)
+	}
+
+	model = newWorkflowChatListModel("chat-1", "chat-2")
+	model, _ = model.executeThreadAction(threadActionCompose)
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-1" {
+		t.Fatalf("compose selected %#v, want current chat-1", selected)
+	}
+	if !model.app.InputMode {
+		t.Fatal("compose did not enter input mode")
+	}
+}
+
+func TestArtifactChooserAdvancesAfterOpeningResource(t *testing.T) {
+	model := newWorkflowChatListModel("chat-1", "chat-2")
+	model.app.ArtifactPopupMode = true
+	model.app.Artifacts = []ConversationArtifact{{
+		Kind: ConversationRecording,
+		URL:  "https://teams.microsoft.com/resource",
+	}}
+
+	model, cmd := model.handleConversationArtifactPopupKey(filterTestKey('o'))
+	if cmd == nil {
+		t.Fatal("artifact open returned no command")
+	}
+	if model.app.ArtifactPopupMode {
+		t.Fatal("artifact chooser remained open after dispatch")
+	}
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-2" {
+		t.Fatalf("artifact open selected %#v, want chat-2", selected)
+	}
+	if model.app.MessagesConversationID != "chat-2" {
+		t.Fatalf("artifact open transcript owner = %q, want chat-2", model.app.MessagesConversationID)
 	}
 }
 
@@ -173,6 +332,41 @@ func TestForwardChooserCancelDiscardsPendingCopy(t *testing.T) {
 	model, _ = model.handleUserSearchNavigationKey(tea.KeyMsg{Type: tea.KeyEsc})
 	if model.app.PendingForwardText != "" || model.app.UserSearchPopupMode {
 		t.Fatal("cancel did not discard the pending forward")
+	}
+}
+
+func TestForwardChooserPreloadsAndAcceptsEmacsStyleFuzzyLocalChat(t *testing.T) {
+	model := newWorkflowChatListModel("source", "target", "other")
+	targetName := "Quarterly Planning"
+	otherName := "General Updates"
+	model.app.Chats[1].CachedDisplayName = &targetName
+	model.app.Chats[2].CachedDisplayName = &otherName
+	model.latestChats = append([]Chat(nil), model.app.Chats...)
+	for _, chat := range model.app.Chats {
+		model.chatCache[chat.ID] = chat
+	}
+
+	model, _ = model.openChatChooser("forward body")
+	if len(model.app.UserSearchLocalResults) != 3 {
+		t.Fatalf("empty forward query returned %d local chats, want 3", len(model.app.UserSearchLocalResults))
+	}
+
+	model.userSearchInput.SetValue("qp")
+	model.app.UserSearchQuery = "qp"
+	model.updateUserSearchLocalResults()
+	if len(model.app.UserSearchLocalResults) != 1 || model.app.UserSearchLocalResults[0].ID != "target" {
+		t.Fatalf("flex destination results = %#v, want target", model.app.UserSearchLocalResults)
+	}
+
+	model, cmd := model.handleUserSearchInputModeKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("accepting fuzzy destination returned no load/compose command")
+	}
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "target" {
+		t.Fatalf("accepted fuzzy destination selected %#v, want target", selected)
+	}
+	if !model.app.InputMode || model.textarea.Value() != "forward body" {
+		t.Fatalf("accepted destination input=%v body=%q", model.app.InputMode, model.textarea.Value())
 	}
 }
 

@@ -67,6 +67,64 @@ func isTeamsWebHost(host string) bool {
 		strings.EqualFold(host, "teams.cloud.microsoft")
 }
 
+func threadActionAdvancesChat(action threadActionID) bool {
+	switch action {
+	case threadActionOpenBrowser,
+		threadActionOpenTeams,
+		threadActionRead,
+		threadActionUnread,
+		threadActionFavorite,
+		threadActionCapture,
+		threadActionExport,
+		threadActionAnalyze,
+		threadActionCopyLink:
+		return true
+	default:
+		return false
+	}
+}
+
+// nextVisibleChatID captures the post-action target before read/favorite state
+// can rebuild the filtered sidebar and change row indexes.
+func (m Model) nextVisibleChatID(chatID string) string {
+	if chatID == "" || len(m.app.Chats) < 2 {
+		return ""
+	}
+	for index := range m.app.Chats {
+		if m.app.Chats[index].ID == chatID {
+			return m.app.Chats[(index+1)%len(m.app.Chats)].ID
+		}
+	}
+	return ""
+}
+
+func (m Model) advanceAfterThreadAction(nextChatID string, actionCmd tea.Cmd) (Model, tea.Cmd) {
+	if nextChatID == "" || !m.app.SetSelectedChatID(nextChatID) {
+		return m, actionCmd
+	}
+
+	m.channelSelectedIndex = -1
+	m.app.SelectedChannelTeamID = ""
+	m.app.SelectedChannelID = ""
+	m.app.SearchMode = false
+	m.app.SearchActive = false
+	m.app.SearchQuery = ""
+	m.app.SnapToBottom = true
+	m.pendingChatGoto = false
+	delete(m.manuallyUnread, nextChatID)
+	m = m.markRead()
+
+	var loadCmd tea.Cmd
+	m, loadCmd = m.loadChatMessages(nextChatID)
+	if actionCmd == nil {
+		return m, loadCmd
+	}
+	if loadCmd == nil {
+		return m, actionCmd
+	}
+	return m, tea.Batch(actionCmd, loadCmd)
+}
+
 // teamsWebURL bypasses the /l launcher endpoint, which can dispatch the
 // msteams:// protocol, and routes the same opaque target through Teams web.
 func teamsWebURL(webURL string) string {
@@ -99,6 +157,13 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 	}
 	chatValue := *chat
 	chatURL := teamsChatURL(chat)
+	nextChatID := ""
+	if threadActionAdvancesChat(action) {
+		nextChatID = m.nextVisibleChatID(chatValue.ID)
+	}
+	advance := func(updated Model, cmd tea.Cmd) (Model, tea.Cmd) {
+		return updated.advanceAfterThreadAction(nextChatID, cmd)
+	}
 
 	switch action {
 	case threadActionOpenBrowser:
@@ -107,7 +172,7 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 			return m, nil
 		}
 		m.app.SetStatus("Opening chat in browser...", 0)
-		return m, openURLCmd(teamsWebURL(chatURL), m.app.BrowserCommand, m.app.YoutrackCommand, m.app.GitlabCommand)
+		return advance(m, openURLCmd(teamsWebURL(chatURL), m.app.BrowserCommand, m.app.YoutrackCommand, m.app.GitlabCommand))
 
 	case threadActionOpenTeams:
 		deepLink := teamsDesktopURL(chatURL)
@@ -116,7 +181,7 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 			return m, nil
 		}
 		m.app.SetStatus("Opening chat in Teams...", 0)
-		return m, openWithCommandCmd(deepLink, m.app.TeamsAppCommand)
+		return advance(m, openWithCommandCmd(deepLink, m.app.TeamsAppCommand))
 
 	case threadActionCompose:
 		return m.beginCompose("")
@@ -139,11 +204,11 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 
 	case threadActionRead:
 		m.app.SetStatus("Marking chat read...", 0)
-		return m, setChatReadStateCmd(m.clientID, chatValue.ID, m.userID, false)
+		return advance(m, setChatReadStateCmd(m.clientID, chatValue.ID, m.userID, false))
 
 	case threadActionUnread:
 		m.app.SetStatus("Marking chat unread...", 0)
-		return m, setChatReadStateCmd(m.clientID, chatValue.ID, m.userID, true)
+		return advance(m, setChatReadStateCmd(m.clientID, chatValue.ID, m.userID, true))
 
 	case threadActionFavorite:
 		if m.favourites[chatValue.ID] {
@@ -155,6 +220,9 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		}
 		_ = SaveFavourites(m.favourites)
 		m = m.rebuildChatList()
+		if nextChatID != "" {
+			return advance(m, nil)
+		}
 		return m.reconcileSelectedChatConversation()
 
 	case threadActionCapture:
@@ -163,21 +231,21 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		if normalizeThreadCaptureFormat(m.app.ThreadCaptureFormat) == ThreadCaptureOrg {
 			path = m.app.ThreadCaptureOrgFile
 		}
-		return m, captureChatCmd(chatValue, m.app.ThreadCaptureFormat, path)
+		return advance(m, captureChatCmd(chatValue, m.app.ThreadCaptureFormat, path))
 
 	case threadActionExport:
 		m.app.SetStatus("Exporting complete chat history...", 0)
-		return m, exportChatMarkdownCmd(m.clientID, chatValue, m.app.ExportDirectory)
+		return advance(m, exportChatMarkdownCmd(m.clientID, chatValue, m.app.ExportDirectory))
 
 	case threadActionAnalyze:
 		m.app.SetStatus("Exporting complete chat history for "+m.app.ThreadAnalysisAgent+" analysis...", 0)
-		return m, analyzeChatThreadCmd(
+		return advance(m, analyzeChatThreadCmd(
 			m.clientID,
 			chatValue,
 			m.app.ExportDirectory,
 			m.app.ThreadAnalysisAgent,
 			m.app.ThreadAnalysisCommand,
-		)
+		))
 
 	case threadActionCopyLink:
 		if chatURL == "" {
@@ -188,6 +256,7 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 			m.app.SetStatus("Could not copy Teams link: "+err.Error(), 4*time.Second)
 		} else {
 			m.app.SetStatus("Teams link copied", 3*time.Second)
+			return advance(m, nil)
 		}
 
 	case threadActionArtifacts:

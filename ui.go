@@ -6581,6 +6581,13 @@ func (m *Model) updateUserSearchLocalResults() {
 		m.app.UserSearchLocalResults = nil
 		m.app.UserSearchMessageResults = nil
 		m.app.UserSearchChannelResults = nil
+		if m.app.PendingForwardText != "" {
+			known := m.knownChatsForSearch()
+			if len(known) > 20 {
+				known = known[:20]
+			}
+			m.app.UserSearchLocalResults = append([]Chat(nil), known...)
+		}
 		return
 	}
 
@@ -6655,18 +6662,25 @@ func (m Model) handleUserSearchInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	case "enter":
 		query := strings.TrimSpace(m.userSearchInput.Value())
-		m.app.UserSearchMode = false
-		m.userSearchInput.Blur()
-		if query != "" {
-			if strings.Contains(query, "@") {
-				m.app.UserSearchLoading = true
-				m.app.UserSearchStatus = "Opening chat..."
-				if m.app.PendingForwardText != "" {
-					m.app.UserSearchStatus = "Opening forward destination..."
-				}
-				return m, createChatCmd(m.clientID, m.userID, query)
-			}
+		m.app.UserSearchQuery = query
+		m.updateUserSearchLocalResults()
+		if len(m.getUserSearchItems()) > 0 {
+			m.app.UserSearchMode = false
+			m.userSearchInput.Blur()
+			m.app.UserSearchSelectedIndex = 0
+			return m.handleUserSearchNavigationKey(tea.KeyMsg{Type: tea.KeyEnter})
 		}
+		if strings.Contains(query, "@") {
+			m.app.UserSearchMode = false
+			m.userSearchInput.Blur()
+			m.app.UserSearchLoading = true
+			m.app.UserSearchStatus = "Opening chat..."
+			if m.app.PendingForwardText != "" {
+				m.app.UserSearchStatus = "Opening forward destination..."
+			}
+			return m, createChatCmd(m.clientID, m.userID, query)
+		}
+		m.app.UserSearchStatus = "No matching local chat. Keep typing or enter an exact email."
 		return m, nil
 	}
 
@@ -6851,10 +6865,7 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 			var line string
 			switch item.Type {
 			case UserSearchItemLocal:
-				chatName := "Unknown"
-				if item.LocalChat.CachedDisplayName != nil {
-					chatName = *item.LocalChat.CachedDisplayName
-				}
+				chatName := chatDisplayName(*item.LocalChat)
 				chatName, _ = bidiVisualLine(chatName)
 				tag := lipgloss.NewStyle().Foreground(colGreen).Render("[Local Chat]")
 				lineStr := fmt.Sprintf("%s %s %s", prefix, chatName, tag)

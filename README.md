@@ -31,8 +31,8 @@ Authenticates through an external short-lived token provider or the built-in **O
 - ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
 
 - 🔵 Read-State Styling — unread chats use a cyan dot with bright bold text; read chats are deliberately muted
-- 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread (`i` remains a compatibility alias); merely moving over a chat does not mark it read by default
-- ✉️ Mail-style Actions — use `c`/`C` to compose, uppercase `R` to reply with a quote, and `f`/`F` to forward an editable readable copy through the chat chooser
+- 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread (`i` remains a compatibility alias), then continue on the next visible chat; merely moving over a chat does not mark it read by default
+- ✉️ Mail-style Actions — use `c`/`C` to compose, uppercase `R` to reply with a quote, and `f`/`F` to forward an editable readable copy through an Emacs-style local chat completion chooser
 - 📥 Full Markdown Export — press `E` to fetch every page of the selected chat and save a chronological Markdown transcript
 - 🤖 Agent Thread Analysis — press `A` to make the same complete export, open the configured agent-shell backend, and submit `$thread-analysis` with the saved path
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
@@ -181,13 +181,16 @@ Configure how many chats to load in the sidebar in `~/.config/teams-tui-go/confi
 ### Read State and Markdown Exports
 
 Navigation is non-destructive by default. Select a chat and press `r` to mark
-it read (`i` is also accepted) or `u` to mark it unread. To restore the original mark-on-open behavior,
-set `mark_read_on_open` to `true`.
+it read (`i` is also accepted) or `u` to mark it unread. A successful dispatch
+immediately selects and loads the next visible chat, wrapping at the end. To
+restore the original mark-on-open behavior, set `mark_read_on_open` to `true`.
 
-Filtering and background refreshes preserve selection by chat ID. If the
-selected chat leaves the current view after a read-state change, the next
-visible chat gets a fresh transcript immediately; messages from the previous
-chat are never retained or merged into the replacement pane.
+Filtering and background refreshes preserve selection by chat ID. The next
+chat is captured by ID before an action can change read/favorite state, so a
+filtered-list rebuild cannot skip another row. Completed thread actions also
+advance through this path. Compose, reply, forward, and the recording/transcript
+chooser retain the current chat while they need its context. Messages from the
+previous chat are never retained or merged into the replacement pane.
 
 The sidebar has one fixed summary header. Applying a filter/bookmark or toggling
 the date column requests a clean terminal repaint so a stale header cannot
@@ -537,6 +540,12 @@ Compose mode is multiline by default: `Enter` inserts a line break and
 that cannot distinguish modified Return. The TUI also recognizes the common
 Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 
+The forward destination chooser starts with known local chats and uses
+orderless, space-separated query components with flex matching inside each
+component. Short initials such as `qp` can match `Quarterly Planning`, and
+`Enter` accepts the highest-ranked local match directly. An exact email/UPN is
+used to create or open a direct chat only when no local destination matches.
+
 ---
 
 ## Keyboard Controls
@@ -565,8 +574,8 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `*`          | Toggle ★ favourite on selected chat (chats only)          |
 | `o`          | Open selected chat directly in Teams web in the configured browser |
 | `O`          | Open selected chat in the Teams desktop client            |
-| `r` / `i`    | Mark selected chat read (`i` is a compatibility alias)    |
-| `u`          | Mark selected chat unread (Normal Mode)                   |
+| `r` / `i`    | Mark selected chat read, then advance to the next chat     |
+| `u`          | Mark selected chat unread, then advance (Normal Mode)     |
 | `c` / `C`    | Compose a new message in the current conversation          |
 | `R`          | Reply to the newest loaded message                         |
 | `f` / `F`    | Forward the newest loaded message through the chat chooser |
@@ -590,7 +599,7 @@ Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 | `Enter`      | Download selected attachment (in `v` attachment cursor)   |
 | `+` / `a`    | React to selected message (in Message Mode)               |
 | `c` / `C`    | Compose without quoting (Message Mode / Message View)     |
-| `r` / `i`    | Mark the selected message's conversation read            |
+| `r` / `i`    | Mark the selected message's conversation read and advance |
 | `R`          | Reply to selected message (Message Mode / Message View)   |
 | `f` / `F`    | Forward selected message (Message Mode / Message View)    |
 | `y`          | Copy (yank) message text (in Message Mode)                |
@@ -687,6 +696,11 @@ navigate with `j`/`k` and run it with `Enter`.
 | `A`        | Export and analyze the complete thread (`a A`) |
 | `y`        | Copy the Teams web link                     |
 | `t`        | Choose a recording or transcript            |
+
+Completed actions advance to the next visible chat, wrapping at the end. The
+next chat is chosen before read/favorite filters can remove or reorder the
+current row. Compose, reply, forward, and the recording/transcript chooser stay
+on the current chat until their interactive workflow is complete.
 
 ---
 

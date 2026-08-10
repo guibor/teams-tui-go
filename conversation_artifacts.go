@@ -111,9 +111,16 @@ func (m Model) openSelectedConversationArtifact() (Model, tea.Cmd) {
 		m.app.SetStatus("This resource did not include an openable link", 4*time.Second)
 		return m, nil
 	}
+	nextChatID := ""
+	if chat := m.app.GetSelectedChat(); chat != nil {
+		nextChatID = m.nextVisibleChatID(chat.ID)
+	}
 	m.app.ArtifactPopupMode = false
 	m.app.SetStatus("Opening "+string(artifact.Kind)+"...", 0)
-	return m, openURLCmd(teamsWebURL(artifact.URL), m.app.BrowserCommand, m.app.YoutrackCommand, m.app.GitlabCommand)
+	return m.advanceAfterThreadAction(
+		nextChatID,
+		openURLCmd(teamsWebURL(artifact.URL), m.app.BrowserCommand, m.app.YoutrackCommand, m.app.GitlabCommand),
+	)
 }
 
 func (m Model) handleConversationArtifactPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
@@ -145,6 +152,12 @@ func (m Model) handleConversationArtifactPopupKey(msg tea.KeyMsg) (Model, tea.Cm
 			m.app.SetStatus("Could not copy resource link: "+err.Error(), 4*time.Second)
 		} else {
 			m.app.SetStatus("Resource link copied", 3*time.Second)
+			nextChatID := ""
+			if chat := m.app.GetSelectedChat(); chat != nil {
+				nextChatID = m.nextVisibleChatID(chat.ID)
+			}
+			m.app.ArtifactPopupMode = false
+			return m.advanceAfterThreadAction(nextChatID, nil)
 		}
 		return m, nil
 	}

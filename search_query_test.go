@@ -21,15 +21,15 @@ func TestParseSearchQuerySupportsQuotesFieldsAndNegation(t *testing.T) {
 	}
 }
 
-func TestFuzzyTextScoreRequiresOrderedCharacters(t *testing.T) {
+func TestFuzzyTextScoreSupportsEmacsStyleOrderedFlex(t *testing.T) {
 	if _, matched := fuzzyTextScore("Quarterly planning", "qtrly"); !matched {
 		t.Fatal("ordered fuzzy abbreviation did not match")
 	}
+	if _, matched := fuzzyTextScore("Quarterly planning", "qp"); !matched {
+		t.Fatal("short flex abbreviation did not match")
+	}
 	if _, matched := fuzzyTextScore("Quarterly planning", "ylrtq"); matched {
 		t.Fatal("out-of-order abbreviation matched")
-	}
-	if _, matched := fuzzyTextScore("Alice", "ac"); matched {
-		t.Fatal("two-character non-substring query should not fuzzy-match")
 	}
 }
 

@@ -61,6 +61,7 @@ func (m Model) openChatChooser(forwardText string) (Model, tea.Cmd) {
 	m.app.UserSearchLoading = false
 	m.userSearchInput.SetValue("")
 	m.userSearchInput.Focus()
+	m.updateUserSearchLocalResults()
 	return m, textinput.Blink
 }
 
