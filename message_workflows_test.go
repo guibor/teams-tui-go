@@ -124,6 +124,25 @@ func TestReadBindingsAdvanceToNextVisibleChat(t *testing.T) {
 	}
 }
 
+func TestReadCompletionKeepsOverlaySelectionAndTranscriptInSync(t *testing.T) {
+	model := newWorkflowChatListModel("chat-1", "chat-2", "chat-3")
+	model.app.UnreadOverlay = true
+	model = model.rebuildChatList()
+	model, cmd := model.handleNormalModeKey(filterTestKey('r'))
+	if cmd == nil || model.app.SelectedChatID != "chat-2" || model.app.MessagesConversationID != "chat-2" {
+		t.Fatalf("read action did not advance coherently: selected=%q transcript=%q", model.app.SelectedChatID, model.app.MessagesConversationID)
+	}
+	model, _ = model.updateInternal(MsgChatReadStateChanged{ChatID: "chat-1"})
+	if model.app.SelectedChatID != "chat-2" || model.app.MessagesConversationID != "chat-2" {
+		t.Fatalf("read completion mixed identities: selected=%q transcript=%q", model.app.SelectedChatID, model.app.MessagesConversationID)
+	}
+	for _, chat := range model.app.Chats {
+		if chat.ID == "chat-1" {
+			t.Fatal("read chat remained visible under unread overlay")
+		}
+	}
+}
+
 func TestReadAdvanceDoesNotSkipAfterUnreadFilterRemovesChat(t *testing.T) {
 	model := newWorkflowChatListModel("chat-1", "chat-2", "chat-3")
 	filter := newChatListFilter()
@@ -335,7 +354,7 @@ func TestForwardChooserCancelDiscardsPendingCopy(t *testing.T) {
 	}
 }
 
-func TestForwardChooserPreloadsAndAcceptsEmacsStyleFuzzyLocalChat(t *testing.T) {
+func TestForwardChooserPreloadsAndAcceptsEmacsOrderlessLocalChat(t *testing.T) {
 	model := newWorkflowChatListModel("source", "target", "other")
 	targetName := "Quarterly Planning"
 	otherName := "General Updates"
@@ -351,19 +370,19 @@ func TestForwardChooserPreloadsAndAcceptsEmacsStyleFuzzyLocalChat(t *testing.T) 
 		t.Fatalf("empty forward query returned %d local chats, want 3", len(model.app.UserSearchLocalResults))
 	}
 
-	model.userSearchInput.SetValue("qp")
-	model.app.UserSearchQuery = "qp"
+	model.userSearchInput.SetValue("q p")
+	model.app.UserSearchQuery = "q p"
 	model.updateUserSearchLocalResults()
 	if len(model.app.UserSearchLocalResults) != 1 || model.app.UserSearchLocalResults[0].ID != "target" {
-		t.Fatalf("flex destination results = %#v, want target", model.app.UserSearchLocalResults)
+		t.Fatalf("Orderless destination results = %#v, want target", model.app.UserSearchLocalResults)
 	}
 
 	model, cmd := model.handleUserSearchInputModeKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
-		t.Fatal("accepting fuzzy destination returned no load/compose command")
+		t.Fatal("accepting Orderless destination returned no load/compose command")
 	}
 	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "target" {
-		t.Fatalf("accepted fuzzy destination selected %#v, want target", selected)
+		t.Fatalf("accepted Orderless destination selected %#v, want target", selected)
 	}
 	if !model.app.InputMode || model.textarea.Value() != "forward body" {
 		t.Fatalf("accepted destination input=%v body=%q", model.app.InputMode, model.textarea.Value())

@@ -51,8 +51,8 @@ func (m Model) renderDashboard(w, h int) string {
 			fmt.Sprintf("Unread %d   Favorites %d   Visible %d", unread, len(m.favourites), len(m.app.Chats)),
 		),
 	}
-	if chatFilterIsActive(m.app.ActiveChatFilter) {
-		lines = append(lines, lipgloss.NewStyle().Foreground(colDimGray).Render("Filter  "+chatFilterSummary(m.app.ActiveChatFilter)))
+	if summary := m.activeChatViewSummary(); summary != "" {
+		lines = append(lines, lipgloss.NewStyle().Foreground(colDimGray).Render("View  "+summary))
 	}
 	body := lipgloss.Place(w, h-2, lipgloss.Center, lipgloss.Center,
 		lipgloss.NewStyle().Align(lipgloss.Center).Render(strings.Join(lines, "\n")),

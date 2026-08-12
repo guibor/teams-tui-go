@@ -49,8 +49,8 @@ type Chat struct {
 	LastUpdated        *string        `json:"lastUpdatedDateTime,omitempty"`
 	Viewpoint          *ChatViewpoint `json:"viewpoint,omitempty"`
 	LastMessagePreview *Message       `json:"lastMessagePreview,omitempty"`
-	Members            []ChatMember   `json:"-"` // populated separately
-	CachedDisplayName  *string        `json:"-"` // computed, never from API
+	Members            []ChatMember   `json:"members,omitempty"` // expanded for search, otherwise populated separately
+	CachedDisplayName  *string        `json:"-"`                 // computed, never from API
 }
 
 // ChatViewpoint contains the read state for the current user.
@@ -460,6 +460,7 @@ type User struct {
 	DisplayName       string  `json:"displayName"`
 	ID                string  `json:"id"`
 	UserPrincipalName *string `json:"userPrincipalName,omitempty"`
+	Mail              *string `json:"mail,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +525,29 @@ func graphGetOnce(accessToken, path string) ([]byte, error) {
 	}
 	defer resp.Body.Close()
 
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s: HTTP %d: %s", path, resp.StatusCode, body)
+	}
+	return body, nil
+}
+
+// graphGetEventuallyConsistent performs an advanced-directory GET. Microsoft
+// Graph requires ConsistencyLevel: eventual for user $search queries.
+func graphGetEventuallyConsistent(accessToken, path string) ([]byte, error) {
+	req, err := http.NewRequest(http.MethodGet, graphAPIBase+path, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("ConsistencyLevel", "eventual")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("GET %s: %w", path, err)
+	}
+	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("GET %s: HTTP %d: %s", path, resp.StatusCode, body)
@@ -1725,6 +1749,77 @@ func GetChats(accessToken string, existingChats []Chat, currentUserName *string,
 	return chats, currentUserName, nil
 }
 
+// GetAllChatsForSearch loads every paginated chat into a transient inventory.
+// It is intentionally separate from GetChats: chat_limit continues to bound the
+// sidebar, while global search can still find older conversations.
+func GetAllChatsForSearch(accessToken string, currentUserName *string, currentUserID string) ([]Chat, error) {
+	path := "/me/chats?$top=50&$expand=members,lastMessagePreview&$orderby=lastMessagePreview/createdDateTime%20desc"
+	var chats []Chat
+	for path != "" {
+		body, err := graphGet(accessToken, path)
+		if err != nil {
+			return nil, fmt.Errorf("GetAllChatsForSearch: %w", err)
+		}
+		var page chatsResponse
+		if err := json.Unmarshal(body, &page); err != nil {
+			return nil, fmt.Errorf("GetAllChatsForSearch: parse: %w", err)
+		}
+		chats = append(chats, page.Value...)
+		path = ""
+		if page.NextLink != nil {
+			path = graphPathFromNextLink(*page.NextLink)
+		}
+	}
+
+	byID := make(map[string]Chat, len(chats))
+	for _, chat := range chats {
+		if chat.ID == "" || (chat.ChatType == "meeting" && chat.LastMessagePreview == nil) {
+			continue
+		}
+		if existing, ok := byID[chat.ID]; !ok || chatActivityTime(chat).After(chatActivityTime(existing)) {
+			byID[chat.ID] = chat
+		}
+	}
+
+	result := make([]Chat, 0, len(byID))
+	for _, chat := range byID {
+		if chat.LastMessagePreview != nil {
+			FilterMessageAttachments(chat.LastMessagePreview)
+		}
+		chat.Members = filterCurrentMember(chat.Members, currentUserID, currentUserName)
+		name := computeDisplayName(&chat)
+		chat.CachedDisplayName = &name
+		result = append(result, chat)
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		return chatActivityTime(result[i]).After(chatActivityTime(result[j]))
+	})
+	return result, nil
+}
+
+func graphPathFromNextLink(next string) string {
+	switch {
+	case strings.HasPrefix(next, graphAPIBase):
+		return strings.TrimPrefix(next, graphAPIBase)
+	case strings.HasPrefix(next, graphAPIBeta):
+		return strings.TrimPrefix(next, graphAPIBeta)
+	default:
+		return next
+	}
+}
+
+func chatActivityTime(chat Chat) time.Time {
+	if chat.LastMessagePreview != nil {
+		when, _ := time.Parse(time.RFC3339Nano, chat.LastMessagePreview.CreatedDateTime)
+		return when
+	}
+	if chat.LastUpdated != nil {
+		when, _ := time.Parse(time.RFC3339Nano, *chat.LastUpdated)
+		return when
+	}
+	return time.Time{}
+}
+
 // ---------------------------------------------------------------------------
 // GetChat — fetch a single chat by ID
 // ---------------------------------------------------------------------------
@@ -2440,13 +2535,24 @@ func graphPostWithResponse(accessToken, path string, payload any) ([]byte, error
 
 // SearchUsers searches for users in the tenant directory.
 func SearchUsers(accessToken, query string) ([]User, error) {
-	escaped := strings.ReplaceAll(query, "'", "''")
-	filterExpr := fmt.Sprintf("startsWith(displayName,'%s') or startsWith(userPrincipalName,'%s')", escaped, escaped)
-	path := "/users?$filter=" + url.QueryEscape(filterExpr) + "&$top=10"
-
-	body, err := graphGet(accessToken, path)
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return nil, nil
+	}
+	searchValue := strings.ReplaceAll(query, `"`, `\"`)
+	searchExpr := fmt.Sprintf(`"displayName:%s" OR "userPrincipalName:%s" OR "mail:%s"`, searchValue, searchValue, searchValue)
+	path := "/users?$search=" + url.QueryEscape(searchExpr) + "&$select=id,displayName,userPrincipalName,mail&$top=25"
+	body, err := graphGetEventuallyConsistent(accessToken, path)
 	if err != nil {
-		return nil, fmt.Errorf("SearchUsers: %w", err)
+		// Some tenants disable advanced directory search. Prefix lookup remains
+		// useful, and exact UPN entry in the picker does not require this call.
+		escaped := strings.ReplaceAll(query, "'", "''")
+		filterExpr := fmt.Sprintf("startsWith(displayName,'%s') or startsWith(userPrincipalName,'%s') or startsWith(mail,'%s')", escaped, escaped, escaped)
+		fallbackPath := "/users?$filter=" + url.QueryEscape(filterExpr) + "&$select=id,displayName,userPrincipalName,mail&$top=25"
+		body, err = graphGet(accessToken, fallbackPath)
+		if err != nil {
+			return nil, fmt.Errorf("SearchUsers: %w", err)
+		}
 	}
 
 	var r struct {
@@ -2454,6 +2560,11 @@ func SearchUsers(accessToken, query string) ([]User, error) {
 	}
 	if err := json.Unmarshal(body, &r); err != nil {
 		return nil, fmt.Errorf("SearchUsers parse: %w", err)
+	}
+	for index := range r.Value {
+		if r.Value[index].UserPrincipalName == nil && r.Value[index].Mail != nil {
+			r.Value[index].UserPrincipalName = r.Value[index].Mail
+		}
 	}
 	return r.Value, nil
 }
@@ -2520,39 +2631,163 @@ func renderMessageReference(content string) string {
 	return bar + " " + quoteStyle.Render(preview)
 }
 
-// GetOrCreateOneOnOneChat creates a new 1-on-1 chat with the user specified by their UPN (email).
-// If the chat already exists, the Graph API returns the existing one.
-func GetOrCreateOneOnOneChat(accessToken, myUserID, otherUPN string) (*Chat, error) {
-	payload := map[string]any{
-		"chatType": "oneOnOne",
-		"members": []map[string]any{
-			{
-				"@odata.type":     "#microsoft.graph.aadUserConversationMember",
-				"roles":           []string{"owner"},
-				"user@odata.bind": fmt.Sprintf("https://graph.microsoft.com/v1.0/users('%s')", myUserID),
-			},
-			{
-				"@odata.type":     "#microsoft.graph.aadUserConversationMember",
-				"roles":           []string{"owner"},
-				"user@odata.bind": fmt.Sprintf("https://graph.microsoft.com/v1.0/users('%s')", otherUPN),
-			},
-		},
+func userDirectoryIdentity(user User) string {
+	if strings.TrimSpace(user.ID) != "" {
+		return strings.TrimSpace(user.ID)
 	}
+	if user.UserPrincipalName != nil && strings.TrimSpace(*user.UserPrincipalName) != "" {
+		return strings.TrimSpace(*user.UserPrincipalName)
+	}
+	if user.Mail != nil {
+		return strings.TrimSpace(*user.Mail)
+	}
+	return ""
+}
 
-	body, err := graphPostWithResponse(accessToken, "/chats", payload)
+func chatMemberBinding(identity string) map[string]any {
+	identity = strings.ReplaceAll(identity, "'", "''")
+	return map[string]any{
+		"@odata.type":     "#microsoft.graph.aadUserConversationMember",
+		"roles":           []string{"owner"},
+		"user@odata.bind": fmt.Sprintf("https://graph.microsoft.com/v1.0/users('%s')", identity),
+	}
+}
+
+func buildChatCreatePayload(myUserID string, participants []User) (map[string]any, error) {
+	myUserID = strings.TrimSpace(myUserID)
+	if myUserID == "" {
+		return nil, fmt.Errorf("current user ID is empty")
+	}
+	members := []map[string]any{chatMemberBinding(myUserID)}
+	seen := map[string]bool{strings.ToLower(myUserID): true}
+	for _, participant := range participants {
+		identity := userDirectoryIdentity(participant)
+		key := strings.ToLower(identity)
+		if identity == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		members = append(members, chatMemberBinding(identity))
+	}
+	if len(members) < 2 {
+		return nil, fmt.Errorf("select at least one participant")
+	}
+	chatType := "oneOnOne"
+	if len(members) > 2 {
+		chatType = "group"
+	}
+	return map[string]any{"chatType": chatType, "members": members}, nil
+}
+
+func postChat(accessToken string, payload any) ([]byte, string, error) {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, "", fmt.Errorf("marshal payload: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodPost, graphAPIBase+"/chats", bytes.NewReader(data))
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("POST /chats: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 300 {
+		return nil, "", fmt.Errorf("POST /chats: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return body, resp.Header.Get("Location"), nil
+}
+
+func chatIDFromLocation(location string) string {
+	patterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)/chats\('([^']+)'\)`),
+		regexp.MustCompile(`(?i)/chats/([^/?]+)`),
+	}
+	for _, pattern := range patterns {
+		match := pattern.FindStringSubmatch(location)
+		if len(match) != 2 {
+			continue
+		}
+		if decoded, err := url.PathUnescape(match[1]); err == nil {
+			return decoded
+		}
+		return match[1]
+	}
+	return ""
+}
+
+// CreateChat creates or reuses a one-to-one chat, or creates a group chat for
+// multiple selected participants. It accepts Graph's body response as well as
+// asynchronous Location-only responses.
+func CreateChat(accessToken, myUserID string, participants []User) (*Chat, error) {
+	payload, err := buildChatCreatePayload(myUserID, participants)
+	if err != nil {
+		return nil, err
+	}
+	body, location, err := postChat(accessToken, payload)
 	if err != nil {
 		return nil, fmt.Errorf("create chat: %w", err)
 	}
-
-	var chat Chat
-	if err := json.Unmarshal(body, &chat); err != nil {
-		return nil, fmt.Errorf("unmarshal chat response: %w", err)
+	created := Chat{}
+	chatID := ""
+	if len(bytes.TrimSpace(body)) > 0 {
+		if err := json.Unmarshal(body, &created); err == nil {
+			chatID = created.ID
+		}
+	}
+	if chatID == "" {
+		chatID = chatIDFromLocation(location)
+	}
+	if chatID == "" {
+		return nil, fmt.Errorf("create chat response did not identify the chat")
 	}
 
-	// Fetch members for the chat to compute display name properly
-	chat.Members = GetChatMembers(accessToken, chat.ID)
+	for attempt := 0; attempt < 6; attempt++ {
+		chat, err := GetChat(accessToken, chatID, nil, myUserID)
+		if err == nil {
+			return chat, nil
+		}
+		if attempt < 5 {
+			time.Sleep(time.Duration(attempt+1) * 250 * time.Millisecond)
+		}
+	}
+	// Creation succeeded even if immediate hydration remained eventually
+	// consistent. Return a usable synthetic chat instead of inviting a retry
+	// that could duplicate a newly created group.
+	created.ID = chatID
+	if created.ChatType == "" {
+		created.ChatType, _ = payload["chatType"].(string)
+	}
+	for _, participant := range participants {
+		identity := userDirectoryIdentity(participant)
+		if identity == "" {
+			continue
+		}
+		displayName := participant.DisplayName
+		if displayName == "" {
+			displayName = newChatUserLabel(participant)
+		}
+		email := newChatUserEmail(participant)
+		member := ChatMember{UserID: &identity, DisplayName: &displayName}
+		if email != "" {
+			member.Email = &email
+		}
+		created.Members = append(created.Members, member)
+	}
+	name := computeDisplayName(&created)
+	created.CachedDisplayName = &name
+	return &created, nil
+}
 
-	return &chat, nil
+// GetOrCreateOneOnOneChat creates or reuses a direct chat by exact UPN.
+func GetOrCreateOneOnOneChat(accessToken, myUserID, otherUPN string) (*Chat, error) {
+	otherUPN = strings.TrimSpace(otherUPN)
+	return CreateChat(accessToken, myUserID, []User{{ID: otherUPN, DisplayName: otherUPN, UserPrincipalName: &otherUPN}})
 }
 
 // ---------------------------------------------------------------------------

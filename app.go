@@ -186,11 +186,17 @@ type App struct {
 	UserSearchStatus           string
 	UserSearchStatusUntil      *time.Time
 	UserSearchLocalResults     []Chat
+	UserSearchMemberResults    []Chat
 	UserSearchMessageResults   []MessageSearchResult
 	UserSearchChannelResults   []channelEntry
 	UserSearchDirectoryResults []User
 	UserSearchSelectedIndex    int
 	UserSearchLoading          bool
+	NewChatMode                bool
+	NewChatLocalResults        []User
+	NewChatSelectedUsers       []User
+	NewChatDirectoryQuery      string
+	NewChatComposePending      bool
 	ChatFilterPopupMode        bool
 	ChatFilterInputMode        bool
 	ChatFilterSelectedIndex    int
@@ -205,6 +211,7 @@ type App struct {
 	Artifacts                  []ConversationArtifact
 	ActiveChatFilter           ChatListFilter
 	DraftChatFilter            ChatListFilter
+	UnreadOverlay              bool
 	AppStartTime               time.Time
 	ChatIconTheme              string
 	CustomChatIcons            map[string]string

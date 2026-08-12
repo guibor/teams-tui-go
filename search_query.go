@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -111,55 +112,44 @@ func normalizedSearchText(text string) string {
 	return normalizeString(strings.ToLower(strings.TrimSpace(text)))
 }
 
-func fuzzyTextScore(text, needle string) (int, bool) {
-	haystack := []rune(normalizedSearchText(text))
-	wanted := []rune(normalizedSearchText(needle))
-	if len(wanted) == 0 {
+// orderlessTextScore mirrors the active Emacs Orderless configuration:
+// every component may match literally or as a regexp, but arbitrary
+// character-subsequence matching is deliberately not supported.
+func orderlessTextScore(text, component string) (int, bool) {
+	haystack := normalizedSearchText(text)
+	wanted := normalizedSearchText(component)
+	if wanted == "" {
 		return 0, true
 	}
-	if len(haystack) == 0 {
+	if haystack == "" {
 		return 0, false
 	}
-	if index := strings.Index(string(haystack), string(wanted)); index >= 0 {
-		return 1000 - index*2 - max(0, len(haystack)-len(wanted)), true
+	if index := strings.Index(haystack, wanted); index >= 0 {
+		score := 1200 - index*2 - max(0, len([]rune(haystack))-len([]rune(wanted)))
+		if index == 0 {
+			score += 100
+		}
+		if haystack == wanted {
+			score += 200
+		}
+		return max(1, score), true
 	}
-	wantedIndex := 0
-	start := -1
-	last := -1
-	gaps := 0
-	consecutive := 0
-	for index, r := range haystack {
-		if r != wanted[wantedIndex] {
-			continue
-		}
-		if start < 0 {
-			start = index
-		}
-		if last >= 0 {
-			if index == last+1 {
-				consecutive++
-			} else {
-				gaps += index - last - 1
-			}
-		}
-		last = index
-		wantedIndex++
-		if wantedIndex == len(wanted) {
-			score := 300 + consecutive*12 - gaps*4 - start*2
-			if score < 1 {
-				score = 1
-			}
-			return score, true
-		}
+	re, err := regexp.Compile(wanted)
+	if err != nil {
+		return 0, false
 	}
-	return 0, false
+	location := re.FindStringIndex(haystack)
+	if location == nil {
+		return 0, false
+	}
+	return max(1, 800-location[0]*2), true
 }
 
-func fuzzyFieldsScore(fields []string, value string) (int, bool) {
+func orderlessFieldsScore(fields []string, value string) (int, bool) {
 	best := 0
 	matched := false
 	for _, field := range fields {
-		if score, ok := fuzzyTextScore(field, value); ok {
+		if score, ok := orderlessTextScore(field, value); ok {
 			matched = true
 			if score > best {
 				best = score
@@ -188,9 +178,9 @@ func (term searchQueryTerm) match(target searchTarget) (int, bool) {
 	value := normalizedSearchText(term.Value)
 	switch term.Field {
 	case "from":
-		return fuzzyFieldsScore(target.Sender, value)
+		return orderlessFieldsScore(target.Sender, value)
 	case "in":
-		return fuzzyFieldsScore(target.Conversation, value)
+		return orderlessFieldsScore(target.Conversation, value)
 	case "is":
 		switch value {
 		case "unread":
@@ -223,7 +213,7 @@ func (term searchQueryTerm) match(target searchTarget) (int, bool) {
 		}
 		return 100, target.CreatedAt.Before(day)
 	default:
-		return fuzzyFieldsScore(target.Text, value)
+		return orderlessFieldsScore(target.Text, value)
 	}
 }
 
@@ -361,6 +351,40 @@ func chatSearchTarget(chat Chat, unread, favorite bool) searchTarget {
 		HasImage:     hasImage,
 		HasLink:      hasLink,
 	}
+}
+
+// chatNameSearchTarget intentionally excludes member names and message text.
+// Global search uses it for the first, highest-priority result section.
+func chatNameSearchTarget(chat Chat, unread, favorite bool) searchTarget {
+	target := chatSearchTarget(chat, unread, favorite)
+	target.Text = nil
+	target.Conversation = nil
+	if chat.CachedDisplayName != nil {
+		target.Text = append(target.Text, *chat.CachedDisplayName)
+		target.Conversation = append(target.Conversation, *chat.CachedDisplayName)
+	}
+	if chat.Topic != nil {
+		target.Text = append(target.Text, *chat.Topic)
+		target.Conversation = append(target.Conversation, *chat.Topic)
+	}
+	target.Conversation = append(target.Conversation, chat.ID)
+	return target
+}
+
+// chatParticipantSearchTarget includes chat identity plus participant names and
+// addresses, while still excluding message bodies. This keeps message-content
+// hits in their own lower-priority section.
+func chatParticipantSearchTarget(chat Chat, unread, favorite bool) searchTarget {
+	target := chatNameSearchTarget(chat, unread, favorite)
+	for _, member := range chat.Members {
+		if member.DisplayName != nil {
+			target.Text = append(target.Text, *member.DisplayName)
+		}
+		if member.Email != nil {
+			target.Text = append(target.Text, *member.Email)
+		}
+	}
+	return target
 }
 
 func sortMessageSearchResults(results []MessageSearchResult) {

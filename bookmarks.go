@@ -70,6 +70,12 @@ func (m Model) chatBookmarkPresets() []chatBookmarkPreset {
 
 func (m Model) applyChatBookmark(preset chatBookmarkPreset) (Model, tea.Cmd) {
 	m.app.ChatBookmarkPopupMode = false
+	// Inbox/All are explicit resets. The dedicated Unread bookmark remains a
+	// standalone view, while every other bookmark retains the independent U
+	// overlay so combinations such as Today + Unread stay composable.
+	if preset.Key == "i" || preset.Key == "a" || preset.Key == "u" || preset.Filter.ReadState == ChatReadUnread {
+		m.app.UnreadOverlay = false
+	}
 	m.app.DraftChatFilter = cloneChatListFilter(preset.Filter)
 	updated, cmd := m.applyChatFilter()
 	updated.app.ActiveChatBookmark = preset.Name

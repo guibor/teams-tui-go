@@ -149,11 +149,14 @@ Enable extended profile (job title, department, office — requires admin consen
 { "user_profile_enabled": true, "user_profile_extended": true }
 ```
 
-Key binding: In message selection mode (`m`), press **i** to view the profile of the message sender.
+Key bindings: In message selection mode (`m`), press **i** to view the profile
+of the message sender. In normal mode, press **N** to create a chat; known
+participants and exact email/UPN entry work without directory permission, while
+live tenant-directory results require one of the user-profile permissions below.
 
 | Permission | Type | Admin Consent | Purpose |
 |------------|------|---------------|---------|
-| `User.ReadBasic.All` | Delegated | **Not required** | Read basic profile for any user in the organisation: display name, email, photo |
+| `User.ReadBasic.All` | Delegated | **Not required** | Read basic profiles and search names/emails in the `N` participant picker |
 | `User.Read.All` | Delegated | **Required** | Read full profile including job title, department, office location, and manager (only needed when `user_profile_extended: true`) |
 
 > **Recommendation**: Start with `User.ReadBasic.All` (no admin needed). Add `User.Read.All` and set `user_profile_extended: true` only if you need job title / department data.

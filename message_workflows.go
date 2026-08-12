@@ -49,20 +49,24 @@ func (m Model) beginForward(message Message) (Model, tea.Cmd) {
 
 func (m Model) openChatChooser(forwardText string) (Model, tea.Cmd) {
 	m.app.PendingForwardText = forwardText
+	m.app.NewChatMode = false
+	m.app.NewChatComposePending = false
 	m.app.UserSearchPopupMode = true
 	m.app.UserSearchMode = true
 	m.app.UserSearchQuery = ""
 	m.app.UserSearchStatus = ""
 	m.app.UserSearchLocalResults = nil
+	m.app.UserSearchMemberResults = nil
 	m.app.UserSearchMessageResults = nil
 	m.app.UserSearchChannelResults = nil
 	m.app.UserSearchDirectoryResults = nil
 	m.app.UserSearchSelectedIndex = 0
 	m.app.UserSearchLoading = false
+	m.userSearchInput.Placeholder = "Orderless search chats/messages, or enter an exact email..."
 	m.userSearchInput.SetValue("")
 	m.userSearchInput.Focus()
 	m.updateUserSearchLocalResults()
-	return m, textinput.Blink
+	return m, tea.Batch(textinput.Blink, m.ensureSearchChatInventory())
 }
 
 func (m Model) newestLoadedMessage() (Message, bool) {

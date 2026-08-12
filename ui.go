@@ -136,7 +136,20 @@ type MsgEditDone struct {
 
 // MsgUserSearchDone is sent when the directory search completes.
 type MsgUserSearchDone struct {
+	Query string
 	Users []User
+	Err   error
+}
+
+// MsgUserSearchReady fires after the participant-search debounce interval.
+type MsgUserSearchReady struct {
+	Query string
+}
+
+// MsgSearchChatInventoryLoaded carries the complete, transient chat inventory
+// used only by global search and participant discovery.
+type MsgSearchChatInventoryLoaded struct {
+	Chats []Chat
 	Err   error
 }
 
@@ -286,6 +299,12 @@ type Model struct {
 	// Preserve every hydrated chat independently of the currently visible filter.
 	chatCache map[string]Chat
 
+	// Complete, session-only inventory for global search. It never participates
+	// in sidebar ordering, filtering, or persistence until a result is opened.
+	searchChatInventory        []Chat
+	searchChatInventoryLoaded  bool
+	searchChatInventoryLoading bool
+
 	// Timer tracking for periodic refreshes.
 	lastChatRefresh    time.Time
 	lastMessageRefresh time.Time
@@ -367,12 +386,12 @@ func NewModel(app *App, clientID, userID string) Model {
 	ti.Width = 40
 
 	tiUser := textinput.New()
-	tiUser.Placeholder = "Fuzzy search chats/messages, or enter an exact email..."
+	tiUser.Placeholder = "Orderless search chats/messages, or enter an exact email..."
 	tiUser.CharLimit = 100
 	tiUser.Width = 40
 
 	tiFilter := textinput.New()
-	tiFilter.Placeholder = "Fuzzy query: words, from:, type:, is:, after:..."
+	tiFilter.Placeholder = "Orderless query: words, from:, type:, is:, after:..."
 	tiFilter.CharLimit = 100
 	tiFilter.Width = 44
 
@@ -466,7 +485,7 @@ func (m Model) Init() tea.Cmd {
 func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 	// Bubble Tea 1.x exposes enhanced Ctrl+Enter as an unknown CSI message.
 	// Normalize the common Kitty/iTerm encodings to Ctrl+J before dispatch.
-	if m.app.InputMode && isEnhancedCtrlEnter(msg) {
+	if (m.app.InputMode || (m.app.UserSearchPopupMode && m.app.NewChatMode)) && isEnhancedCtrlEnter(msg) {
 		msg = tea.KeyMsg{Type: tea.KeyCtrlJ}
 	}
 	var cmds []tea.Cmd
@@ -1161,35 +1180,75 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 
+	case MsgSearchChatInventoryLoaded:
+		m.searchChatInventoryLoading = false
+		if msg.Err != nil {
+			if m.app.UserSearchPopupMode {
+				m.app.UserSearchStatus = "Could not load older chats: " + msg.Err.Error()
+			}
+			break
+		}
+		m.searchChatInventory = msg.Chats
+		m.searchChatInventoryLoaded = true
+		if m.app.UserSearchPopupMode {
+			selectedKey := m.selectedUserSearchItemKey()
+			if m.app.NewChatMode {
+				m.updateNewChatLocalResults()
+			} else {
+				m.updateUserSearchLocalResults()
+			}
+			m.restoreUserSearchSelection(selectedKey)
+		}
+
+	case MsgUserSearchReady:
+		if !m.app.UserSearchPopupMode || !m.app.NewChatMode || strings.TrimSpace(msg.Query) == "" || msg.Query != m.app.UserSearchQuery {
+			break
+		}
+		m.app.NewChatDirectoryQuery = msg.Query
+		m.app.UserSearchLoading = true
+		m.app.UserSearchStatus = "Searching directory..."
+		cmds = append(cmds, searchUsersCmd(m.clientID, msg.Query))
+
 	case MsgUserSearchDone:
+		if !m.app.NewChatMode || msg.Query != m.app.NewChatDirectoryQuery || msg.Query != m.app.UserSearchQuery {
+			break
+		}
+		selectedKey := m.selectedUserSearchItemKey()
 		m.app.UserSearchLoading = false
 		if msg.Err != nil {
 			errStr := msg.Err.Error()
 			if strings.Contains(errStr, "403") {
-				m.app.UserSearchStatus = "⚠️ Directory search not allowed (missing permissions). Enter the exact email/UPN (e.g. user@domain.com) to open/create the chat directly."
+				m.app.UserSearchStatus = "Directory search is not allowed. Enter an exact email/UPN instead."
 			} else {
-				m.app.UserSearchStatus = "⚠️ Search error: " + errStr
+				m.app.UserSearchStatus = "Directory search error: " + errStr
 			}
 			m.app.UserSearchDirectoryResults = nil
 		} else {
 			m.app.UserSearchDirectoryResults = msg.Users
 			if len(msg.Users) == 0 {
-				m.app.UserSearchStatus = "No directory users found matching query."
+				m.app.UserSearchStatus = "No additional directory matches; exact email still works."
 			} else {
-				m.app.UserSearchStatus = fmt.Sprintf("Found %d directory users.", len(msg.Users))
+				m.app.UserSearchStatus = fmt.Sprintf("Found %d directory people.", len(msg.Users))
 			}
 		}
-		m.app.UserSearchSelectedIndex = 0
+		m.restoreUserSearchSelection(selectedKey)
 
 	case MsgCreateChatDone:
 		m.app.UserSearchLoading = false
 		if msg.Err != nil {
+			m.app.NewChatComposePending = false
 			m.app.UserSearchStatus = "⚠️ Create chat error: " + msg.Err.Error()
 		} else if msg.Chat != nil {
+			composeAfterCreate := m.app.NewChatComposePending
 			m.app.UserSearchPopupMode = false
 			m.app.UserSearchMode = false
+			m.app.NewChatMode = false
+			m.app.NewChatComposePending = false
+			m.app.NewChatSelectedUsers = nil
+			m.app.NewChatLocalResults = nil
 			m.app.UserSearchQuery = ""
 			m.app.UserSearchLocalResults = nil
+			m.app.UserSearchMemberResults = nil
 			m.app.UserSearchMessageResults = nil
 			m.app.UserSearchChannelResults = nil
 			m.app.UserSearchDirectoryResults = nil
@@ -1210,6 +1269,17 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			if !existsInLatest {
 				m.latestChats = append([]Chat{chat}, m.latestChats...)
 			}
+			inventoryHasChat := false
+			for index := range m.searchChatInventory {
+				if m.searchChatInventory[index].ID == chat.ID {
+					m.searchChatInventory[index] = chat
+					inventoryHasChat = true
+					break
+				}
+			}
+			if !inventoryHasChat {
+				m.searchChatInventory = append([]Chat{chat}, m.searchChatInventory...)
+			}
 
 			m.promoteChat(chat.ID)
 			m = m.mergeChats(m.latestChats)
@@ -1218,6 +1288,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			if !selected {
 				m.app.ActiveChatFilter = newChatListFilter()
 				m.app.ActiveChatBookmark = ""
+				m.app.UnreadOverlay = false
 				m = m.rebuildChatList()
 				selected = m.app.SetSelectedChatID(chat.ID)
 			}
@@ -1231,6 +1302,10 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				m.app.PendingForwardText = ""
 				var composeCmd tea.Cmd
 				m, composeCmd = m.beginCompose(forwardText)
+				cmds = append(cmds, composeCmd)
+			} else if composeAfterCreate && selected {
+				var composeCmd tea.Cmd
+				m, composeCmd = m.beginCompose("")
 				cmds = append(cmds, composeCmd)
 			}
 		}
@@ -1734,7 +1809,18 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		newVal := m.userSearchInput.Value()
 		if oldVal != newVal {
 			m.app.UserSearchQuery = newVal
-			m.updateUserSearchLocalResults()
+			if m.app.NewChatMode {
+				m.app.UserSearchDirectoryResults = nil
+				m.app.NewChatDirectoryQuery = ""
+				m.app.UserSearchLoading = false
+				m.app.UserSearchStatus = ""
+				m.updateNewChatLocalResults()
+				if len(strings.TrimSpace(newVal)) >= 2 {
+					cmds = append(cmds, userSearchDebounceCmd(newVal))
+				}
+			} else {
+				m.updateUserSearchLocalResults()
+			}
 			m.app.UserSearchSelectedIndex = 0
 		}
 	}
@@ -2010,6 +2096,9 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 		return m.beginCompose("")
 
+	case "N":
+		return m.openNewChatPicker()
+
 	case "s":
 		return m.openChatChooser("")
 
@@ -2023,9 +2112,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 
 	case "U":
-		filter := newChatListFilter()
-		filter.ReadState = ChatReadUnread
-		return m.applyChatBookmark(chatBookmarkPreset{Name: "Unread", Filter: filter})
+		return m.toggleUnreadOverlay()
 
 	case "b":
 		m.app.ChatBookmarkPopupMode = true
@@ -3976,8 +4063,24 @@ func chatFilterSummary(filter ChatListFilter) string {
 	return strings.Join(parts, " · ")
 }
 
+func (m Model) activeChatViewSummary() string {
+	var parts []string
+	if m.app.ActiveChatBookmark != "" {
+		parts = append(parts, m.app.ActiveChatBookmark)
+	} else if chatFilterIsActive(m.app.ActiveChatFilter) {
+		parts = append(parts, chatFilterSummary(m.app.ActiveChatFilter))
+	}
+	if m.app.UnreadOverlay {
+		parts = append(parts, "Unread")
+	}
+	return strings.Join(parts, " · ")
+}
+
 func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
 	unread := m.isUnread(chat)
+	if m.app.UnreadOverlay && !unread {
+		return false
+	}
 	switch filter.ReadState {
 	case ChatReadUnread:
 		if !unread {
@@ -4091,7 +4194,10 @@ func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	m = m.rebuildChatList()
 	m.app.ChatScrollOffset = 0
 
-	summary := chatFilterSummary(m.app.ActiveChatFilter)
+	summary := m.activeChatViewSummary()
+	if summary == "" {
+		summary = "all"
+	}
 	m.app.SetStatus(fmt.Sprintf("Chat filter: %s (%d shown)", summary, len(m.app.Chats)), 4*time.Second)
 	if wasChannelMode {
 		return m, tea.ClearScreen
@@ -4101,6 +4207,26 @@ func (m Model) applyChatFilter() (Model, tea.Cmd) {
 	}
 	if selected := m.app.GetSelectedChat(); selected == nil && len(m.app.Chats) > 0 {
 		m.app.SetSelectedChatIndex(0)
+	}
+	updated, cmd := m.reconcileSelectedChatConversation()
+	return updated, tea.Sequence(tea.ClearScreen, cmd)
+}
+
+func (m Model) toggleUnreadOverlay() (Model, tea.Cmd) {
+	wasChannelMode := m.channelSelectedIndex >= 0
+	m.app.UnreadOverlay = !m.app.UnreadOverlay
+	m = m.rebuildChatList()
+	m.app.ChatScrollOffset = 0
+	state := "off"
+	if m.app.UnreadOverlay {
+		state = "on"
+	}
+	m.app.SetStatus(fmt.Sprintf("Unread overlay %s: %d shown", state, len(m.app.Chats)), 4*time.Second)
+	if wasChannelMode {
+		return m, tea.ClearScreen
+	}
+	if len(m.app.Chats) == 0 {
+		m.app.ClearSelectedChat()
 	}
 	updated, cmd := m.reconcileSelectedChatConversation()
 	return updated, tea.Sequence(tea.ClearScreen, cmd)
@@ -4245,10 +4371,8 @@ func (m Model) renderChatList(w, h int) string {
 		totalChats = len(m.app.Chats)
 	}
 	titleText := fmt.Sprintf("Chats %d · D dates · v filter · ? help", len(m.app.Chats))
-	if m.app.ActiveChatBookmark != "" {
-		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, m.app.ActiveChatBookmark)
-	} else if chatFilterIsActive(m.app.ActiveChatFilter) {
-		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, chatFilterSummary(m.app.ActiveChatFilter))
+	if summary := m.activeChatViewSummary(); summary != "" {
+		titleText = fmt.Sprintf("Chats %d/%d · %s", len(m.app.Chats), totalChats, summary)
 	}
 	title := renderSidebarHeader(titleText, w)
 
@@ -5432,10 +5556,15 @@ func (m Model) chatForSearch(conversationID string) Chat {
 			return chat
 		}
 	}
+	for _, chat := range m.searchChatInventory {
+		if chat.ID == conversationID {
+			return chat
+		}
+	}
 	return Chat{ID: conversationID}
 }
 
-// messageMatches applies the shared structured and fuzzy query grammar.
+// messageMatches applies the shared structured and Orderless query grammar.
 func (m Model) messageMatches(msg *Message, query string) bool {
 	parsed := parseSearchQuery(query)
 	if len(parsed.Terms) == 0 {
@@ -6462,6 +6591,7 @@ type UserSearchItemType int
 
 const (
 	UserSearchItemLocal UserSearchItemType = iota
+	UserSearchItemParticipant
 	UserSearchItemMessage
 	UserSearchItemDirectory
 	UserSearchItemDirect
@@ -6475,16 +6605,103 @@ type UserSearchItem struct {
 	DirUser     *User
 	DirectEmail string
 	Channel     *channelEntry
+	Source      string
+}
+
+func userSearchItemKey(item UserSearchItem) string {
+	switch item.Type {
+	case UserSearchItemLocal, UserSearchItemParticipant:
+		if item.LocalChat != nil {
+			return "chat:" + item.LocalChat.ID
+		}
+	case UserSearchItemMessage:
+		if item.Message != nil {
+			return "message:" + item.Message.ChatID + ":" + item.Message.Message.ID
+		}
+	case UserSearchItemDirectory:
+		if item.DirUser != nil {
+			return "user:" + newChatUserKey(*item.DirUser)
+		}
+	case UserSearchItemChannel:
+		if item.Channel != nil {
+			return "channel:" + item.Channel.teamID + ":" + item.Channel.channelID
+		}
+	}
+	return ""
+}
+
+func (m Model) selectedUserSearchItemKey() string {
+	items := m.getUserSearchItems()
+	if m.app.UserSearchSelectedIndex < 0 || m.app.UserSearchSelectedIndex >= len(items) {
+		return ""
+	}
+	return userSearchItemKey(items[m.app.UserSearchSelectedIndex])
+}
+
+func (m *Model) restoreUserSearchSelection(key string) {
+	items := m.getUserSearchItems()
+	if len(items) == 0 {
+		m.app.UserSearchSelectedIndex = 0
+		return
+	}
+	if key != "" {
+		for index, item := range items {
+			if userSearchItemKey(item) == key {
+				m.app.UserSearchSelectedIndex = index
+				return
+			}
+		}
+	}
+	if m.app.UserSearchSelectedIndex >= len(items) {
+		m.app.UserSearchSelectedIndex = len(items) - 1
+	}
+	if m.app.UserSearchSelectedIndex < 0 {
+		m.app.UserSearchSelectedIndex = 0
+	}
 }
 
 func (m Model) getUserSearchItems() []UserSearchItem {
 	var items []UserSearchItem
+	if m.app.NewChatMode {
+		seen := make(map[string]bool)
+		addUser := func(user User, source string) {
+			key := newChatUserKey(user)
+			if key == "" || seen[key] {
+				return
+			}
+			seen[key] = true
+			copy := user
+			items = append(items, UserSearchItem{Type: UserSearchItemDirectory, DirUser: &copy, Source: source})
+		}
+		for _, user := range m.app.NewChatLocalResults {
+			addUser(user, "Known")
+		}
+		parsed := parseSearchQuery(m.app.UserSearchQuery)
+		for _, user := range m.app.UserSearchDirectoryResults {
+			if len(parsed.Terms) > 0 {
+				if _, matched := parsed.Match(newChatUserTarget(user)); !matched {
+					continue
+				}
+			}
+			addUser(user, "Directory")
+		}
+		if user, ok := exactDirectoryUser(m.app.UserSearchQuery); ok {
+			addUser(user, "Exact email")
+		}
+		return items
+	}
 
-	// Local chats
+	// Chat-title matches are always the first result section.
 	for i := range m.app.UserSearchLocalResults {
 		items = append(items, UserSearchItem{
 			Type:      UserSearchItemLocal,
 			LocalChat: &m.app.UserSearchLocalResults[i],
+		})
+	}
+	for i := range m.app.UserSearchMemberResults {
+		items = append(items, UserSearchItem{
+			Type:      UserSearchItemParticipant,
+			LocalChat: &m.app.UserSearchMemberResults[i],
 		})
 	}
 	if m.app.PendingForwardText == "" {
@@ -6509,6 +6726,9 @@ func (m Model) getUserSearchItems() []UserSearchItem {
 
 func (m Model) knownChatsForSearch() []Chat {
 	known := make(map[string]Chat)
+	for _, chat := range m.searchChatInventory {
+		known[chat.ID] = chat
+	}
 	for _, chat := range m.app.Chats {
 		known[chat.ID] = chat
 	}
@@ -6525,6 +6745,12 @@ func (m Model) knownChatsForSearch() []Chat {
 		if chat, ok := known[id]; ok && !used[id] {
 			ordered = append(ordered, chat)
 			used[id] = true
+		}
+	}
+	for _, chat := range m.searchChatInventory {
+		if knownChat, ok := known[chat.ID]; ok && !used[chat.ID] {
+			ordered = append(ordered, knownChat)
+			used[chat.ID] = true
 		}
 	}
 	var rest []Chat
@@ -6579,6 +6805,7 @@ func (m *Model) updateUserSearchLocalResults() {
 	parsed := parseSearchQuery(m.app.UserSearchQuery)
 	if len(parsed.Terms) == 0 {
 		m.app.UserSearchLocalResults = nil
+		m.app.UserSearchMemberResults = nil
 		m.app.UserSearchMessageResults = nil
 		m.app.UserSearchChannelResults = nil
 		if m.app.PendingForwardText != "" {
@@ -6595,13 +6822,16 @@ func (m *Model) updateUserSearchLocalResults() {
 		chat  Chat
 		score int
 	}
-	var chatMatches []scoredChat
+	var nameMatches []scoredChat
+	var participantMatches []scoredChat
 	var messageMatches []MessageSearchResult
 	for _, chat := range m.knownChatsForSearch() {
 		unread := m.isUnread(chat)
 		favorite := m.favourites[chat.ID]
-		if score, matched := parsed.Match(chatSearchTarget(chat, unread, favorite)); matched {
-			chatMatches = append(chatMatches, scoredChat{chat: chat, score: score})
+		if score, matched := parsed.Match(chatNameSearchTarget(chat, unread, favorite)); matched {
+			nameMatches = append(nameMatches, scoredChat{chat: chat, score: score})
+		} else if score, matched := parsed.Match(chatParticipantSearchTarget(chat, unread, favorite)); matched {
+			participantMatches = append(participantMatches, scoredChat{chat: chat, score: score})
 		}
 		if m.app.PendingForwardText != "" {
 			continue
@@ -6617,13 +6847,21 @@ func (m *Model) updateUserSearchLocalResults() {
 			}
 		}
 	}
-	sort.SliceStable(chatMatches, func(i, j int) bool { return chatMatches[i].score > chatMatches[j].score })
+	sort.SliceStable(nameMatches, func(i, j int) bool { return nameMatches[i].score > nameMatches[j].score })
+	sort.SliceStable(participantMatches, func(i, j int) bool { return participantMatches[i].score > participantMatches[j].score })
 	m.app.UserSearchLocalResults = nil
-	for index, match := range chatMatches {
+	for index, match := range nameMatches {
 		if index >= 20 {
 			break
 		}
 		m.app.UserSearchLocalResults = append(m.app.UserSearchLocalResults, match.chat)
+	}
+	m.app.UserSearchMemberResults = nil
+	for index, match := range participantMatches {
+		if index >= 20 {
+			break
+		}
+		m.app.UserSearchMemberResults = append(m.app.UserSearchMemberResults, match.chat)
 	}
 	sortMessageSearchResults(messageMatches)
 	if len(messageMatches) > 40 {
@@ -6648,6 +6886,9 @@ func (m *Model) updateUserSearchLocalResults() {
 }
 
 func (m Model) handleUserSearchInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	if m.app.NewChatMode {
+		return m.handleNewChatInputModeKey(msg)
+	}
 	switch msg.String() {
 	case "esc":
 		m.app.UserSearchMode = false
@@ -6691,8 +6932,18 @@ func (m Model) revealChatFromSearch(chatID string) (Model, bool) {
 	if m.app.SetSelectedChatID(chatID) {
 		return m, true
 	}
+	chat := m.chatForSearch(chatID)
+	if chat.ID == chatID {
+		if m.chatCache == nil {
+			m.chatCache = make(map[string]Chat)
+		}
+		m.chatCache[chatID] = chat
+		m.stableChatOrder = append(uniqueChatIDs([]string{chatID}), m.stableChatOrder...)
+		m.stableChatOrder = uniqueChatIDs(m.stableChatOrder)
+	}
 	m.app.ActiveChatFilter = newChatListFilter()
 	m.app.ActiveChatBookmark = ""
+	m.app.UnreadOverlay = false
 	m = m.rebuildChatList()
 	return m, m.app.SetSelectedChatID(chatID)
 }
@@ -6703,12 +6954,18 @@ func (m Model) closeUserSearch() Model {
 	m.app.SelectedChannelID = ""
 	m.app.UserSearchPopupMode = false
 	m.app.UserSearchMode = false
+	m.app.NewChatMode = false
+	m.app.NewChatComposePending = false
+	m.app.NewChatSelectedUsers = nil
 	m.app.PendingForwardText = ""
 	m.app.SnapToBottom = true
 	return m
 }
 
 func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
+	if m.app.NewChatMode {
+		return m.handleNewChatNavigationKey(msg)
+	}
 	items := m.getUserSearchItems()
 
 	switch msg.String() {
@@ -6741,7 +6998,7 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 
 		item := items[m.app.UserSearchSelectedIndex]
-		if item.Type == UserSearchItemLocal {
+		if item.Type == UserSearchItemLocal || item.Type == UserSearchItemParticipant {
 			forwardText := m.app.PendingForwardText
 			targetID := item.LocalChat.ID
 			var selected bool
@@ -6811,9 +7068,12 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) renderUserSearchPopup(w, h int) string {
+	if m.app.NewChatMode {
+		return m.renderNewChatPopup(w, h)
+	}
 	titleStyle := lipgloss.NewStyle().Foreground(colCyan).Bold(true)
 	forwarding := m.app.PendingForwardText != ""
-	titleText := "Search Chats and Loaded Messages"
+	titleText := "Orderless Search: Chats and Loaded Messages"
 	instructionText := " j/k: Nav | Enter: Open result or typed email | /: Edit | Esc: Close"
 	if forwarding {
 		titleText = "Forward Message to Chat"
@@ -6835,7 +7095,7 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 
 	if len(items) == 0 {
 		if m.app.UserSearchQuery == "" {
-			emptyText := "Type a fuzzy query or an exact email."
+			emptyText := "Type Orderless components or an exact email."
 			if forwarding {
 				emptyText = "Type a destination name/email and press Enter/arrows."
 			}
@@ -6854,8 +7114,40 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 			m.app.UserSearchSelectedIndex = 0
 		}
 
+		sectionName := func(item UserSearchItem) string {
+			switch item.Type {
+			case UserSearchItemLocal:
+				return "Chats by name"
+			case UserSearchItemParticipant:
+				return "Chats by participant"
+			case UserSearchItemMessage:
+				return "Loaded message matches"
+			case UserSearchItemChannel:
+				return "Channels"
+			default:
+				return "Results"
+			}
+		}
+		startItem := 0
+		if m.app.UserSearchSelectedIndex >= msgH-2 {
+			startItem = m.app.UserSearchSelectedIndex - msgH + 3
+		}
 		linesRendered := 0
-		for idx, item := range items {
+		lastSection := ""
+		for idx := startItem; idx < len(items); idx++ {
+			item := items[idx]
+			section := sectionName(item)
+			if section != lastSection {
+				if linesRendered >= msgH {
+					break
+				}
+				list.WriteString(lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render(section) + "\n")
+				linesRendered++
+				lastSection = section
+			}
+			if linesRendered >= msgH {
+				break
+			}
 			isSelected := idx == m.app.UserSearchSelectedIndex
 			prefix := "  "
 			if isSelected {
@@ -6864,13 +7156,17 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 
 			var line string
 			switch item.Type {
-			case UserSearchItemLocal:
+			case UserSearchItemLocal, UserSearchItemParticipant:
 				chatName := chatDisplayName(*item.LocalChat)
 				chatName, _ = bidiVisualLine(chatName)
-				tag := lipgloss.NewStyle().Foreground(colGreen).Render("[Local Chat]")
+				tagText := "[Name]"
+				if item.Type == UserSearchItemParticipant {
+					tagText = "[Participant]"
+				}
+				tag := lipgloss.NewStyle().Foreground(colGreen).Render(tagText)
 				lineStr := fmt.Sprintf("%s %s %s", prefix, chatName, tag)
 				if isSelected {
-					line = lipgloss.NewStyle().Background(colDarkGray).Render(lineStr)
+					line = lipgloss.NewStyle().Background(colDarkGray).Foreground(colWhite).Bold(true).Render(lineStr)
 				} else {
 					line = lineStr
 				}
@@ -6888,7 +7184,7 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 				tag := lipgloss.NewStyle().Foreground(colYellow).Render("[Message]")
 				lineStr := fmt.Sprintf("%s%s · %s: %s %s", prefix, item.Message.ChatName, sender, snippet, tag)
 				if isSelected {
-					line = lipgloss.NewStyle().Background(colDarkGray).Render(lineStr)
+					line = lipgloss.NewStyle().Background(colDarkGray).Foreground(colWhite).Bold(true).Render(lineStr)
 				} else {
 					line = lineStr
 				}
@@ -6900,7 +7196,7 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 				tag := lipgloss.NewStyle().Foreground(colCyan).Render("[Channel]")
 				lineStr := fmt.Sprintf("%s %s > %s %s", prefix, teamName, chanName, tag)
 				if isSelected {
-					line = lipgloss.NewStyle().Background(colDarkGray).Render(lineStr)
+					line = lipgloss.NewStyle().Background(colDarkGray).Foreground(colWhite).Bold(true).Render(lineStr)
 				} else {
 					line = lineStr
 				}
@@ -6944,6 +7240,8 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 			loadingText = "⏳ Opening forward destination..."
 		}
 		statusText = "  " + lipgloss.NewStyle().Foreground(colYellow).Italic(true).Render(loadingText)
+	} else if m.searchChatInventoryLoading {
+		statusText = "  " + lipgloss.NewStyle().Foreground(colYellow).Italic(true).Render("Loading complete chat inventory...")
 	}
 
 	list.WriteString(statusText + "\n" + inputBox)
@@ -7351,13 +7649,14 @@ func (m Model) getHelpContentLines() []string {
 			{"< / >, H / L", "Jump to top / bottom of loaded messages"},
 			{"Tab", "Switch between Chats & Channels"},
 			{"m", "Enter message selection mode"},
-			{"c / C", "Compose new message"},
+			{"c / C", "Compose new message in the selected chat"},
+			{"N", "Create a new 1:1 or group chat by choosing participants"},
 			{"R", "Reply to newest loaded message"},
 			{"f / F", "Forward newest loaded message"},
-			{"s", "Fuzzy-search chats and loaded messages"},
+			{"s", "Orderless-search all chats and loaded messages"},
 			{"/", "Search message history"},
 			{"v / V", "Filter chat list by state, type, favorite, or text"},
-			{"U", "Replace the current view with unread-only chats"},
+			{"U", "Toggle unread-only over the current bookmark/filter"},
 			{"b", "Open mu4e-style chat bookmarks (bu unread, bi inbox)"},
 			{"a", "Open actions for the selected chat"},
 			{"T", "Choose a loaded meeting recording or transcript"},
@@ -7417,18 +7716,27 @@ func (m Model) getHelpContentLines() []string {
 			{"ESC", "Close search popup"},
 		}},
 		{"Chat Search (s)", [][2]string{
-			{"Type", "Fuzzy query across chats and already-loaded messages"},
+			{"Type", "Orderless literal/regexp components across all chats"},
+			{"Results", "Chat names, participants, then loaded messages"},
 			{"Syntax", "Quotes, -term, from:/in:/is:/type:/has:/after:/before:"},
 			{"Enter", "Open selected result / direct open by email"},
 			{"j / k", "Navigate results"},
 			{"ESC", "Close popup"},
+		}},
+		{"New Chat (N)", [][2]string{
+			{"Type", "Find known people and the tenant directory"},
+			{"Enter", "Add/remove the first match; exact email also works"},
+			{"Arrows / j / k", "Navigate participant matches"},
+			{"Space / Enter", "Add/remove highlighted participant"},
+			{"Ctrl+Enter / Ctrl+J", "Create chat and open an empty composer"},
+			{"ESC", "Cancel without creating or sending"},
 		}},
 		{"Chat Filter (v/V)", [][2]string{
 			{"j / k", "Navigate filter characteristics"},
 			{"Space", "Cycle/toggle selected characteristic"},
 			{"u / r / a", "Unread only / read only / all states"},
 			{"t / 1 / g / m / f", "Toggle today / 1:1 / group / meeting / favorites"},
-			{"/", "Edit the shared fuzzy/structured query"},
+			{"/", "Edit the shared Orderless/structured query"},
 			{"x", "Clear all filter characteristics"},
 			{"Enter", "Apply filter"},
 			{"ESC", "Cancel without changing active filter"},
@@ -7437,6 +7745,7 @@ func (m Model) getHelpContentLines() []string {
 			{"bu / br", "Unread / read chats"},
 			{"bi / ba", "Inbox / all chats (clear filters)"},
 			{"bt / bf", "Today's activity / favorites"},
+			{"U", "Toggle unread over the current bookmark"},
 			{"bd / bg / bm", "Direct / group / meeting chats"},
 			{"config.json", "Add or override presets with chat_bookmarks"},
 			{"j / k / Enter", "Navigate and apply a preset"},

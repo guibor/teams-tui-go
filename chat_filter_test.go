@@ -643,12 +643,12 @@ func TestChatBookmarkPrefixAppliesUnreadAndInboxPresets(t *testing.T) {
 	}
 }
 
-func TestUpperUReplacesEveryActiveFilterWithUnreadOnly(t *testing.T) {
+func TestUpperUTogglesUnreadOverlayWithoutReplacingActiveView(t *testing.T) {
 	app := NewApp()
 	currentUser := "Me"
 	app.CurrentUserName = &currentUser
 	model := NewModel(app, "client", "user")
-	unread := Chat{ID: "unread", ChatType: "oneOnOne", LastMessagePreview: filterTestMessage("unread-last", "Other")}
+	unread := Chat{ID: "unread", ChatType: "group", LastMessagePreview: filterTestMessage("unread-last", "Other")}
 	read := Chat{ID: "read", ChatType: "group", LastMessagePreview: filterTestMessage("read-last", "Other")}
 	model.latestChats = []Chat{read, unread}
 	model.stableChatOrder = []string{read.ID, unread.ID}
@@ -656,21 +656,51 @@ func TestUpperUReplacesEveryActiveFilterWithUnreadOnly(t *testing.T) {
 	model.lastReadMsgID[read.ID] = "read-last"
 	model.lastMsgID[unread.ID] = "unread-last"
 	app.ActiveChatFilter = ChatListFilter{
-		Query:          "something else",
-		ReadState:      ChatReadRead,
-		FavouritesOnly: true,
-		TodayOnly:      true,
-		ChatTypes:      map[string]bool{"group": true},
+		ReadState: ChatReadAll,
+		ChatTypes: map[string]bool{"group": true},
 	}
+	app.ActiveChatBookmark = "Groups"
 	model = model.rebuildChatList()
 
 	model, _ = model.handleNormalModeKey(filterTestKey('U'))
 	filter := app.ActiveChatFilter
-	if filter.ReadState != ChatReadUnread || filter.Query != "" || filter.FavouritesOnly || filter.TodayOnly || len(filter.ChatTypes) != 0 {
-		t.Fatalf("U did not replace all filter criteria: %#v", filter)
+	if !app.UnreadOverlay || filter.ReadState != ChatReadAll || !filter.ChatTypes["group"] || app.ActiveChatBookmark != "Groups" {
+		t.Fatalf("U did not preserve the base view: overlay=%v filter=%#v bookmark=%q", app.UnreadOverlay, filter, app.ActiveChatBookmark)
 	}
 	if len(app.Chats) != 1 || app.Chats[0].ID != unread.ID {
 		t.Fatalf("U showed unexpected chats: %#v", app.Chats)
+	}
+
+	model, _ = model.handleNormalModeKey(filterTestKey('U'))
+	if app.UnreadOverlay || len(app.Chats) != 2 {
+		t.Fatalf("second U did not restore the base view: overlay=%v chats=%#v", app.UnreadOverlay, app.Chats)
+	}
+}
+
+func TestUnreadOverlaySurvivesBookmarkChangesAndInboxClearsIt(t *testing.T) {
+	app := NewApp()
+	currentUser := "Me"
+	app.CurrentUserName = &currentUser
+	model := NewModel(app, "client", "user")
+	unread := Chat{ID: "unread", ChatType: "group", LastMessagePreview: filterTestMessage("unread-last", "Other")}
+	read := Chat{ID: "read", ChatType: "group", LastMessagePreview: filterTestMessage("read-last", "Other")}
+	model.latestChats = []Chat{unread, read}
+	model.stableChatOrder = []string{unread.ID, read.ID}
+	model.lastMsgID[unread.ID] = "unread-last"
+	model.lastMsgID[read.ID] = "read-last"
+	model.lastReadMsgID[read.ID] = "read-last"
+	model = model.rebuildChatList()
+
+	model, _ = model.applyChatBookmark(chatBookmarkPreset{Key: "t", Name: "Today", Filter: ChatListFilter{ReadState: ChatReadAll, TodayOnly: true, ChatTypes: map[string]bool{}}})
+	model, _ = model.handleNormalModeKey(filterTestKey('U'))
+	model, _ = model.applyChatBookmark(chatBookmarkPreset{Key: "g", Name: "Groups", Filter: ChatListFilter{ReadState: ChatReadAll, ChatTypes: map[string]bool{"group": true}}})
+	if !app.UnreadOverlay || app.ActiveChatBookmark != "Groups" || len(app.Chats) != 1 || app.Chats[0].ID != unread.ID {
+		t.Fatalf("bookmark change lost unread overlay: overlay=%v bookmark=%q chats=%#v", app.UnreadOverlay, app.ActiveChatBookmark, app.Chats)
+	}
+
+	model, _ = model.applyChatBookmark(chatBookmarkPreset{Key: "i", Name: "Inbox", Filter: newChatListFilter()})
+	if app.UnreadOverlay || len(app.Chats) != 2 {
+		t.Fatalf("Inbox did not clear unread overlay: overlay=%v chats=%#v", app.UnreadOverlay, app.Chats)
 	}
 }
 

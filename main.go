@@ -41,6 +41,17 @@ func loadChatsCmd(clientID string, existingChats []Chat, currentUserName *string
 	}
 }
 
+func loadSearchChatInventoryCmd(clientID string, currentUserName *string, currentUserID string) tea.Cmd {
+	return func() tea.Msg {
+		token, err := GetValidTokenSilent(clientID)
+		if err != nil {
+			return MsgSearchChatInventoryLoaded{Err: err}
+		}
+		chats, err := GetAllChatsForSearch(token, currentUserName, currentUserID)
+		return MsgSearchChatInventoryLoaded{Chats: chats, Err: err}
+	}
+}
+
 // loadBackgroundMessagesCmd fetches the latest 10 messages for a chat to inspect reactions.
 func loadBackgroundMessagesCmd(clientID, chatID string) tea.Cmd {
 	return func() tea.Msg {
@@ -200,11 +211,17 @@ func searchUsersCmd(clientID, query string) tea.Cmd {
 	return func() tea.Msg {
 		token, err := GetValidTokenSilent(clientID)
 		if err != nil {
-			return MsgUserSearchDone{Err: err}
+			return MsgUserSearchDone{Query: query, Err: err}
 		}
 		users, err := SearchUsers(token, query)
-		return MsgUserSearchDone{Users: users, Err: err}
+		return MsgUserSearchDone{Query: query, Users: users, Err: err}
 	}
+}
+
+func userSearchDebounceCmd(query string) tea.Cmd {
+	return tea.Tick(300*time.Millisecond, func(time.Time) tea.Msg {
+		return MsgUserSearchReady{Query: query}
+	})
 }
 
 // loadHistoryFromDBCmd loads conversation history from the SQLite database asynchronously.
@@ -231,6 +248,18 @@ func createChatCmd(clientID, myUserID, otherUPN string) tea.Cmd {
 			return MsgCreateChatDone{Err: err}
 		}
 		chat, err := GetOrCreateOneOnOneChat(token, myUserID, otherUPN)
+		return MsgCreateChatDone{Chat: chat, Err: err}
+	}
+}
+
+func createParticipantsChatCmd(clientID, myUserID string, participants []User) tea.Cmd {
+	selected := append([]User(nil), participants...)
+	return func() tea.Msg {
+		token, err := GetValidTokenSilent(clientID)
+		if err != nil {
+			return MsgCreateChatDone{Err: err}
+		}
+		chat, err := CreateChat(token, myUserID, selected)
 		return MsgCreateChatDone{Chat: chat, Err: err}
 	}
 }

@@ -3,6 +3,8 @@ package main
 import (
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestParseSearchQuerySupportsQuotesFieldsAndNegation(t *testing.T) {
@@ -21,15 +23,21 @@ func TestParseSearchQuerySupportsQuotesFieldsAndNegation(t *testing.T) {
 	}
 }
 
-func TestFuzzyTextScoreSupportsEmacsStyleOrderedFlex(t *testing.T) {
-	if _, matched := fuzzyTextScore("Quarterly planning", "qtrly"); !matched {
-		t.Fatal("ordered fuzzy abbreviation did not match")
+func TestOrderlessTextScoreUsesLiteralOrRegexpComponents(t *testing.T) {
+	if _, matched := orderlessTextScore("Quarterly planning", "qp"); matched {
+		t.Fatal("loose character subsequence unexpectedly matched")
 	}
-	if _, matched := fuzzyTextScore("Quarterly planning", "qp"); !matched {
-		t.Fatal("short flex abbreviation did not match")
+	if _, matched := orderlessTextScore("Quarterly planning", `q.*p`); !matched {
+		t.Fatal("regexp component did not match")
 	}
-	if _, matched := fuzzyTextScore("Quarterly planning", "ylrtq"); matched {
-		t.Fatal("out-of-order abbreviation matched")
+	if _, matched := orderlessTextScore("Quarterly planning", "plan"); !matched {
+		t.Fatal("literal component did not match")
+	}
+	if _, matched := orderlessTextScore("Quarterly planning", "["); matched {
+		t.Fatal("invalid regexp unexpectedly matched")
+	}
+	if _, matched := parseSearchQuery("plan q").Match(searchTarget{Text: []string{"Quarterly planning"}}); !matched {
+		t.Fatal("order-independent literal components did not match")
 	}
 }
 
@@ -44,9 +52,9 @@ func TestStructuredMessageQuery(t *testing.T) {
 		Favorite:     true,
 		HasFile:      true,
 	}
-	query := parseSearchQuery(`qtrly from:alice in:product is:unread is:favorite has:file after:2026-08-01 -type:event`)
+	query := parseSearchQuery(`quarter roadmap from:alice in:product is:unread is:favorite has:file after:2026-08-01 -type:event`)
 	if _, matched := query.Match(target); !matched {
-		t.Fatal("structured fuzzy query did not match target")
+		t.Fatal("structured Orderless query did not match target")
 	}
 	if _, matched := parseSearchQuery(`before:2026-08-01`).Match(target); matched {
 		t.Fatal("date exclusion did not apply")
@@ -69,12 +77,109 @@ func TestGlobalSearchUsesHiddenChatsAndAlreadyLoadedMessages(t *testing.T) {
 		Body:            &MessageBody{Content: &body},
 	}}
 
-	app.UserSearchQuery = "qtrly"
+	app.UserSearchQuery = "quarter roadmap"
 	model.updateUserSearchLocalResults()
 	if len(app.UserSearchMessageResults) != 1 || app.UserSearchMessageResults[0].ChatID != hidden.ID {
 		t.Fatalf("hidden loaded message missing from search: %#v", app.UserSearchMessageResults)
 	}
 	if len(app.CachedMessages[hidden.ID]) != 1 {
 		t.Fatal("search mutated the existing message cache")
+	}
+}
+
+func TestGlobalSearchRanksNameThenParticipantThenMessageSections(t *testing.T) {
+	app := NewApp()
+	nameTitle := "Roadmap Team"
+	memberName := "Alice Example"
+	memberEmail := "alice@example.com"
+	body := "budget approval is ready"
+	chat := Chat{
+		ID:                "chat-1",
+		CachedDisplayName: &nameTitle,
+		Members: []ChatMember{{
+			DisplayName: &memberName,
+			Email:       &memberEmail,
+		}},
+		LastMessagePreview: &Message{ID: "message-1", Body: &MessageBody{Content: &body}},
+	}
+	app.SetChats([]Chat{chat})
+	model := NewModel(app, "client", "user")
+	model.latestChats = []Chat{chat}
+	model.stableChatOrder = []string{chat.ID}
+
+	app.UserSearchQuery = "roadmap"
+	model.updateUserSearchLocalResults()
+	if len(app.UserSearchLocalResults) != 1 || len(app.UserSearchMemberResults) != 0 {
+		t.Fatalf("name search sections = names:%#v members:%#v", app.UserSearchLocalResults, app.UserSearchMemberResults)
+	}
+
+	app.UserSearchQuery = "alice"
+	model.updateUserSearchLocalResults()
+	if len(app.UserSearchLocalResults) != 0 || len(app.UserSearchMemberResults) != 1 {
+		t.Fatalf("participant search sections = names:%#v members:%#v", app.UserSearchLocalResults, app.UserSearchMemberResults)
+	}
+
+	app.UserSearchQuery = "budget"
+	model.updateUserSearchLocalResults()
+	items := model.getUserSearchItems()
+	if len(app.UserSearchLocalResults) != 0 || len(app.UserSearchMemberResults) != 0 || len(items) != 1 || items[0].Type != UserSearchItemMessage {
+		t.Fatalf("message body leaked into chat sections: names=%#v members=%#v items=%#v", app.UserSearchLocalResults, app.UserSearchMemberResults, items)
+	}
+}
+
+func TestTransientSearchInventoryDoesNotExpandSidebarUntilOpened(t *testing.T) {
+	app := NewApp()
+	visibleName := "Visible chat"
+	oldName := "Archived planning"
+	visible := Chat{ID: "visible", CachedDisplayName: &visibleName}
+	old := Chat{ID: "old", CachedDisplayName: &oldName}
+	app.SetChats([]Chat{visible})
+	model := NewModel(app, "client", "user")
+	model.latestChats = []Chat{visible}
+	model.stableChatOrder = []string{visible.ID}
+	model.chatCache[visible.ID] = visible
+	model.searchChatInventory = []Chat{visible, old}
+	model.searchChatInventoryLoaded = true
+	app.UserSearchPopupMode = true
+	app.UserSearchQuery = "archived"
+	model.updateUserSearchLocalResults()
+
+	if len(app.Chats) != 1 || app.Chats[0].ID != visible.ID {
+		t.Fatalf("transient inventory changed sidebar before open: %#v", app.Chats)
+	}
+	if len(app.UserSearchLocalResults) != 1 || app.UserSearchLocalResults[0].ID != old.ID {
+		t.Fatalf("old chat was not searchable: %#v", app.UserSearchLocalResults)
+	}
+
+	model, _ = model.handleUserSearchNavigationKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if selected := app.GetSelectedChat(); selected == nil || selected.ID != old.ID {
+		t.Fatalf("opening old result selected %#v", selected)
+	}
+	if _, ok := model.chatCache[old.ID]; !ok {
+		t.Fatal("opened old result was not hydrated into the chat cache")
+	}
+}
+
+func TestAsyncSearchInventoryPreservesHighlightedResultIdentity(t *testing.T) {
+	app := NewApp()
+	firstName := "Planning Alpha"
+	secondName := "Planning Beta"
+	olderName := "Planning Archive"
+	first := Chat{ID: "first", CachedDisplayName: &firstName}
+	second := Chat{ID: "second", CachedDisplayName: &secondName}
+	older := Chat{ID: "older", CachedDisplayName: &olderName}
+	app.SetChats([]Chat{first, second})
+	app.UserSearchPopupMode = true
+	app.UserSearchQuery = "planning"
+	model := NewModel(app, "client", "user")
+	model.latestChats = []Chat{first, second}
+	model.stableChatOrder = []string{first.ID, second.ID}
+	model.updateUserSearchLocalResults()
+	app.UserSearchSelectedIndex = 1
+	want := model.selectedUserSearchItemKey()
+
+	model, _ = model.updateInternal(MsgSearchChatInventoryLoaded{Chats: []Chat{older, first, second}})
+	if got := model.selectedUserSearchItemKey(); got != want {
+		t.Fatalf("async inventory moved selection from %q to %q", want, got)
 	}
 }

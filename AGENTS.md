@@ -81,6 +81,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **Chat List Filters**:
 	- `v` / `V` opens a local filter popup; no Graph request is made.
 	- `b` opens mu4e-style bookmark presets implemented in `bookmarks.go`; `bu` selects unread chats and `bi` clears filters for the inbox/all view. Other presets cover read, today, favorites, and chat types.
+	- `U` toggles `App.UnreadOverlay`, an independent predicate ANDed with the active bookmark/filter. Bookmark changes retain it except `bi`/`ba` and the standalone `bu` view.
 	- `App.ActiveChatFilter` is the applied filter and `App.DraftChatFilter` is an isolated copy used by the popup so `Esc` can cancel safely.
 	- Read state, local-day activity, type, favorite, and name/topic/member/email criteria combine with AND semantics; an empty type map means all types.
 	- `Model.chatCache` retains hydrated chats independently of `App.Chats`, which contains only the currently visible list. Never rebuild from the visible list alone.
@@ -119,13 +120,21 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - Main chat viewport offsets and snap-to-bottom values are preserved and restored cleanly when entering and exiting search popup mode.
 - **Chat Search, Open, and Forward Popup**:
   - Activated by `s` in normal mode, or by `f` / `F` with `PendingForwardText`, which opens a fullscreen-budgeted modal overlay popup (`UserSearchPopupMode`).
-  - While typing (`UserSearchMode`), it filters already loaded chats/members on-the-fly and populates `UserSearchLocalResults` under the `[Local Chat]` category.
+	- The first invocation asynchronously pages every Graph chat into `Model.searchChatInventory`. This inventory is session-only and must not enter `chatCache`, `stableChatOrder`, SQLite, or the visible sidebar until a selected result is opened.
+	- Free components mirror `(orderless-literal orderless-regexp)`: components are ANDed in any order and arbitrary character-subsequence matching is not allowed.
+	- Results are separate identity-safe sections: title/topic (`UserSearchLocalResults`), members (`UserSearchMemberResults`), loaded messages, and channels. Message text must never promote a chat into a chat-name/member section.
+	- Asynchronous inventory/directory responses preserve the highlighted result by `userSearchItemKey`; never retain only its old numeric result index across a rebuild.
   - Pressing `Enter` in the input field:
     - If the input contains `@` (looks like an email/UPN), it blurs the input and triggers a background `createChatCmd` calling `POST /chats` with type `oneOnOne` to retrieve/open the chat directly.
     - Otherwise, it blurs the input to focus the results navigation list.
-  - Displays a filtered list of local chats.
+	- Displays complete chat-name/member results and already-loaded/latest-preview message results; typing performs no Graph search.
   - In navigation mode, `j`/`k` move the selection, `/` refocuses the input, and `Enter` opens the selected local chat.
   - On success of `createChatCmd`, the chat is added/promoted, stable order is rebuilt, and the chat is opened and selected automatically. A pending forward then opens an editable destination composer rather than sending immediately.
+- **New Chat Picker (`new_chat.go`)**:
+	- Normal-mode `N` reuses the search modal/input with `NewChatMode`, but has separate participant/result state and never sends a message itself.
+	- Known participants come from the transient all-chat inventory. A 300 ms debounce calls Graph user `$search`; stale query-tagged responses are ignored, and exact UPN input remains available when directory permission is absent.
+	- `Enter` in the input or `Space`/`Enter` in navigation toggles a participant. `Ctrl+Enter`/`Ctrl+J` calls `CreateChat`: one participant creates/reuses `oneOnOne`, multiple participants create `group`, and success opens a blank composer.
+	- Directory identities prefer canonical Graph `userId`; never bind a chat-scoped conversation-member `id` as a directory user.
 - **Message View/Preview Popup**:
   - Activated by pressing the `v` key in message selection mode (`m` in normal mode).
   - Opens a fullscreen-budgeted modal overlay popup displaying the full message body, sender info, exact timestamps, listed attachments, and grouped reactions.
@@ -151,7 +160,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - Commands may include arguments, such as `emacsclient --wait`; the editor must remain running until editing is complete.
   - Uses Bubble Tea's `tea.ExecProcess` to pause the TUI while the editor executes in the terminal foreground, resuming when the editor process exits.
 - **Compose Send Keys**:
-	- Normal mode `c` / `C` starts an ordinary compose, `r` / `R` quotes the newest loaded message, and `f` / `F` opens the destination chooser with an editable readable forward. Message selection and preview apply reply/forward to the selected message.
+	- Normal mode `c` / `C` starts an ordinary compose, `R` quotes the newest loaded message, `r`/`i` mark read, and `f` / `F` opens the destination chooser with an editable readable forward. Message selection and preview apply reply/forward to the selected message.
 	- Plain `Enter` inserts one newline; `Ctrl+Enter` or `Ctrl+J` sends the current message.
   - Bubble Tea 1.x does not expose enhanced modified-Return keys directly. `isEnhancedCtrlEnter()` normalizes Kitty/iTerm `CSI 13;5u` and xterm modifyOtherKeys `CSI 27;5;13~` into `Ctrl+J` before normal key dispatch.
 - **Full Markdown Export**:

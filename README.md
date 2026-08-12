@@ -23,9 +23,10 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 🔄 Smart Background Polling & Sleep Mode — active chat messages poll every 3 s and chat list updates every 15 s. Polling auto-pauses when the terminal window is unfocused (blurred) or when you manually enter sleep mode via the `Esc` key.
 - 😊 Emoticon Auto-replacement — popular text emoticons (like `:)`, `:D`, `<3`) are automatically converted to Unicode emojis
 - 🔍 Search History — search messages in any chat, recursively loading and indexing all conversation history in the background
-- 🔍 Chat and Message Search — fuzzy-search the canonical chat set and already-loaded messages with quoted phrases and structured fields, or open/start a 1:1 chat directly by entering a UPN/email
+- 🔍 Chat and Message Search — Emacs Orderless-style literal/regexp components search a complete session inventory, with chat-name hits before participants and loaded message hits
+- ➕ New Chats — press `N` to choose one or more participants, create/reuse a 1:1 or create a group, and open an empty composer without sending anything
 - 🧭 Chat List Filters — press `v` or `V` to combine unread/read state, today's activity, chat type, favorites, and name/member text without making another Graph request
-- 🔖 Chat Bookmarks — use mu4e-style prefixes such as `bu` (unread), `bi` (inbox/all), `bt` (today), `bf` (favorites), `bd` (direct), `bg` (groups), and `bm` (meetings)
+- 🔖 Chat Bookmarks — use mu4e-style prefixes such as `bu` (unread), `bi` (inbox/all), `bt` (today), `bf` (favorites), `bd` (direct), `bg` (groups), and `bm` (meetings); `U` independently narrows any current view to unread
 - ⭐ Favourites — pin any chat to the top of the sidebar with `*`; favourites are sorted alphabetically and stay anchored regardless of activity
 - ↗️ Open in Teams — press `o` in normal mode to open the selected chat using Graph's native Teams URL and your configured browser/app command
 - ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
@@ -275,14 +276,19 @@ status line retains the saved Markdown path for manual recovery.
 
 ### Search Queries
 
-The global `s` chooser searches every known chat, including chats hidden by the
-active sidebar filter, and messages already loaded during this session. It does
-not create another cache or trigger a network search while typing. Opening a
-result uses the normal conversation load path, which refreshes that chat. The
+The global `s` chooser loads every paginated chat once per session into a
+transient inventory, including chats outside `chat_limit` or hidden by the
+active sidebar view. Typing remains entirely local. The inventory is not added
+to the sidebar or SQLite; only a chat that you open is hydrated into the normal
+chat model. Results are sectioned in this order: chat title/topic, participant
+name/email, loaded messages/latest previews, then channels. The
 current-conversation `/` history search uses the same query grammar while its
 existing recursive history loader continues to fetch older pages.
 
-Free words use ordered fuzzy matching and combine with AND semantics. Quote a
+Free words match like the default Emacs Orderless setup: each space-separated
+component may match literally or as a regexp, every component is required, and
+component order does not matter. There is no arbitrary character-subsequence
+matching: `q p` and `q.*p` match “Quarterly Planning”; `qp` does not. Quote a
 phrase, prefix a term with `-` to exclude it, and use these fields:
 
 | Syntax | Meaning |
@@ -295,8 +301,22 @@ phrase, prefix a term with `-` to exclude it, and use these fields:
 | `has:file`, `has:image`, `has:link` | Message/latest-preview content |
 | `after:2026-08-01`, `before:2026-08-06` | Local message/activity date |
 
-For example, `qtrly from:alice is:unread -has:file` fuzzy-matches “quarterly”
-in unread conversations while excluding file-bearing messages.
+For example, `quarter plan from:alice is:unread -has:file` matches both free
+components in any order in unread conversations while excluding file-bearing
+messages.
+
+### New Chats
+
+Press `N` to open the participant picker. Known participants from the transient
+chat inventory appear immediately; after a short pause, tenant-directory
+results are added when the token has `User.ReadBasic.All` or `User.Read.All`.
+An exact email/UPN remains available when directory search is unavailable.
+
+Use `Enter` on the input's first match, or move into the result list and use
+`Space`/`Enter`, to add or remove participants. `Ctrl+Enter`/`Ctrl+J` creates or
+reuses a 1:1 for one participant and creates a group for multiple participants.
+The resulting chat opens in an empty composer and is not sent until the normal
+compose send shortcut is used.
 
 ### Search Context Limit
 Configure how many context messages (before and after each search match) to display in the search history popup in `~/.config/teams-tui-go/config.json`:
@@ -417,7 +437,7 @@ or open `?` help to confirm the effective file, then restart the TUI after edits
 | `terminal_image_protocol` | `auto` | - | Chooses `sixel` inside Emacs EAT and `kitty` elsewhere; accepts explicit `kitty`, `sixel`, or `none`, and `TEAMS_TUI_GO_IMAGE_PROTOCOL` overrides it |
 | `file_upload_enabled` | `false` | `Files.ReadWrite` | Press `Ctrl+f` in compose mode to open a file browser and attach files under 4MB from the computer |
 | `presence_enabled` | `false` | `Presence.Read.All` | Press `p` in message selection mode to see sender availability |
-| `user_profile_enabled` | `false` | `User.ReadBasic.All` | Press `i` in message selection mode to view sender's profile |
+| `user_profile_enabled` | `false` | `User.ReadBasic.All` | View sender profiles and add tenant-directory matches to the `N` participant picker |
 | `user_profile_extended` | `false` | `User.Read.All` *(admin consent)* | Adds job title, department, office to the profile popup (requires `user_profile_enabled: true`) |
 | `teams_channels_enabled` | `false` | `Team.ReadBasic.All` + `Channel.ReadBasic.All` + `ChannelMessage.Read.All` *(admin consent)* + `ChannelMessage.Send` + `ChannelMessage.ReadWrite` | Teams channels appear in the sidebar below chats; navigate with `j`/`k`. Supports background polling, activity sorting, unread dots, and hidden channels (`h` key). |
 | `channel_mentions_enabled` | `false` | `TeamMember.Read.All` | Enables autocomplete suggestion dropdown list of team members in Teams channels when typing `@` mentions. |
@@ -540,11 +560,11 @@ Compose mode is multiline by default: `Enter` inserts a line break and
 that cannot distinguish modified Return. The TUI also recognizes the common
 Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 
-The forward destination chooser starts with known local chats and uses
-orderless, space-separated query components with flex matching inside each
-component. Short initials such as `qp` can match `Quarterly Planning`, and
-`Enter` accepts the highest-ranked local match directly. An exact email/UPN is
-used to create or open a direct chat only when no local destination matches.
+The forward destination chooser starts with known chats and uses the same
+literal/regexp Orderless components. `q p` can match `Quarterly Planning`, while
+the looser `qp` abbreviation does not. `Enter` accepts the highest-ranked local
+match directly. An exact email/UPN creates or opens a direct chat only when no
+local destination matches.
 
 ---
 
@@ -565,9 +585,9 @@ used to create or open a direct chat only when no local destination matches.
 | `PgDn` / `J` | Scroll messages down                                      |
 | `/`          | Open search input (in Normal Mode)                        |
 | `Esc`        | Clear active search, or leave conversation for dashboard   |
-| `s`          | Fuzzy-search chats and already-loaded messages            |
+| `s`          | Orderless-search all chats and loaded messages             |
 | `v` / `V`    | Filter chats by read state, type, favorite, and text      |
-| `U`          | Replace any active chat view/filter with unread-only chats |
+| `U`          | Toggle unread-only over the active bookmark/filter         |
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
 | `a`          | Open actions for the selected chat                         |
 | `T`          | Choose a loaded recording or transcript                    |
@@ -577,6 +597,7 @@ used to create or open a direct chat only when no local destination matches.
 | `r` / `i`    | Mark selected chat read, then advance to the next chat     |
 | `u`          | Mark selected chat unread, then advance (Normal Mode)     |
 | `c` / `C`    | Compose a new message in the current conversation          |
+| `N`          | Choose participants and create a new 1:1 or group chat      |
 | `R`          | Reply to the newest loaded message                         |
 | `f` / `F`    | Forward the newest loaded message through the chat chooser |
 | `E`          | Export complete selected chat as Markdown (Normal Mode)   |
@@ -618,8 +639,10 @@ used to create or open a direct chat only when no local destination matches.
 
 Press `v` or `V` from normal mode. Filters are local and combine with AND semantics, so
 an unread + group + favorites filter shows only chats matching all three.
-Press `U` from normal mode to replace the current filter or bookmark immediately
-with unread-only chats.
+Press `U` from normal mode to toggle an unread predicate over the current filter
+or bookmark. For example, `bt` then `U` means Today AND Unread; another `U`
+returns to Today. The overlay survives other bookmark changes. `bi`/`ba`
+explicitly reset it, while `bu` remains the standalone Unread bookmark.
 
 | Filter key       | Action                                             |
 | ---------------- | -------------------------------------------------- |
@@ -627,7 +650,7 @@ with unread-only chats.
 | `t`              | Toggle activity-today-only                         |
 | `1` / `g` / `m`  | Toggle 1:1 / group / meeting chat types            |
 | `f`              | Toggle favorites-only                              |
-| `/`              | Edit fuzzy/structured query                        |
+| `/`              | Edit Orderless/structured query                    |
 | `Space`          | Toggle or cycle the selected filter row            |
 | `x`              | Clear the draft filter                             |
 | `Enter`          | Apply                                               |
@@ -677,6 +700,9 @@ appended to the popup.
 
 Bookmark records support `query`, `read_state`, `chat_types`,
 `favourites_only`, and `today_only`.
+
+`U` can be toggled after any bookmark and is ANDed with that bookmark. The
+sidebar header shows both states, for example `Today · Unread`.
 
 ### Thread Actions
 

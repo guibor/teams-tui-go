@@ -2,15 +2,28 @@
 
 ## Unreleased
 
+### Added
+
+- Add `N` participant selection for new one-to-one and group chats. Known
+  participants appear locally, tenant directory results arrive after a short
+  debounce, exact email remains a permission-free fallback, and successful
+  creation opens an empty composer without sending.
+- Add a session-only, fully paginated chat inventory so global search can find
+  conversations outside `chat_limit` without expanding the sidebar or creating
+  another persistent cache.
+- Add an independent `U` unread overlay that composes with bookmarks and ad hoc
+  filters; Inbox/All explicitly reset it and the sidebar shows both states.
+
 ### Changed
 
 - Advance to the next visible chat after read/unread and completed thread
   actions, using a pre-action chat ID so active filters cannot skip a row.
   Compose, reply, forward, and the recording/transcript chooser retain their
   current conversation while interactive.
-- Make the forward destination chooser preload local chats, support Emacs-style
-  orderless flex completion (including short initials), and accept the best
-  local match with one `Enter`; exact email creation remains the fallback.
+- Match the active Emacs Orderless configuration with literal-or-regexp,
+  order-independent components instead of loose character subsequences. Global
+  and forward search now rank chat names first, participants second, and loaded
+  message content third.
 
 ## [1.2.3] - 2026-07-24
 
@@ -956,5 +969,4 @@
 
 
 - **Initial commit** - ([f30e39e](https://github.com/nospor/teams-tui-go/commit/f30e39e2f191df8142a594c5482557760a42025e))
-
 
