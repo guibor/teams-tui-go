@@ -23,17 +23,17 @@ func TestParseSearchQuerySupportsQuotesFieldsAndNegation(t *testing.T) {
 	}
 }
 
-func TestOrderlessTextScoreUsesLiteralOrRegexpComponents(t *testing.T) {
-	if _, matched := orderlessTextScore("Quarterly planning", "qp"); matched {
+func TestComponentTextScoreUsesLiteralOrRegexpComponents(t *testing.T) {
+	if _, matched := componentTextScore("Quarterly planning", "qp"); matched {
 		t.Fatal("loose character subsequence unexpectedly matched")
 	}
-	if _, matched := orderlessTextScore("Quarterly planning", `q.*p`); !matched {
+	if _, matched := componentTextScore("Quarterly planning", `q.*p`); !matched {
 		t.Fatal("regexp component did not match")
 	}
-	if _, matched := orderlessTextScore("Quarterly planning", "plan"); !matched {
+	if _, matched := componentTextScore("Quarterly planning", "plan"); !matched {
 		t.Fatal("literal component did not match")
 	}
-	if _, matched := orderlessTextScore("Quarterly planning", "["); matched {
+	if _, matched := componentTextScore("Quarterly planning", "["); matched {
 		t.Fatal("invalid regexp unexpectedly matched")
 	}
 	if _, matched := parseSearchQuery("plan q").Match(searchTarget{Text: []string{"Quarterly planning"}}); !matched {
@@ -54,7 +54,7 @@ func TestStructuredMessageQuery(t *testing.T) {
 	}
 	query := parseSearchQuery(`quarter roadmap from:alice in:product is:unread is:favorite has:file after:2026-08-01 -type:event`)
 	if _, matched := query.Match(target); !matched {
-		t.Fatal("structured Orderless query did not match target")
+		t.Fatal("structured component query did not match target")
 	}
 	if _, matched := parseSearchQuery(`before:2026-08-01`).Match(target); matched {
 		t.Fatal("date exclusion did not apply")

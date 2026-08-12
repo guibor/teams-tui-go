@@ -191,6 +191,7 @@ type Config struct {
 	ShowChatDates           *bool                `json:"show_chat_dates,omitempty"`
 	CustomChatIcons         map[string]string    `json:"custom_chat_icons,omitempty"`
 	ChatBookmarks           []ChatBookmarkConfig `json:"chat_bookmarks"`
+	KeyBindings             KeyBindingConfig     `json:"keybindings"`
 
 	// Optional feature flags — each defaults to false (disabled).
 	// When enabled, the corresponding Graph API permission must be granted
@@ -393,6 +394,10 @@ func InitConfig() {
 		cfg.ChatBookmarks = []ChatBookmarkConfig{}
 		modified = true
 	}
+	if cfg.KeyBindings == nil {
+		cfg.KeyBindings = KeyBindingConfig{}
+		modified = true
+	}
 	// Feature flags default to false (disabled) — written so users can see them in config.json.
 	if cfg.FilePreviewEnabled == nil {
 		v := false
@@ -565,9 +570,8 @@ func ResolveExportDirectory() string {
 	return "~/Downloads"
 }
 
-// ResolveThreadAnalysisAgent returns the agent-shell provider identifier used
-// for complete-thread analysis. The installed bridge also accepts aliases such
-// as "agent" (Cursor) and "claude" (Claude Code).
+// ResolveThreadAnalysisAgent returns the provider identifier passed to the
+// configured complete-thread analysis command.
 func ResolveThreadAnalysisAgent() string {
 	cfg := LoadConfig()
 	if cfg != nil && cfg.ThreadAnalysisAgent != nil {
@@ -579,7 +583,7 @@ func ResolveThreadAnalysisAgent() string {
 }
 
 // ResolveThreadAnalysisCommand returns the executable used to hand a complete
-// Markdown export to an agent-shell session.
+// Markdown export to an external analysis command.
 func ResolveThreadAnalysisCommand() string {
 	cfg := LoadConfig()
 	if cfg != nil && cfg.ThreadAnalysisCommand != nil {

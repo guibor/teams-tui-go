@@ -158,6 +158,9 @@ func TestInitConfig(t *testing.T) {
 	if cfg.ChatBookmarks == nil || len(cfg.ChatBookmarks) != 0 {
 		t.Errorf("expected visible empty chat_bookmarks array, got %#v", cfg.ChatBookmarks)
 	}
+	if cfg.KeyBindings == nil || len(cfg.KeyBindings) != 0 {
+		t.Errorf("expected visible empty keybindings object, got %#v", cfg.KeyBindings)
+	}
 	if cfg.ChannelMsgRefreshMin == nil || *cfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected channel message refresh min 2, got %v", cfg.ChannelMsgRefreshMin)
 	}
@@ -248,6 +251,9 @@ func TestInitConfig(t *testing.T) {
 	}
 	if updatedCfg.ThreadCaptureOrgFile == nil || *updatedCfg.ThreadCaptureOrgFile != "~/Documents/teams-threads.org" {
 		t.Errorf("expected default Org thread capture file, got %v", updatedCfg.ThreadCaptureOrgFile)
+	}
+	if updatedCfg.KeyBindings == nil || len(updatedCfg.KeyBindings) != 0 {
+		t.Errorf("expected default empty keybindings object, got %#v", updatedCfg.KeyBindings)
 	}
 	if updatedCfg.ChannelMsgRefreshMin == nil || *updatedCfg.ChannelMsgRefreshMin != 2 {
 		t.Errorf("expected default channel message refresh min 2, got %v", updatedCfg.ChannelMsgRefreshMin)

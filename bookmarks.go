@@ -85,7 +85,8 @@ func (m Model) applyChatBookmark(preset chatBookmarkPreset) (Model, tea.Cmd) {
 
 func (m Model) handleChatBookmarkPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	presets := m.chatBookmarkPresets()
-	switch msg.String() {
+	key := m.keyName(keyContextBookmarks, msg)
+	switch key {
 	case "esc", "q", "b":
 		m.app.ChatBookmarkPopupMode = false
 		return m, nil
@@ -107,7 +108,7 @@ func (m Model) handleChatBookmarkPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 
 	for _, preset := range presets {
-		if msg.String() == preset.Key {
+		if key == preset.Key {
 			return m.applyChatBookmark(preset)
 		}
 	}
@@ -121,7 +122,7 @@ func (m Model) renderChatBookmarkPopup(w, h int) string {
 	presets := m.chatBookmarkPresets()
 	lines := []string{
 		lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("Chat bookmarks"),
-		lipgloss.NewStyle().Foreground(colDimGray).Render("b followed by the highlighted shortcut"),
+		lipgloss.NewStyle().Foreground(colDimGray).Render("Choose a preset shortcut or select from the list"),
 		"",
 	}
 	for index, preset := range presets {
@@ -133,7 +134,8 @@ func (m Model) renderChatBookmarkPopup(w, h int) string {
 		}
 		lines = append(lines, style.Render(fmt.Sprintf("%s%s  %s", cursor, preset.Key, preset.Name)))
 	}
-	lines = append(lines, "", lipgloss.NewStyle().Foreground(colDimGray).Render("Enter apply · Esc cancel"))
+	lines = append(lines, "", lipgloss.NewStyle().Foreground(colDimGray).Render(
+		m.keybindings.Display(keyListSelect)+" apply · "+m.keybindings.Display(keyBookmarkClose)+" cancel"))
 
 	return lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).

@@ -33,6 +33,11 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - Config struct includes client/auth settings, notification and display limits, `MarkReadOnOpen *bool` (default false), `ExportDirectory *string` (default `~/Downloads`), `ThreadAnalysisAgent *string` (default `codex`), `ThreadAnalysisCommand *string` (empty until the user configures a bridge), `ThreadCaptureFormat *ThreadCaptureFormat` (default `markdown`), separate Markdown/Org capture destinations, separate browser/Teams-app commands, and optional feature flags.
 - `ResolveClientID()`, `ResolveMessageLimit()`, `ResolveSearchContextLimit()`, `ResolveChatLimit()`, and `ResolveExternalEditor()` implement the full precedence chain. External-editor strings may contain simple whitespace-separated arguments; `buildExternalEditorCommand()` appends the temporary message path without invoking a shell.
 - `InitConfig()` is run at application startup to populate any missing configuration keys in `config.json` with their default values and persist them to disk. It defaults `ChatIconTheme` to `"unicode"` and all feature flags to `false`.
+- `KeyBindings` is an optional action-to-key map. `keybindings.go` owns stable
+  action names, mode contexts, defaults, aliases, conflict warnings, canonical
+  dispatch, and help labels. Omitted actions retain defaults; an empty list
+  unbinds an action. Keep text input and third-party filepicker behavior outside
+  this map unless their native key event can be preserved.
 - `BuildScopes()` assembles the OAuth2 scope string dynamically: always includes the four basic scopes (`User.Read Chat.ReadWrite offline_access`) and appends optional scopes for each enabled feature flag.
 - Six `ResolveFeatureXxx()` helpers (one per feature) read the config and return a bool, used by `BuildScopes()` and during startup to populate `App.Features`.
 
@@ -59,6 +64,10 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - Bubble Tea `Model` struct implementing `Init()`, `Update()`, `View()`
 - Layout: 30% chat list (left) | 70% messages (right) | status bar (3 lines, bottom)
 - Uses `CachedDisplayName` from `Chat` struct — **do not compute display names here**
+- Every application key handler calls `m.keyName(context, msg)` before its
+  existing canonical switch. Add new configurable actions in `keybindings.go`
+  and render their active keys through `Display`/`Primary`; never add a new
+  hard-coded application shortcut without a corresponding action definition.
 - **Bidirectional rendering**: `bidi.go` converts ANSI-styled logical text to visual terminal-cell order after wrapping. It uses UAX #9 levels, preserves grapheme clusters, SGR styles, and OSC 8 links, and returns the paragraph direction so Hebrew-first lines can be right-aligned. Keep API, clipboard, editing, and export text in logical order; apply bidi conversion only at display boundaries.
 - Normal-mode `M-<` / `M->` jump to the first / last item in the active chat or channel section and then use the regular selection-loading path. In chat mode, `gg` / `G` and `h` / `l` jump to the first / last visible chat through that same path; the first `g` is tracked in `Model.pendingChatGoto`. Channel-mode `h` retains its hide/unhide action.
 - Plain `<` / `>` and `H` / `L` jump to the top / bottom of the loaded message pane. The same pairs select the oldest / newest loaded message in message-selection and message-popup modes.
@@ -80,7 +89,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
   - The `★` icon appears before the chat type tag in the sidebar (yellow for non-selected, inline for selected)
 - **Chat List Filters**:
 	- `v` / `V` opens a local filter popup; no Graph request is made.
-	- `b` opens mu4e-style bookmark presets implemented in `bookmarks.go`; `bu` selects unread chats and `bi` clears filters for the inbox/all view. Other presets cover read, today, favorites, and chat types.
+	- `b` opens two-key bookmark presets implemented in `bookmarks.go`; `bu` selects unread chats and `bi` clears filters for the inbox/all view. Other presets cover read, today, favorites, and chat types.
 	- `U` toggles `App.UnreadOverlay`, an independent predicate ANDed with the active bookmark/filter. Bookmark changes retain it except `bi`/`ba` and the standalone `bu` view.
 	- `App.ActiveChatFilter` is the applied filter and `App.DraftChatFilter` is an isolated copy used by the popup so `Esc` can cancel safely.
 	- Read state, local-day activity, type, favorite, and name/topic/member/email criteria combine with AND semantics; an empty type map means all types.
@@ -121,7 +130,7 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **Chat Search, Open, and Forward Popup**:
   - Activated by `s` in normal mode, or by `f` / `F` with `PendingForwardText`, which opens a fullscreen-budgeted modal overlay popup (`UserSearchPopupMode`).
 	- The first invocation asynchronously pages every Graph chat into `Model.searchChatInventory`. This inventory is session-only and must not enter `chatCache`, `stableChatOrder`, SQLite, or the visible sidebar until a selected result is opened.
-	- Free components mirror `(orderless-literal orderless-regexp)`: components are ANDed in any order and arbitrary character-subsequence matching is not allowed.
+	- Free components support literal substring or regexp matching: components are ANDed in any order and arbitrary character-subsequence matching is not allowed.
 	- Results are separate identity-safe sections: title/topic (`UserSearchLocalResults`), members (`UserSearchMemberResults`), loaded messages, and channels. Message text must never promote a chat into a chat-name/member section.
 	- Asynchronous inventory/directory responses preserve the highlighted result by `userSearchItemKey`; never retain only its old numeric result index across a rebuild.
   - Pressing `Enter` in the input field:
@@ -193,6 +202,11 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 9. **Feature Gates**: Check `m.app.Features.XxxEnabled` (not `ResolveFeatureXxx()`) inside the Bubble Tea event loop. Features are resolved once at startup into `app.Features` to avoid repeated file I/O per keypress.
 10. **Dynamic Scopes**: Always pass `BuildScopes()` to `StartDeviceFlow` and `RefreshAccessToken`. Never hard-code the scope string.
 11. **Rendering Performance Optimization**: When rendering long lists of items in the TUI (e.g., rendering hundreds of messages in `m.app.Messages`), avoid running expensive operations like HTML-to-text parsing, Lipgloss-based `wordWrap`, or Unicode bidi resolution dynamically inside the loop in `View()`. Instead, use cache fields directly on the structs (`WrappedLinesCached` and `WrappedLinesRTLCached` on `Message`) to compute and store wrapped visual text and alignment once, invalidating only when the terminal width or search query changes.
+12. **Standalone Boundary**: The public module is
+    `github.com/guibor/teams-tui-go`. Built-in device login, release binaries,
+    and ordinary terminal use must work without an editor, private repository,
+    or external token broker. External-only builds remain an optional packaging
+    mode and must continue to fail closed.
 
 ---
 

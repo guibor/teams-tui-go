@@ -124,7 +124,7 @@ func (m Model) openSelectedConversationArtifact() (Model, tea.Cmd) {
 }
 
 func (m Model) handleConversationArtifactPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextArtifacts, msg) {
 	case "esc", "q":
 		m.app.ArtifactPopupMode = false
 		return m, nil
@@ -217,7 +217,8 @@ func (m Model) renderConversationArtifactPopup(w, h int) string {
 	if end < len(m.app.Artifacts) {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf("  ↓ %d older", len(m.app.Artifacts)-end)))
 	}
-	lines = append(lines, "", lipgloss.NewStyle().Foreground(colDimGray).Render("Enter/o open · y copy link · Esc close"))
+	lines = append(lines, "", lipgloss.NewStyle().Foreground(colDimGray).Render(
+		m.keybindings.Display(keyArtifactOpen)+" open · "+m.keybindings.Display(keyArtifactCopy)+" copy link · "+m.keybindings.Display(keyListClose)+" close"))
 	return lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(colGreen).

@@ -4,6 +4,12 @@
 
 ### Added
 
+- Add mode-aware `keybindings` configuration for application actions,
+  navigation, composing, search, filters, message operations, and popups.
+  Existing keys remain the defaults, configured keys replace rather than
+  supplement old bindings, and in-app help displays the active map.
+- Add `--print-default-keybindings` and `--version` commands for standalone
+  setup and packaging.
 - Add `N` participant selection for new one-to-one and group chats. Known
   participants appear locally, tenant directory results arrive after a short
   debounce, exact email remains a permission-free fallback, and successful
@@ -16,12 +22,17 @@
 
 ### Changed
 
+- Identify the maintained fork as `github.com/guibor/teams-tui-go`, provide a
+  working fork-specific `go install` path, and describe built-in device login
+  before optional external authentication integrations.
+- Use product-neutral names such as component search, two-key bookmarks, and
+  external analysis command in the standalone UI and documentation.
 - Advance to the next visible chat after read/unread and completed thread
   actions, using a pre-action chat ID so active filters cannot skip a row.
   Compose, reply, forward, and the recording/transcript chooser retain their
   current conversation while interactive.
-- Match the active Emacs Orderless configuration with literal-or-regexp,
-  order-independent components instead of loose character subsequences. Global
+- Match literal-or-regexp, order-independent components instead of loose
+  character subsequences. Global
   and forward search now rank chat names first, participants second, and loaded
   message content third.
 
@@ -969,4 +980,3 @@
 
 
 - **Initial commit** - ([f30e39e](https://github.com/nospor/teams-tui-go/commit/f30e39e2f191df8142a594c5482557760a42025e))
-

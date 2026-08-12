@@ -112,10 +112,9 @@ func normalizedSearchText(text string) string {
 	return normalizeString(strings.ToLower(strings.TrimSpace(text)))
 }
 
-// orderlessTextScore mirrors the active Emacs Orderless configuration:
-// every component may match literally or as a regexp, but arbitrary
-// character-subsequence matching is deliberately not supported.
-func orderlessTextScore(text, component string) (int, bool) {
+// componentTextScore lets each component match literally or as a regexp, but
+// deliberately does not support arbitrary character-subsequence matching.
+func componentTextScore(text, component string) (int, bool) {
 	haystack := normalizedSearchText(text)
 	wanted := normalizedSearchText(component)
 	if wanted == "" {
@@ -145,11 +144,11 @@ func orderlessTextScore(text, component string) (int, bool) {
 	return max(1, 800-location[0]*2), true
 }
 
-func orderlessFieldsScore(fields []string, value string) (int, bool) {
+func componentFieldsScore(fields []string, value string) (int, bool) {
 	best := 0
 	matched := false
 	for _, field := range fields {
-		if score, ok := orderlessTextScore(field, value); ok {
+		if score, ok := componentTextScore(field, value); ok {
 			matched = true
 			if score > best {
 				best = score
@@ -178,9 +177,9 @@ func (term searchQueryTerm) match(target searchTarget) (int, bool) {
 	value := normalizedSearchText(term.Value)
 	switch term.Field {
 	case "from":
-		return orderlessFieldsScore(target.Sender, value)
+		return componentFieldsScore(target.Sender, value)
 	case "in":
-		return orderlessFieldsScore(target.Conversation, value)
+		return componentFieldsScore(target.Conversation, value)
 	case "is":
 		switch value {
 		case "unread":
@@ -213,7 +212,7 @@ func (term searchQueryTerm) match(target searchTarget) (int, bool) {
 		}
 		return 100, target.CreatedAt.Before(day)
 	default:
-		return orderlessFieldsScore(target.Text, value)
+		return componentFieldsScore(target.Text, value)
 	}
 }
 

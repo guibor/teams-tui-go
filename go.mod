@@ -1,4 +1,4 @@
-module github.com/nospor/teams-tui-go
+module github.com/guibor/teams-tui-go
 
 go 1.25.4
 

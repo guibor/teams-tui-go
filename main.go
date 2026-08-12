@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 
@@ -840,7 +842,31 @@ func loadInitialChatOrder(chats []Chat) ([]Chat, map[string]string, map[string]t
 
 var version = "dev"
 
+func resolvedVersion() string {
+	if version != "" && version != "dev" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
+}
+
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "--version" {
+		fmt.Println(resolvedVersion())
+		return
+	}
+	if len(os.Args) == 2 && os.Args[1] == "--print-default-keybindings" {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(DefaultKeyBindingConfig()); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) == 2 && os.Args[1] == "--auth-provider-capabilities" {
 		fmt.Printf("%s:%s\n", externalTokenCapability, authMode)
 		return
@@ -868,7 +894,7 @@ func main() {
 	http.DefaultClient.Timeout = 15 * time.Second
 
 	// 1. Banner.
-	fmt.Printf("TeamsTUI %s\n", version)
+	fmt.Printf("TeamsTUI %s\n", resolvedVersion())
 	fmt.Println("================================")
 
 	// Initialize configuration and write defaults for any missing keys.
@@ -974,6 +1000,11 @@ func main() {
 
 	// Build initial stable chat order.
 	model := NewModel(app, clientID, me.ID)
+	keybindings, keyWarnings := ResolveKeyMap()
+	model.keybindings = keybindings
+	for _, warning := range keyWarnings {
+		fmt.Printf("Warning: %s\n", warning)
+	}
 	// Chats are already loaded synchronously above; set lastChatRefresh so the
 	// first tick-driven background refresh fires ~15 s from now rather than
 	// immediately (Init() no longer fires a redundant loadChatsCmd).
@@ -1058,6 +1089,13 @@ func main() {
 
 	model = model.rebuildChatList()
 	model = model.writeAppState()
+	if len(keyWarnings) > 0 {
+		warning := keyWarnings[0]
+		if len(keyWarnings) > 1 {
+			warning = fmt.Sprintf("%s (%d keybinding warnings total)", warning, len(keyWarnings))
+		}
+		model.app.SetStatus("Keybinding warning: "+warning, 12*time.Second)
+	}
 
 	// 9. Start Bubble Tea program.
 	p := tea.NewProgram(model, tea.WithAltScreen())

@@ -1,8 +1,18 @@
 # teams-tui-go
 
-A keyboard-driven terminal UI client for Microsoft Teams, written in Go.
+A standalone, keyboard-driven terminal client for Microsoft Teams.
 
-Authenticates through an external short-lived token provider or the built-in **OAuth2 Device Code Flow**, fetches your chats and messages from the **Microsoft Graph API**, and displays them in a fast, minimal TUI.
+It runs in any normal terminal on macOS, Linux, or Windows. No companion
+editor, backend package, or private configuration repository is required.
+Authentication uses the built-in OAuth2 device flow by default,
+or an optional external short-lived token command when another application
+already owns Microsoft sign-in.
+
+This maintained fork builds on
+[nospor/teams-tui-go](https://github.com/nospor/teams-tui-go) and adds a larger
+conversation workflow, robust read-state navigation, complete exports,
+bidirectional text rendering, configurable keybindings, component search,
+new-chat creation, and external authentication support.
 
 ---
 
@@ -23,19 +33,20 @@ Authenticates through an external short-lived token provider or the built-in **O
 - 🔄 Smart Background Polling & Sleep Mode — active chat messages poll every 3 s and chat list updates every 15 s. Polling auto-pauses when the terminal window is unfocused (blurred) or when you manually enter sleep mode via the `Esc` key.
 - 😊 Emoticon Auto-replacement — popular text emoticons (like `:)`, `:D`, `<3`) are automatically converted to Unicode emojis
 - 🔍 Search History — search messages in any chat, recursively loading and indexing all conversation history in the background
-- 🔍 Chat and Message Search — Emacs Orderless-style literal/regexp components search a complete session inventory, with chat-name hits before participants and loaded message hits
+- 🔍 Chat and Message Search — literal/regexp components search a complete session inventory, with chat-name hits before participants and loaded message hits
 - ➕ New Chats — press `N` to choose one or more participants, create/reuse a 1:1 or create a group, and open an empty composer without sending anything
 - 🧭 Chat List Filters — press `v` or `V` to combine unread/read state, today's activity, chat type, favorites, and name/member text without making another Graph request
-- 🔖 Chat Bookmarks — use mu4e-style prefixes such as `bu` (unread), `bi` (inbox/all), `bt` (today), `bf` (favorites), `bd` (direct), `bg` (groups), and `bm` (meetings); `U` independently narrows any current view to unread
+- 🔖 Chat Bookmarks — use quick two-key presets such as `bu` (unread), `bi` (inbox/all), `bt` (today), `bf` (favorites), `bd` (direct), `bg` (groups), and `bm` (meetings); `U` independently narrows any current view to unread
 - ⭐ Favourites — pin any chat to the top of the sidebar with `*`; favourites are sorted alphabetically and stay anchored regardless of activity
 - ↗️ Open in Teams — press `o` in normal mode to open the selected chat using Graph's native Teams URL and your configured browser/app command
 - ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
 
 - 🔵 Read-State Styling — unread chats use a cyan dot with bright bold text; read chats are deliberately muted
 - 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread (`i` remains a compatibility alias), then continue on the next visible chat; merely moving over a chat does not mark it read by default
-- ✉️ Mail-style Actions — use `c`/`C` to compose, uppercase `R` to reply with a quote, and `f`/`F` to forward an editable readable copy through an Emacs-style local chat completion chooser
+- ✉️ Message Actions — use `c`/`C` to compose, uppercase `R` to reply with a quote, and `f`/`F` to forward an editable readable copy through the local chat chooser
 - 📥 Full Markdown Export — press `E` to fetch every page of the selected chat and save a chronological Markdown transcript
-- 🤖 Agent Thread Analysis — press `A` to make the same complete export, open the configured agent-shell backend, and submit `$thread-analysis` with the saved path
+- 🤖 External Thread Analysis — press `A` to make the same complete export and pass it to a configured analysis command
+- ⌨️ Configurable Keys — override nearly every application action by stable name in `config.json`; defaults preserve the documented keyboard workflow and in-app help shows active bindings
 - 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
 - ⬆️ New messages bubble chats to the top of the list
 - 📌 Stable chat ordering — order only changes when new messages arrive
@@ -47,7 +58,7 @@ Authenticates through an external short-lived token provider or the built-in **O
 
 **Optional features** (enable per-feature in `config.json`; see [AZURE_SETUP.md](AZURE_SETUP.md)):
 - 📎 **File Preview & Download** (`file_preview_enabled`) — Tab through attachments and Teams-hosted inline images in the message popup and press Enter to download them to `~/Downloads/`
-  - **Terminal Image Preview** (`file_preview_in_terminal`) — Displays the highlighted image inside the details popup using Kitty graphics in compatible terminals and Sixel in Emacs EAT (requires `file_preview_enabled: true`)
+  - **Terminal Image Preview** (`file_preview_in_terminal`) — Displays the highlighted image inside the details popup using Kitty graphics or Sixel in compatible terminals (requires `file_preview_enabled: true`)
 - ⬆️ **File Browsing & Uploading** (`file_upload_enabled`) — Press `Ctrl+f` in compose mode to open a file browser and attach small files (up to 50MB) from your computer. Files are uploaded to OneDrive/SharePoint and attached to your message.
 - 🟢 **User Presence** (`presence_enabled`) — press `p` in message selection mode to see real-time availability of the message sender
 - 👤 **User Profile** (`user_profile_enabled`) — press `I` in message selection mode to view extended profile info (name, email, job title, department)
@@ -57,15 +68,33 @@ Authenticates through an external short-lived token provider or the built-in **O
 
 ## Installation
 
-### Prerequisites
+### Install with Go
 
-- Go 1.22 or later
-- A Microsoft account with access to Microsoft Teams
-
-### Build
+Go 1.25.4 or later is required when building from source:
 
 ```bash
-git clone https://github.com/nospor/teams-tui-go
+go install github.com/guibor/teams-tui-go@main
+teams-tui-go
+```
+
+The default build opens Microsoft device login on first use. Some corporate
+tenants require administrator approval for third-party Graph clients; see
+[Azure setup and permissions](AZURE_SETUP.md) when the default sign-in is
+blocked or optional features need extra scopes.
+
+### Release binary
+
+When a tag includes prebuilt assets on
+[GitHub Releases](https://github.com/guibor/teams-tui-go/releases), download the
+archive for your operating system and architecture, extract `teams-tui-go`, and
+put it on your `PATH`. Tagged source archives are always available from GitHub;
+the Go installation above is the authoritative path when a tag has no binary
+assets.
+
+### Build from source
+
+```bash
+git clone https://github.com/guibor/teams-tui-go
 cd teams-tui-go
 go build -o teams-tui-go .
 
@@ -75,21 +104,32 @@ go build -trimpath -ldflags="-s -w" -o teams-tui-go .
 # then run
 ./teams-tui-go
 
-# you may also want to copy the binary to your PATH (and run it from any place), e.g.:
+# optionally install the binary on your PATH
 sudo cp teams-tui-go /usr/local/bin/
-```
-
-### Install to PATH
-
-```bash
-go install github.com/nospor/teams-tui-go@latest
 ```
 
 ---
 
 ## Configuration
 
-### External token provider
+Run this to locate the active JSON file:
+
+```bash
+teams-tui-go --config-path
+```
+
+Missing settings are added with backwards-compatible defaults at startup.
+
+### Authentication
+
+#### Built-in device login
+
+No helper application is required. Run `teams-tui-go`, follow the displayed
+Microsoft verification URL, enter the device code, and approve the requested
+Graph permissions. The resulting refresh token is stored under the app's
+private cache directory and refreshed by the TUI.
+
+#### External token provider
 
 Set `TEAMS_TUI_GO_TOKEN_COMMAND` to an executable path when another program
 owns Microsoft authentication. The command takes no arguments and must print
@@ -125,7 +165,7 @@ device-token cache when the external command is absent:
 go build -ldflags="-X main.authMode=external-only" -o teams-tui-go .
 ```
 
-### Client ID (optional)
+#### Client ID (optional)
 
 By default the app uses Microsoft's public Teams client ID. To use your own Azure AD app registration:
 
@@ -144,6 +184,42 @@ By default the app uses Microsoft's public Teams client ID. To use your own Azur
      "client_id": "your-client-id-here"
    }
    ```
+
+### Keybindings
+
+Nearly every application-level shortcut is configurable through the
+`keybindings` object. Action names are stable and mode-qualified, so the same
+physical key can safely mean different things in the chat list, message view,
+and composer.
+
+```json
+{
+  "keybindings": {
+    "search.global": ["ctrl+s"],
+    "new_chat.open": "ctrl+n",
+    "filter.toggle_unread_overlay": ["U", "ctrl+u"],
+    "compose.send": ["ctrl+s", "ctrl+enter"],
+    "chat.analyze": []
+  }
+}
+```
+
+A string and an array are both accepted. Mentioning an action replaces its
+defaults; `[]` deliberately unbinds it. Omitted actions retain their built-in
+keys. Common key spellings such as `C-s` and `M-n` are accepted as aliases
+for `ctrl+s` and `alt+n`. Restart the TUI after editing the file.
+
+Print the complete authoritative action map with:
+
+```bash
+teams-tui-go --print-default-keybindings
+```
+
+The `?` popup displays the active bindings. Duplicate keys assigned to two
+actions in the same mode produce a startup warning. Text editing remains under
+the terminal text widget, the file browser retains its own navigation map, and
+bookmark suffixes (`bu`, `bt`, and custom presets) remain configured through
+`chat_bookmarks`.
 
 ### Notifications
 - **Toggle Mode**: Cycle through notification modes at runtime by pressing `n`. The chosen mode is automatically saved.
@@ -262,8 +338,8 @@ $thread-analysis of this thread: /absolute/path/to/export.md
 ```
 
 Set `thread_analysis_agent` to `codex`, `agent`/`cursor`, `claude`/
-`claude-code`, `cline`, `goose`, `default`, or another configured agent-shell
-identifier. Export completes before the bridge runs; if launch fails, the
+`claude-code`, `cline`, `goose`, `default`, or another identifier understood by
+your analysis command. Export completes before the command runs; if launch fails, the
 status line retains the saved Markdown path for manual recovery.
 
 ```json
@@ -285,8 +361,8 @@ name/email, loaded messages/latest previews, then channels. The
 current-conversation `/` history search uses the same query grammar while its
 existing recursive history loader continues to fetch older pages.
 
-Free words match like the default Emacs Orderless setup: each space-separated
-component may match literally or as a regexp, every component is required, and
+Each space-separated component may match literally or as a regexp, every
+component is required, and
 component order does not matter. There is no arbitrary character-subsequence
 matching: `q p` and `q.*p` match “Quarterly Planning”; `qp` does not. Quote a
 phrase, prefix a term with `-` to exclude it, and use these fields:
@@ -561,7 +637,7 @@ that cannot distinguish modified Return. The TUI also recognizes the common
 Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
 
 The forward destination chooser starts with known chats and uses the same
-literal/regexp Orderless components. `q p` can match `Quarterly Planning`, while
+literal/regexp components. `q p` can match `Quarterly Planning`, while
 the looser `qp` abbreviation does not. `Enter` accepts the highest-ranked local
 match directly. An exact email/UPN creates or opens a direct chat only when no
 local destination matches.
@@ -569,6 +645,9 @@ local destination matches.
 ---
 
 ## Keyboard Controls
+
+These are the default bindings. The in-app `?` view always shows the active
+configuration; use the `keybindings` object to replace any application action.
 
 | Key          | Action                                                    |
 | ------------ | --------------------------------------------------------- |
@@ -585,7 +664,7 @@ local destination matches.
 | `PgDn` / `J` | Scroll messages down                                      |
 | `/`          | Open search input (in Normal Mode)                        |
 | `Esc`        | Clear active search, or leave conversation for dashboard   |
-| `s`          | Orderless-search all chats and loaded messages             |
+| `s`          | Component-search all chats and loaded messages             |
 | `v` / `V`    | Filter chats by read state, type, favorite, and text      |
 | `U`          | Toggle unread-only over the active bookmark/filter         |
 | `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
@@ -601,7 +680,7 @@ local destination matches.
 | `R`          | Reply to the newest loaded message                         |
 | `f` / `F`    | Forward the newest loaded message through the chat chooser |
 | `E`          | Export complete selected chat as Markdown (Normal Mode)   |
-| `A`          | Export complete chat and start agent-shell analysis       |
+| `A`          | Export complete chat and run configured analysis          |
 | `h`          | Toggle hide/unhide on selected channel (channel mode)     |
 | `Ctrl+V`     | Paste image from clipboard (in Compose Mode)              |
 | `Ctrl+f`     | Browse and attach file from computer (in Compose Mode)    |
@@ -650,7 +729,7 @@ explicitly reset it, while `bu` remains the standalone Unread bookmark.
 | `t`              | Toggle activity-today-only                         |
 | `1` / `g` / `m`  | Toggle 1:1 / group / meeting chat types            |
 | `f`              | Toggle favorites-only                              |
-| `/`              | Edit Orderless/structured query                    |
+| `/`              | Edit component/structured query                    |
 | `Space`          | Toggle or cycle the selected filter row            |
 | `x`              | Clear the draft filter                             |
 | `Enter`          | Apply                                               |
@@ -659,7 +738,7 @@ explicitly reset it, while `bu` remains the standalone Unread bookmark.
 ### Chat Bookmarks
 
 Press `b` from normal mode and then a preset key. The popup also supports
-`j`/`k` and `Enter`. Presets replace the active `F` filter and remain entirely
+`j`/`k` and `Enter`. Presets replace the active filter and remain entirely
 local; applying one does not issue a Graph list request.
 
 | Bookmark | Chats shown                         |
@@ -764,5 +843,8 @@ go vet ./...
 
 See [LICENSE](LICENSE).
 
-## Thanks For Visiting
-Hope you liked it. Wanna **[buy Me a coffee](https://www.buymeacoffee.com/nospor)**?
+## Acknowledgements
+
+This fork retains the history and substantial foundation of
+[nospor/teams-tui-go](https://github.com/nospor/teams-tui-go). Thanks to the
+original maintainer and contributors who built the client this work extends.

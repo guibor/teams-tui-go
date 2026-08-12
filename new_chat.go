@@ -222,7 +222,7 @@ func (m Model) closeNewChatPicker() Model {
 }
 
 func (m Model) handleNewChatInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextNewChatInput, msg) {
 	case "ctrl+j":
 		return m.startNewChatCreation()
 	case "esc":
@@ -247,7 +247,7 @@ func (m Model) handleNewChatInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 func (m Model) handleNewChatNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	items := m.getUserSearchItems()
-	switch msg.String() {
+	switch m.keyName(keyContextNewChatResults, msg) {
 	case "esc", "q":
 		return m.closeNewChatPicker(), nil
 	case "ctrl+j":
@@ -280,7 +280,10 @@ func (m Model) handleNewChatNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 func (m Model) renderNewChatPopup(w, h int) string {
 	title := lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render("New Chat")
 	instructions := lipgloss.NewStyle().Foreground(colDimGray).Render(
-		"Type a name/email · Enter add/remove · arrows then Space toggle · Ctrl+Enter create",
+		fmt.Sprintf("Type a name/email · %s add first · %s toggle · %s create",
+			m.keybindings.Display(keyNewChatToggleFirst),
+			m.keybindings.Display(keyNewChatToggle),
+			m.keybindings.Display(keyNewChatCreate)),
 	)
 
 	selectedLabels := make([]string, 0, len(m.app.NewChatSelectedUsers))

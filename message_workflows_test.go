@@ -354,7 +354,7 @@ func TestForwardChooserCancelDiscardsPendingCopy(t *testing.T) {
 	}
 }
 
-func TestForwardChooserPreloadsAndAcceptsEmacsOrderlessLocalChat(t *testing.T) {
+func TestForwardChooserPreloadsAndAcceptsComponentSearchLocalChat(t *testing.T) {
 	model := newWorkflowChatListModel("source", "target", "other")
 	targetName := "Quarterly Planning"
 	otherName := "General Updates"
@@ -374,15 +374,15 @@ func TestForwardChooserPreloadsAndAcceptsEmacsOrderlessLocalChat(t *testing.T) {
 	model.app.UserSearchQuery = "q p"
 	model.updateUserSearchLocalResults()
 	if len(model.app.UserSearchLocalResults) != 1 || model.app.UserSearchLocalResults[0].ID != "target" {
-		t.Fatalf("Orderless destination results = %#v, want target", model.app.UserSearchLocalResults)
+		t.Fatalf("component-search destination results = %#v, want target", model.app.UserSearchLocalResults)
 	}
 
 	model, cmd := model.handleUserSearchInputModeKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
-		t.Fatal("accepting Orderless destination returned no load/compose command")
+		t.Fatal("accepting component-search destination returned no load/compose command")
 	}
 	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "target" {
-		t.Fatalf("accepted Orderless destination selected %#v, want target", selected)
+		t.Fatalf("accepted component-search destination selected %#v, want target", selected)
 	}
 	if !model.app.InputMode || model.textarea.Value() != "forward body" {
 		t.Fatalf("accepted destination input=%v body=%q", model.app.InputMode, model.textarea.Value())

@@ -21,7 +21,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/gen2brain/beeep"
-	"github.com/nospor/teams-tui-go/filepicker"
+	"github.com/guibor/teams-tui-go/filepicker"
 )
 
 // ---------------------------------------------------------------------------
@@ -89,7 +89,7 @@ type MsgThreadExported struct {
 }
 
 // MsgThreadAnalysisLaunched reports completion of a full-history export and
-// its handoff to an external agent-shell bridge.
+// its handoff to a configured external analysis command.
 type MsgThreadAnalysisLaunched struct {
 	Path  string
 	Count int
@@ -367,6 +367,10 @@ type Model struct {
 	// File picker for browsing/attaching files from computer.
 	filepicker filepicker.Model
 
+	// Configurable, mode-aware action bindings. Defaults exactly preserve the
+	// established keyboard workflow when config.json has no overrides.
+	keybindings KeyMap
+
 	lastWrittenMessages  int
 	lastWrittenReactions int
 }
@@ -386,12 +390,12 @@ func NewModel(app *App, clientID, userID string) Model {
 	ti.Width = 40
 
 	tiUser := textinput.New()
-	tiUser.Placeholder = "Orderless search chats/messages, or enter an exact email..."
+	tiUser.Placeholder = "Search chats/messages by components, or enter an exact email..."
 	tiUser.CharLimit = 100
 	tiUser.Width = 40
 
 	tiFilter := textinput.New()
-	tiFilter.Placeholder = "Orderless query: words, from:, type:, is:, after:..."
+	tiFilter.Placeholder = "Component query: words, from:, type:, is:, after:..."
 	tiFilter.CharLimit = 100
 	tiFilter.Width = 44
 
@@ -425,6 +429,7 @@ func NewModel(app *App, clientID, userID string) Model {
 			app.MessagesConversationID = chat.ID
 		}
 	}
+	defaultKeybindings, _ := NewKeyMap(nil)
 	return Model{
 		app:                      app,
 		clientID:                 clientID,
@@ -450,6 +455,7 @@ func NewModel(app *App, clientID, userID string) Model {
 		focused:                  true,
 		channelSelectedIndex:     -1,
 		filepicker:               fp,
+		keybindings:              defaultKeybindings,
 		lastWrittenMessages:      -1,
 		lastWrittenReactions:     -1,
 	}
@@ -1862,6 +1868,10 @@ func isEnhancedCtrlEnter(msg tea.Msg) bool {
 	}
 }
 
+func (m Model) keyName(context keyContext, msg tea.KeyMsg) string {
+	return m.keybindings.Canonical(context, msg.String())
+}
+
 // handleKey processes keyboard input and returns the updated model + command.
 func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.FilePickerPopupMode {
@@ -1930,7 +1940,11 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	key := msg.String()
+	context := keyContextNormalChat
+	if m.channelSelectedIndex >= 0 {
+		context = keyContextNormalChannel
+	}
+	key := m.keyName(context, msg)
 	if key != "g" {
 		m.pendingChatGoto = false
 	}
@@ -2415,7 +2429,7 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 func (m Model) handleInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.MentionPopupMode {
-		switch msg.String() {
+		switch m.keyName(keyContextMention, msg) {
 		case "esc":
 			m.app.MentionPopupMode = false
 			m.app.MentionSuggestions = nil
@@ -2486,7 +2500,7 @@ func (m Model) handleInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	switch msg.String() {
+	switch m.keyName(keyContextCompose, msg) {
 	case "esc":
 		m.app.InputMode = false
 		m.app.InputBuffer = ""
@@ -2599,7 +2613,7 @@ func (m Model) handleInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleSearchModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextSearchInput, msg) {
 	case "esc":
 		m.app.SearchMode = false
 		m.searchInput.Blur()
@@ -2655,7 +2669,7 @@ func (m Model) handleSearchModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextMessageView, msg) {
 	case "esc", "q", "v":
 		var cmd tea.Cmd
 		if m.app.AttachmentCursorMode {
@@ -2824,7 +2838,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextMessageSelect, msg) {
 	case "esc", "m":
 		m.app.MessageSelectionMode = false
 		return m, nil
@@ -3040,14 +3054,15 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleReactionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	key := m.keyName(keyContextReaction, msg)
+	switch key {
 	case "esc", "+", "a":
 		m.app.ReactionMode = false
 		return m, nil
 
 	case "1", "2", "3", "4", "5", "6":
 		types := []string{"👍", "❤️", "😂", "😮", "😢", "😡"}
-		idx := int(msg.String()[0] - '1')
+		idx := int(key[0] - '1')
 		if idx >= 0 && idx < len(types) {
 			reactionType := types[idx]
 			if m.app.MessageSelectedIndex < len(m.app.Messages) {
@@ -3099,7 +3114,7 @@ func (m Model) handleReactionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleDeleteConfirmModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextDeleteConfirm, msg) {
 	case "y", "Y":
 		m.app.DeleteConfirmMode = false
 		m.app.MessageSelectionMode = false
@@ -3119,7 +3134,7 @@ func (m Model) handleDeleteConfirmModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) updateUrlSelection(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextURLList, msg) {
 	case "esc", "q":
 		m.app.UrlSelectionMode = false
 		return m, nil
@@ -3169,7 +3184,7 @@ func (m Model) updateUrlSelection(msg tea.KeyMsg) (Model, tea.Cmd) {
 }
 
 func (m Model) handleUrlSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextURLList, msg) {
 	case "esc", "q":
 		m.app.UrlSelectionMode = false
 		return m, nil
@@ -3619,7 +3634,15 @@ func (m Model) renderRightPanel(w, h int) string {
 	if !m.app.InputMode {
 		detail := m.conversationMetadataDetail()
 		if m.app.MessageSelectionMode {
-			detail = "MESSAGE MODE · j/k:nav · r:read · R:reply · f:forward · +:react · y:yank · v:view · ESC/m:exit"
+			detail = fmt.Sprintf("MESSAGE MODE · %s/%s nav · %s read · %s reply · %s forward · %s react · %s copy · %s view",
+				m.keybindings.Primary(keyMessageNext),
+				m.keybindings.Primary(keyMessagePrevious),
+				m.keybindings.Primary(keyChatMarkRead),
+				m.keybindings.Primary(keyMessageReply),
+				m.keybindings.Primary(keyMessageForward),
+				m.keybindings.Primary(keyMessageReact),
+				m.keybindings.Primary(keyMessageCopy),
+				m.keybindings.Primary(keyMessageView))
 		}
 		header := m.renderConversationHeader(w, detail)
 		messageHeight := h - lipgloss.Height(header)
@@ -3698,11 +3721,11 @@ func (m Model) renderRightPanel(w, h int) string {
 		msgH = 1
 	}
 
-	detail := "COMPOSING · ESC to cancel"
+	detail := "COMPOSING · " + m.keybindings.Primary(keyComposeCancel) + " to cancel"
 	if m.app.EditingMessageID != nil {
-		detail = "EDITING MESSAGE · ESC to cancel"
+		detail = "EDITING MESSAGE · " + m.keybindings.Primary(keyComposeCancel) + " to cancel"
 	} else if m.app.ChannelReplyToID != "" {
-		detail = "REPLYING TO THREAD · ESC to cancel"
+		detail = "REPLYING TO THREAD · " + m.keybindings.Primary(keyComposeCancel) + " to cancel"
 	} else if m.app.ReplyToMessage != nil {
 		ref := m.app.ReplyToMessage
 		sender := "someone"
@@ -3712,7 +3735,7 @@ func (m Model) renderRightPanel(w, h int) string {
 				sender = "yourself"
 			}
 		}
-		detail = "REPLYING TO " + sender + " · ESC to cancel"
+		detail = "REPLYING TO " + sender + " · " + m.keybindings.Primary(keyComposeCancel) + " to cancel"
 	}
 	header := m.renderConversationHeader(w, detail)
 	messageHeight := msgH - lipgloss.Height(header)
@@ -3730,11 +3753,15 @@ func (m Model) renderRightPanel(w, h int) string {
 	m.textarea.SetHeight(inputH - 2)
 
 	// Build input box contents — add quote preview when replying.
-	hintText := "Type your message (Ctrl+Enter/Ctrl+J: send, Enter: new line, ESC: cancel, @: mention, paste IMAGE"
+	hintText := fmt.Sprintf("Type your message (%s: send, %s: new line, %s: cancel, @: mention, %s: paste image",
+		m.keybindings.Display(keyComposeSend),
+		m.keybindings.Display(keyComposeNewline),
+		m.keybindings.Display(keyComposeCancel),
+		m.keybindings.Display(keyComposePasteImage))
 	if m.app.Features.FileUpload {
-		hintText += ", Ctrl+f: attach file"
+		hintText += ", " + m.keybindings.Display(keyComposeAttach) + ": attach file"
 	}
-	hintText += ", Ctrl+g: open external editor)"
+	hintText += ", " + m.keybindings.Display(keyComposeExternalEditor) + ": external editor)"
 
 	hintLine := lipgloss.NewStyle().Foreground(colDimGray).Render(hintText)
 	inputParts := []string{hintLine}
@@ -4234,7 +4261,7 @@ func (m Model) toggleUnreadOverlay() (Model, tea.Cmd) {
 
 func (m Model) handleChatFilterPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.ChatFilterInputMode {
-		switch msg.String() {
+		switch m.keyName(keyContextFilterInput, msg) {
 		case "esc":
 			m.chatFilterInput.SetValue(m.app.DraftChatFilter.Query)
 			m.chatFilterInput.Blur()
@@ -4251,7 +4278,7 @@ func (m Model) handleChatFilterPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	switch msg.String() {
+	switch m.keyName(keyContextFilter, msg) {
 	case "esc", "q":
 		m.app.ChatFilterPopupMode = false
 		m.app.DraftChatFilter = cloneChatListFilter(m.app.ActiveChatFilter)
@@ -4348,8 +4375,12 @@ func (m Model) renderChatFilterPopup(w, h int) string {
 	}
 	lines = append(lines,
 		"",
-		lipgloss.NewStyle().Foreground(colDimGray).Render("u/r/a read state · t/1/g/m/f toggle · / edit query"),
-		lipgloss.NewStyle().Foreground(colDimGray).Render("Space toggle · Enter apply · x clear · Esc cancel"),
+		lipgloss.NewStyle().Foreground(colDimGray).Render(
+			m.keybindings.Primary(keyFilterUnread)+"/"+m.keybindings.Primary(keyFilterRead)+"/"+m.keybindings.Primary(keyFilterAll)+
+				" read state · "+m.keybindings.Primary(keyListEditQuery)+" edit query"),
+		lipgloss.NewStyle().Foreground(colDimGray).Render(
+			m.keybindings.Primary(keyFilterToggle)+" toggle · "+m.keybindings.Primary(keyListSelect)+" apply · "+
+				m.keybindings.Primary(keyFilterClear)+" clear · "+m.keybindings.Primary(keyListClose)+" cancel"),
 	)
 
 	return lipgloss.NewStyle().
@@ -5469,9 +5500,9 @@ func (m Model) renderUrlSelection(w, h int) string {
 
 	var titleText string
 	if m.app.UrlSelectionOpenMode {
-		titleText = "Select URL to open (Enter to open, Esc/q to cancel):"
+		titleText = fmt.Sprintf("Select URL (%s open, %s cancel):", m.keybindings.Display(keyURLOpen), m.keybindings.Display(keyListClose))
 	} else {
-		titleText = "Select URL to yank (Enter/y to copy, Esc/q to cancel):"
+		titleText = fmt.Sprintf("Select URL (%s copy, %s cancel):", m.keybindings.Display(keyURLCopy), m.keybindings.Display(keyListClose))
 	}
 
 	title := lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render(titleText)
@@ -5564,7 +5595,7 @@ func (m Model) chatForSearch(conversationID string) Chat {
 	return Chat{ID: conversationID}
 }
 
-// messageMatches applies the shared structured and Orderless query grammar.
+// messageMatches applies the shared structured component-query grammar.
 func (m Model) messageMatches(msg *Message, query string) bool {
 	parsed := parseSearchQuery(query)
 	if len(parsed.Terms) == 0 {
@@ -5891,16 +5922,20 @@ func (m Model) renderSearchPopup(w, h int) string {
 		}
 	}
 	titleStyle := lipgloss.NewStyle().Foreground(colYellow).Bold(true)
-	titleText := "Search History (Enter to search)"
+	titleText := "Search History (" + m.keybindings.Primary(keyInputSubmit) + " to search)"
 	if m.app.SearchQuery != "" {
 		titleText = fmt.Sprintf("Search History: %s | Results for '%s'", displayName, m.app.SearchQuery)
 	}
 	titleText, _ = bidiVisualLine(titleText)
 	title := titleStyle.Render(titleText)
 
-	instructions := lipgloss.NewStyle().Foreground(colDimGray).Render(
-		" j/k: Nav | g: Go to msg | y: Yank | u: URL | o: Open URL | Enter: Expand | /: Edit | Esc: Close",
-	)
+	instructions := lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf(
+		" %s/%s: navigate | %s: jump | %s: copy | %s: URL | %s: open URL | %s: expand | %s: edit | %s: close",
+		m.keybindings.Primary(keyListNext), m.keybindings.Primary(keyListPrevious),
+		m.keybindings.Primary(keySearchJump), m.keybindings.Primary(keySearchCopyMessage),
+		m.keybindings.Primary(keySearchCopyURLs), m.keybindings.Primary(keySearchOpenURLs),
+		m.keybindings.Primary(keyListSelect), m.keybindings.Primary(keyListEditQuery),
+		m.keybindings.Primary(keyListClose)))
 
 	var list strings.Builder
 	list.WriteString(title + "\n")
@@ -6143,7 +6178,7 @@ func (m Model) renderSearchPopup(w, h int) string {
 
 // handleSearchPopupNavigationKey handles keystrokes inside results list navigation mode.
 func (m Model) handleSearchPopupNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextSearchResults, msg) {
 	case "esc", "q":
 		m.app.SearchPopupMode = false
 		m.app.SearchMode = false
@@ -6889,7 +6924,7 @@ func (m Model) handleUserSearchInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.NewChatMode {
 		return m.handleNewChatInputModeKey(msg)
 	}
-	switch msg.String() {
+	switch m.keyName(keyContextGlobalInput, msg) {
 	case "esc":
 		m.app.UserSearchMode = false
 		m.userSearchInput.Blur()
@@ -6968,7 +7003,7 @@ func (m Model) handleUserSearchNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	}
 	items := m.getUserSearchItems()
 
-	switch msg.String() {
+	switch m.keyName(keyContextGlobalResults, msg) {
 	case "esc", "q":
 		m.app.UserSearchPopupMode = false
 		m.app.UserSearchMode = false
@@ -7073,11 +7108,17 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 	}
 	titleStyle := lipgloss.NewStyle().Foreground(colCyan).Bold(true)
 	forwarding := m.app.PendingForwardText != ""
-	titleText := "Orderless Search: Chats and Loaded Messages"
-	instructionText := " j/k: Nav | Enter: Open result or typed email | /: Edit | Esc: Close"
+	titleText := "Search Chats and Loaded Messages"
+	instructionText := fmt.Sprintf(" %s/%s: navigate | %s: open result/email | %s: edit | %s: close",
+		m.keybindings.Primary(keyListNext), m.keybindings.Primary(keyListPrevious),
+		m.keybindings.Primary(keyListSelect), m.keybindings.Primary(keyListEditQuery),
+		m.keybindings.Primary(keyListClose))
 	if forwarding {
 		titleText = "Forward Message to Chat"
-		instructionText = " j/k: Nav | Enter: Choose destination or typed email | /: Edit | Esc: Cancel"
+		instructionText = fmt.Sprintf(" %s/%s: navigate | %s: choose destination/email | %s: edit | %s: cancel",
+			m.keybindings.Primary(keyListNext), m.keybindings.Primary(keyListPrevious),
+			m.keybindings.Primary(keyListSelect), m.keybindings.Primary(keyListEditQuery),
+			m.keybindings.Primary(keyListClose))
 	}
 	title := titleStyle.Render(titleText)
 
@@ -7095,7 +7136,7 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 
 	if len(items) == 0 {
 		if m.app.UserSearchQuery == "" {
-			emptyText := "Type Orderless components or an exact email."
+			emptyText := "Type literal/regexp components or an exact email."
 			if forwarding {
 				emptyText = "Type a destination name/email and press Enter/arrows."
 			}
@@ -7359,9 +7400,13 @@ func (m Model) renderMessagePopup(w, h int) string {
 		attHeaderStyle := lipgloss.NewStyle().Foreground(colYellow).Bold(true)
 		attHeader := "Attachments:"
 		if m.app.AttachmentCursorMode {
-			attHeader += " [Tab:exit | ↑↓:select | Enter:download]"
+			attHeader += fmt.Sprintf(" [%s:exit | %s/%s:select | %s:download]",
+				m.keybindings.Primary(keyMessageViewAttachments),
+				m.keybindings.Primary(keyMessageNext),
+				m.keybindings.Primary(keyMessagePrevious),
+				m.keybindings.Primary(keyMessageViewOpen))
 		} else if m.app.Features.FilePreview {
-			attHeader += " [Tab to select & download]"
+			attHeader += " [" + m.keybindings.Primary(keyMessageViewAttachments) + " to select and download]"
 		}
 		attachmentsLines = append(attachmentsLines, attHeaderStyle.Render(attHeader))
 		for i, att := range vAtts {
@@ -7429,7 +7474,12 @@ func (m Model) renderMessagePopup(w, h int) string {
 		}
 	}
 
-	footer := lipgloss.NewStyle().Foreground(colDimGray).Italic(true).Render("Press ESC/q/v/Enter to close | j/k to navigate | J/K to scroll | ctrl+g to open in external editor")
+	footer := lipgloss.NewStyle().Foreground(colDimGray).Italic(true).Render(fmt.Sprintf(
+		"%s close | %s/%s navigate | %s/%s scroll | %s external editor",
+		m.keybindings.Display(keyMessageViewClose),
+		m.keybindings.Primary(keyMessageNext), m.keybindings.Primary(keyMessagePrevious),
+		m.keybindings.Primary(keyMessageViewScrollDown), m.keybindings.Primary(keyMessageViewScrollUp),
+		m.keybindings.Primary(keyMessageExternalEditor)))
 
 	nonBodyH := len(headerLines) + 1
 	if len(attachmentsLines) > 0 {
@@ -7487,7 +7537,13 @@ func (m Model) renderMessagePopup(w, h int) string {
 
 		headerText := lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("Message:")
 		if len(wrappedBody) > viewportH {
-			headerText += lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf(" (Shift+J/K to scroll - %d/%d)", m.app.MessagePopupScrollOffset+1, len(wrappedBody)))
+			headerText += lipgloss.NewStyle().Foreground(colDimGray).Render(fmt.Sprintf(
+				" (%s/%s to scroll - %d/%d)",
+				m.keybindings.Primary(keyMessageViewScrollDown),
+				m.keybindings.Primary(keyMessageViewScrollUp),
+				m.app.MessagePopupScrollOffset+1,
+				len(wrappedBody),
+			))
 		}
 		bodyLines = append(bodyLines, headerText)
 		bodyLines = append(bodyLines, visibleBody...)
@@ -7641,143 +7697,142 @@ func (m Model) getHelpContentLines() []string {
 		binds [][2]string
 	}{
 		{"Navigation", [][2]string{
-			{"j / ↓ / M-n", "Navigate list down (within section)"},
-			{"k / ↑ / M-p", "Navigate list up (within section)"},
-			{"M-< / M->", "Jump to first / last item in the active section"},
-			{"gg / G", "Jump to first / last chat"},
-			{"h / l", "Jump to first / last chat (h hides channels in channel mode)"},
-			{"< / >, H / L", "Jump to top / bottom of loaded messages"},
-			{"Tab", "Switch between Chats & Channels"},
-			{"m", "Enter message selection mode"},
-			{"c / C", "Compose new message in the selected chat"},
-			{"N", "Create a new 1:1 or group chat by choosing participants"},
-			{"R", "Reply to newest loaded message"},
-			{"f / F", "Forward newest loaded message"},
-			{"s", "Orderless-search all chats and loaded messages"},
-			{"/", "Search message history"},
-			{"v / V", "Filter chat list by state, type, favorite, or text"},
-			{"U", "Toggle unread-only over the current bookmark/filter"},
-			{"b", "Open mu4e-style chat bookmarks (bu unread, bi inbox)"},
-			{"a", "Open actions for the selected chat"},
-			{"T", "Choose a loaded meeting recording or transcript"},
-			{"*", "Toggle favourite (chats only)"},
-			{"o / O", "Open selected chat in Teams web / Teams desktop"},
-			{"r / i", "Mark selected chat read"},
-			{"u", "Mark selected chat unread"},
-			{"E", "Export complete chat history as Markdown"},
-			{"A", "Export complete chat and analyze in agent-shell"},
-			{"h", "Toggle hide/unhide channel (channels only)"},
-			{"p", "Presence status of chat participants (chats only, feature: presence_enabled)"},
-			{"n", "Cycle notification mode"},
-			{"D", "Toggle last-message date/time in chat rows"},
-			{"ESC", "Leave the current conversation for the dashboard"},
-			{"?", "Show this help"},
-			{"q", "Leave conversation; press again on dashboard to quit"},
-			{"Ctrl+C", "Quit immediately"},
+			{m.keybindings.Display(keyChatNext), "Navigate list down (within section)"},
+			{m.keybindings.Display(keyChatPrevious), "Navigate list up (within section)"},
+			{m.keybindings.Display(keyChatFirst) + " · " + m.keybindings.Display(keyChatLast), "Jump to first / last chat"},
+			{m.keybindings.Primary(keyChatFirstPrefix) + m.keybindings.Primary(keyChatFirstPrefix), "Alternative first-chat sequence"},
+			{m.keybindings.Display(keyMessageTop) + " · " + m.keybindings.Display(keyMessageBottom), "Jump to top / bottom of loaded messages"},
+			{m.keybindings.Display(keySidebarSwitch), "Switch between Chats & Channels"},
+			{m.keybindings.Display(keyMessageSelectMode), "Enter message selection mode"},
+			{m.keybindings.Display(keyComposeStart), "Compose new message in the selected chat"},
+			{m.keybindings.Display(keyNewChatOpen), "Create a new 1:1 or group chat by choosing participants"},
+			{m.keybindings.Display(keyMessageReply), "Reply to newest loaded message"},
+			{m.keybindings.Display(keyMessageForward), "Forward newest loaded message"},
+			{m.keybindings.Display(keySearchGlobal), "Component-search all chats and loaded messages"},
+			{m.keybindings.Display(keySearchHistory), "Search message history"},
+			{m.keybindings.Display(keyFilterOpen), "Filter chat list by state, type, favorite, or text"},
+			{m.keybindings.Display(keyUnreadOverlay), "Toggle unread-only over the current bookmark/filter"},
+			{m.keybindings.Display(keyBookmarksOpen), "Open two-key chat bookmarks (bu unread, bi inbox)"},
+			{m.keybindings.Display(keyThreadActionsOpen), "Open actions for the selected chat"},
+			{m.keybindings.Display(keyArtifactsOpen), "Choose a loaded meeting recording or transcript"},
+			{m.keybindings.Display(keyChatFavorite), "Toggle favourite (chats only)"},
+			{m.keybindings.Display(keyChatOpenBrowser) + " · " + m.keybindings.Display(keyChatOpenApp), "Open selected chat in Teams web / Teams desktop"},
+			{m.keybindings.Display(keyChatMarkRead), "Mark selected chat read"},
+			{m.keybindings.Display(keyChatMarkUnread), "Mark selected chat unread"},
+			{m.keybindings.Display(keyChatExport), "Export complete chat history as Markdown"},
+			{m.keybindings.Display(keyChatAnalyze), "Export complete chat and run configured analysis"},
+			{m.keybindings.Display(keyChannelToggleHidden), "Toggle hide/unhide channel (channels only)"},
+			{m.keybindings.Display(keyPresenceOpen), "Presence status of chat participants (feature: presence_enabled)"},
+			{m.keybindings.Display(keyNotificationsCycle), "Cycle notification mode"},
+			{m.keybindings.Display(keyChatDatesToggle), "Toggle last-message date/time in chat rows"},
+			{m.keybindings.Display(keyDashboardLeave), "Leave the current conversation for the dashboard"},
+			{m.keybindings.Display(keyHelpOpen), "Show this help"},
+			{m.keybindings.Display(keyAppQuit), "Leave conversation; press again on dashboard to quit"},
+			{m.keybindings.Display(keyAppQuitNow), "Quit immediately"},
 		}},
-		{"Message Selection (m)", [][2]string{
-			{"j / k", "Navigate messages"},
-			{"< / >, H / L", "Select oldest / newest loaded message"},
-			{"v", "View message popup"},
-			{"y", "Yank message to clipboard"},
-			{"u", "Extract URLs"},
-			{"o", "Open URLs"},
-			{"+ / a", "React to message"},
-			{"c / C", "Compose without quote"},
-			{"R", "Reply (quote) message"},
-			{"f / F", "Forward message"},
-			{"r / i", "Mark conversation read"},
-			{"d", "Delete message"},
-			{"e", "Edit message"},
-			{"p", "Presence status (feature: presence_enabled)"},
-			{"I", "User profile info (feature: user_profile_enabled)"},
-			{"ESC / m", "Exit selection mode"},
+		{"Message Selection (" + m.keybindings.Primary(keyMessageSelectMode) + ")", [][2]string{
+			{m.keybindings.Display(keyMessageNext) + " · " + m.keybindings.Display(keyMessagePrevious), "Navigate messages"},
+			{m.keybindings.Display(keyMessageOldest) + " · " + m.keybindings.Display(keyMessageNewest), "Select oldest / newest loaded message"},
+			{m.keybindings.Display(keyMessageView), "View message popup"},
+			{m.keybindings.Display(keyMessageCopy), "Copy message to clipboard"},
+			{m.keybindings.Display(keyMessageCopyURLs), "Extract URLs"},
+			{m.keybindings.Display(keyMessageOpenURLs), "Open URLs"},
+			{m.keybindings.Display(keyMessageReact), "React to message"},
+			{m.keybindings.Display(keyComposeStart), "Compose without quote"},
+			{m.keybindings.Display(keyMessageReply), "Reply (quote) message"},
+			{m.keybindings.Display(keyMessageForward), "Forward message"},
+			{m.keybindings.Display(keyChatMarkRead), "Mark conversation read"},
+			{m.keybindings.Display(keyMessageDelete), "Delete message"},
+			{m.keybindings.Display(keyMessageEdit), "Edit message"},
+			{m.keybindings.Display(keyPresenceOpen), "Presence status (feature: presence_enabled)"},
+			{m.keybindings.Display(keyMessageProfile), "User profile info (feature: user_profile_enabled)"},
+			{m.keybindings.Display(keyMessageSelectClose), "Exit selection mode"},
 		}},
-		{"Message View Popup (v)", [][2]string{
-			{"j / k", "Navigate to next/prev message"},
-			{"< / >, H / L", "Select oldest / newest loaded message"},
-			{"J / K", "Scroll message body"},
-			{"c / C", "Compose without quote"},
-			{"R", "Reply to message"},
-			{"f / F", "Forward message"},
-			{"r / i", "Mark conversation read"},
-			{"Tab", "Switch to attachment cursor mode"},
-			{"Enter", "Download selected attachment (feature: file_preview_enabled)"},
-			{"ESC / q / v", "Close popup"},
+		{"Message View Popup (" + m.keybindings.Primary(keyMessageView) + ")", [][2]string{
+			{m.keybindings.Display(keyMessageNext) + " · " + m.keybindings.Display(keyMessagePrevious), "Navigate to next/previous message"},
+			{m.keybindings.Display(keyMessageOldest) + " · " + m.keybindings.Display(keyMessageNewest), "Select oldest / newest loaded message"},
+			{m.keybindings.Display(keyMessageViewScrollDown) + " · " + m.keybindings.Display(keyMessageViewScrollUp), "Scroll message body"},
+			{m.keybindings.Display(keyComposeStart), "Compose without quote"},
+			{m.keybindings.Display(keyMessageReply), "Reply to message"},
+			{m.keybindings.Display(keyMessageForward), "Forward message"},
+			{m.keybindings.Display(keyChatMarkRead), "Mark conversation read"},
+			{m.keybindings.Display(keyMessageViewAttachments), "Switch to attachment cursor mode"},
+			{m.keybindings.Display(keyMessageViewOpen), "Download selected attachment (feature: file_preview_enabled)"},
+			{m.keybindings.Display(keyMessageViewClose), "Close popup"},
 		}},
-		{"History Search (/)", [][2]string{
+		{"History Search (" + m.keybindings.Primary(keySearchHistory) + ")", [][2]string{
 			{"Query", "Words plus from:/in:/is:/type:/has:/after:/before:"},
-			{"Enter", "Submit query / focus results / expand context"},
-			{"j / k", "Navigate results"},
-			{"y", "Yank selected message"},
-			{"u", "Extract URLs"},
-			{"o", "Open URLs"},
-			{"g", "Go to message in normal view"},
-			{"ESC", "Close search popup"},
+			{m.keybindings.Display(keyInputSubmit), "Submit query / focus results / expand context"},
+			{m.keybindings.Display(keyListNext) + " · " + m.keybindings.Display(keyListPrevious), "Navigate results"},
+			{m.keybindings.Display(keySearchCopyMessage), "Copy selected message"},
+			{m.keybindings.Display(keySearchCopyURLs), "Extract URLs"},
+			{m.keybindings.Display(keySearchOpenURLs), "Open URLs"},
+			{m.keybindings.Display(keySearchJump), "Go to message in normal view"},
+			{m.keybindings.Display(keyListClose), "Close search popup"},
 		}},
-		{"Chat Search (s)", [][2]string{
-			{"Type", "Orderless literal/regexp components across all chats"},
+		{"Chat Search (" + m.keybindings.Primary(keySearchGlobal) + ")", [][2]string{
+			{"Type", "Literal/regexp components across all chats"},
 			{"Results", "Chat names, participants, then loaded messages"},
 			{"Syntax", "Quotes, -term, from:/in:/is:/type:/has:/after:/before:"},
-			{"Enter", "Open selected result / direct open by email"},
-			{"j / k", "Navigate results"},
-			{"ESC", "Close popup"},
+			{m.keybindings.Display(keyInputSubmit), "Open selected result / direct open by email"},
+			{m.keybindings.Display(keyListNext) + " · " + m.keybindings.Display(keyListPrevious), "Navigate results"},
+			{m.keybindings.Display(keyListClose), "Close popup"},
 		}},
-		{"New Chat (N)", [][2]string{
+		{"New Chat (" + m.keybindings.Primary(keyNewChatOpen) + ")", [][2]string{
 			{"Type", "Find known people and the tenant directory"},
-			{"Enter", "Add/remove the first match; exact email also works"},
-			{"Arrows / j / k", "Navigate participant matches"},
-			{"Space / Enter", "Add/remove highlighted participant"},
-			{"Ctrl+Enter / Ctrl+J", "Create chat and open an empty composer"},
-			{"ESC", "Cancel without creating or sending"},
+			{m.keybindings.Display(keyNewChatToggleFirst), "Add/remove the first match; exact email also works"},
+			{m.keybindings.Display(keyListNext) + " · " + m.keybindings.Display(keyListPrevious), "Navigate participant matches"},
+			{m.keybindings.Display(keyNewChatToggle), "Add/remove highlighted participant"},
+			{m.keybindings.Display(keyNewChatCreate), "Create chat and open an empty composer"},
+			{m.keybindings.Display(keyNewChatCancelInput) + " · " + m.keybindings.Display(keyListClose), "Cancel without creating or sending"},
 		}},
-		{"Chat Filter (v/V)", [][2]string{
-			{"j / k", "Navigate filter characteristics"},
-			{"Space", "Cycle/toggle selected characteristic"},
-			{"u / r / a", "Unread only / read only / all states"},
-			{"t / 1 / g / m / f", "Toggle today / 1:1 / group / meeting / favorites"},
-			{"/", "Edit the shared Orderless/structured query"},
-			{"x", "Clear all filter characteristics"},
-			{"Enter", "Apply filter"},
-			{"ESC", "Cancel without changing active filter"},
+		{"Chat Filter (" + m.keybindings.Display(keyFilterOpen) + ")", [][2]string{
+			{m.keybindings.Display(keyListNext) + " · " + m.keybindings.Display(keyListPrevious), "Navigate filter characteristics"},
+			{m.keybindings.Display(keyFilterToggle), "Cycle/toggle selected characteristic"},
+			{m.keybindings.Display(keyFilterUnread) + " · " + m.keybindings.Display(keyFilterRead) + " · " + m.keybindings.Display(keyFilterAll), "Unread only / read only / all states"},
+			{m.keybindings.Display(keyFilterToday) + " · " + m.keybindings.Display(keyFilterDirect) + " · " + m.keybindings.Display(keyFilterGroup) + " · " + m.keybindings.Display(keyFilterMeeting) + " · " + m.keybindings.Display(keyFilterFavorites), "Toggle today / 1:1 / group / meeting / favorites"},
+			{m.keybindings.Display(keyListEditQuery), "Edit the shared component/structured query"},
+			{m.keybindings.Display(keyFilterClear), "Clear all filter characteristics"},
+			{m.keybindings.Display(keyListSelect), "Apply filter"},
+			{m.keybindings.Display(keyListClose), "Cancel without changing active filter"},
 		}},
-		{"Chat Bookmarks (b)", [][2]string{
+		{"Chat Bookmarks (" + m.keybindings.Primary(keyBookmarksOpen) + ")", [][2]string{
 			{"bu / br", "Unread / read chats"},
 			{"bi / ba", "Inbox / all chats (clear filters)"},
 			{"bt / bf", "Today's activity / favorites"},
-			{"U", "Toggle unread over the current bookmark"},
+			{m.keybindings.Display(keyUnreadOverlay), "Toggle unread over the current bookmark"},
 			{"bd / bg / bm", "Direct / group / meeting chats"},
 			{"config.json", "Add or override presets with chat_bookmarks"},
-			{"j / k / Enter", "Navigate and apply a preset"},
-			{"ESC", "Cancel"},
+			{m.keybindings.Display(keyListNext) + " · " + m.keybindings.Display(keyListPrevious) + " · " + m.keybindings.Display(keyListSelect), "Navigate and apply a preset"},
+			{m.keybindings.Display(keyBookmarkClose), "Cancel"},
 		}},
-		{"Thread Actions (a)", [][2]string{
-			{"o / O", "Open in browser / Teams desktop"},
-			{"c / R / f", "Compose / reply / forward"},
-			{"r / u / *", "Mark read / unread / toggle favorite"},
-			{"a", "Capture in the configured dated thread list"},
-			{"A", "Export complete transcript and analyze with agent-shell"},
-			{"e / y", "Export complete transcript / copy Teams link"},
-			{"t", "Choose a recording or transcript"},
-			{"j / k / Enter", "Navigate and run an action"},
-			{"ESC", "Cancel"},
+		{"Thread Actions (" + m.keybindings.Primary(keyThreadActionsOpen) + ")", [][2]string{
+			{m.keybindings.Display(keyThreadOpenBrowser) + " · " + m.keybindings.Display(keyThreadOpenApp), "Open in browser / Teams desktop"},
+			{m.keybindings.Display(keyThreadCompose) + " · " + m.keybindings.Display(keyThreadReply) + " · " + m.keybindings.Display(keyThreadForward), "Compose / reply / forward"},
+			{m.keybindings.Display(keyThreadRead) + " · " + m.keybindings.Display(keyThreadUnread) + " · " + m.keybindings.Display(keyThreadFavorite), "Mark read / unread / toggle favorite"},
+			{m.keybindings.Display(keyThreadCapture), "Capture in the configured dated thread list"},
+			{m.keybindings.Display(keyThreadAnalyze), "Export complete transcript and run analysis"},
+			{m.keybindings.Display(keyThreadExport) + " · " + m.keybindings.Display(keyThreadCopyLink), "Export complete transcript / copy Teams link"},
+			{m.keybindings.Display(keyThreadArtifacts), "Choose a recording or transcript"},
+			{m.keybindings.Display(keyListNext) + " · " + m.keybindings.Display(keyListPrevious) + " · " + m.keybindings.Display(keyListSelect), "Navigate and run an action"},
+			{m.keybindings.Display(keyListClose), "Cancel"},
 		}},
-		{"Recordings / Transcripts (T)", [][2]string{
-			{"j / k", "Navigate every loaded resource event"},
-			{"Enter / o", "Open direct recording or Teams event link"},
-			{"y", "Copy selected resource link"},
-			{"ESC", "Close"},
+		{"Recordings / Transcripts (" + m.keybindings.Primary(keyArtifactsOpen) + ")", [][2]string{
+			{m.keybindings.Display(keyListNext) + " · " + m.keybindings.Display(keyListPrevious), "Navigate every loaded resource event"},
+			{m.keybindings.Display(keyArtifactOpen), "Open direct recording or Teams event link"},
+			{m.keybindings.Display(keyArtifactCopy), "Copy selected resource link"},
+			{m.keybindings.Display(keyListClose), "Close"},
 		}},
 		{"Composing Messages", [][2]string{
 			{"Type", "Write a multiline message"},
 			{"@", "Open autocomplete mention popup"},
-			{"j / k / Tab", "Navigate suggestions (when mention popup is open)"},
-			{"Ctrl+Enter / Ctrl+J", "Send message"},
-			{"Enter", "Insert new line / select mention suggestion"},
-			{"Ctrl+v", "Paste image from clipboard"},
-			{"Ctrl+f", "Browse and attach file (feature: file_upload_enabled)"},
-			{"Ctrl+g", "Compose/edit in external editor (e.g. vim)"},
-			{"ESC", "Cancel composing"},
+			{m.keybindings.Display(keyMentionNext) + " · " + m.keybindings.Display(keyMentionPrevious), "Navigate suggestions (when mention popup is open)"},
+			{m.keybindings.Display(keyComposeSend), "Send message"},
+			{m.keybindings.Display(keyComposeNewline), "Insert new line"},
+			{m.keybindings.Display(keyComposePasteImage), "Paste image from clipboard"},
+			{m.keybindings.Display(keyComposeAttach), "Browse and attach file (feature: file_upload_enabled)"},
+			{m.keybindings.Display(keyComposeExternalEditor), "Compose/edit in external editor"},
+			{m.keybindings.Display(keyComposeCancel), "Cancel composing"},
 		}},
 	}
 
@@ -7813,7 +7868,7 @@ func (m Model) getHelpContentLines() []string {
 	for _, sec := range sections {
 		contentLines = append(contentLines, labelStyle.Render(sec.name))
 		for _, bind := range sec.binds {
-			key := keyStyle.Render(fmt.Sprintf("  %-22s", bind[0]))
+			key := keyStyle.Render(fmt.Sprintf("  %-28s", truncate(bind[0], 28)))
 			contentLines = append(contentLines, key+bind[1])
 		}
 		contentLines = append(contentLines, "")
@@ -7850,7 +7905,7 @@ func (m Model) clampHelpScrollOffset() {
 }
 
 func (m Model) handleHelpPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextHelp, msg) {
 	case "esc", "q", "?", "enter":
 		m.app.HelpPopupMode = false
 	case "j", "down":
@@ -7913,7 +7968,11 @@ func (m Model) renderHelpPopup(w, h int) string {
 	var scrollIndicator string
 	if totalContentLines > viewportH {
 		percent := int(float64(m.app.HelpScrollOffset) / float64(maxScroll) * 100)
-		scrollIndicator = fmt.Sprintf(" %s %d%%", dimStyle.Render("• Scroll j/k or ↓/↑ •"), percent)
+		scrollIndicator = fmt.Sprintf(
+			" %s %d%%",
+			dimStyle.Render(fmt.Sprintf("• Scroll %s / %s •", m.keybindings.Primary(keyHelpDown), m.keybindings.Primary(keyHelpUp))),
+			percent,
+		)
 	}
 
 	title := lipgloss.NewStyle().Foreground(colCyan).Bold(true).Render("Keyboard Shortcuts") + scrollIndicator
@@ -7937,7 +7996,7 @@ func (m Model) renderHelpPopup(w, h int) string {
 	lines = append(lines, title, "")
 	lines = append(lines, visibleContent...)
 
-	footer := dimStyle.Italic(true).Render("Press ESC / q / ? to close")
+	footer := dimStyle.Italic(true).Render("Close: " + m.keybindings.Display(keyHelpClose))
 	lines = append(lines, footer)
 
 	return lipgloss.NewStyle().
@@ -7953,7 +8012,7 @@ func (m Model) renderHelpPopup(w, h int) string {
 // ---------------------------------------------------------------------------
 
 func (m Model) handlePresencePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextPresence, msg) {
 	case "esc", "q", "p", "enter":
 		m.app.PresencePopupMode = false
 		m.app.PresenceChatMode = false
@@ -8101,7 +8160,7 @@ func (m Model) renderPresencePopup(w, h int) string {
 		}
 	}
 
-	footer := dimStyle.Italic(true).Render("Press ESC / q / p to close")
+	footer := dimStyle.Italic(true).Render("Close: " + m.keybindings.Display(keyPresenceClose))
 	innerH := h - 4
 	if innerH < 4 {
 		innerH = 4
@@ -8132,7 +8191,7 @@ func (m Model) renderPresencePopup(w, h int) string {
 // ---------------------------------------------------------------------------
 
 func (m Model) handleUserProfilePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
-	switch msg.String() {
+	switch m.keyName(keyContextProfile, msg) {
 	case "esc", "q", "I", "enter":
 		m.app.UserProfilePopupMode = false
 		m.app.UserProfileData = nil
@@ -8189,7 +8248,7 @@ func (m Model) renderUserProfilePopup(w, h int) string {
 		}
 	}
 
-	footer := dimStyle.Italic(true).Render("Press ESC / q / i to close")
+	footer := dimStyle.Italic(true).Render("Close: " + m.keybindings.Display(keyProfileClose))
 	innerH := h - 4
 	if innerH < 4 {
 		innerH = 4

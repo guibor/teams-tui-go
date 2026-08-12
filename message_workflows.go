@@ -62,7 +62,7 @@ func (m Model) openChatChooser(forwardText string) (Model, tea.Cmd) {
 	m.app.UserSearchDirectoryResults = nil
 	m.app.UserSearchSelectedIndex = 0
 	m.app.UserSearchLoading = false
-	m.userSearchInput.Placeholder = "Orderless search chats/messages, or enter an exact email..."
+	m.userSearchInput.Placeholder = "Search chats/messages by components, or enter an exact email..."
 	m.userSearchInput.SetValue("")
 	m.userSearchInput.Focus()
 	m.updateUserSearchLocalResults()

@@ -47,10 +47,51 @@ func threadActions() []threadAction {
 		{Key: "*", Label: "Toggle favorite", ID: threadActionFavorite},
 		{Key: "a", Label: "Capture in configured thread list", ID: threadActionCapture},
 		{Key: "e", Label: "Export complete Markdown transcript", ID: threadActionExport},
-		{Key: "A", Label: "Analyze complete thread with agent-shell", ID: threadActionAnalyze},
+		{Key: "A", Label: "Analyze complete thread with configured command", ID: threadActionAnalyze},
 		{Key: "y", Label: "Copy Teams link", ID: threadActionCopyLink},
 		{Key: "t", Label: "Choose recording or transcript", ID: threadActionArtifacts},
 	}
+}
+
+func threadActionBinding(action threadActionID) string {
+	switch action {
+	case threadActionOpenBrowser:
+		return keyThreadOpenBrowser
+	case threadActionOpenTeams:
+		return keyThreadOpenApp
+	case threadActionCompose:
+		return keyThreadCompose
+	case threadActionReply:
+		return keyThreadReply
+	case threadActionForward:
+		return keyThreadForward
+	case threadActionRead:
+		return keyThreadRead
+	case threadActionUnread:
+		return keyThreadUnread
+	case threadActionFavorite:
+		return keyThreadFavorite
+	case threadActionCapture:
+		return keyThreadCapture
+	case threadActionExport:
+		return keyThreadExport
+	case threadActionAnalyze:
+		return keyThreadAnalyze
+	case threadActionCopyLink:
+		return keyThreadCopyLink
+	case threadActionArtifacts:
+		return keyThreadArtifacts
+	default:
+		return ""
+	}
+}
+
+func (m Model) configuredThreadActions() []threadAction {
+	actions := threadActions()
+	for index := range actions {
+		actions[index].Key = m.keybindings.Primary(threadActionBinding(actions[index].ID))
+	}
+	return actions
 }
 
 func teamsDesktopURL(webURL string) string {
@@ -267,7 +308,7 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 
 func (m Model) handleThreadActionPopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	actions := threadActions()
-	key := msg.String()
+	key := m.keyName(keyContextThreadActions, msg)
 	switch key {
 	case "esc", "q":
 		m.app.ThreadActionPopupMode = false
@@ -320,7 +361,7 @@ func (m Model) renderThreadActionPopup(w, h int) string {
 		lipgloss.NewStyle().Foreground(colDimGray).Render(chatName),
 		"",
 	}
-	for index, action := range threadActions() {
+	for index, action := range m.configuredThreadActions() {
 		cursor := "  "
 		style := lipgloss.NewStyle()
 		if index == m.app.ThreadActionSelectedIndex {
@@ -329,7 +370,8 @@ func (m Model) renderThreadActionPopup(w, h int) string {
 		}
 		lines = append(lines, style.Render(fmt.Sprintf("%s%s  %s", cursor, action.Key, action.Label)))
 	}
-	lines = append(lines, "", lipgloss.NewStyle().Foreground(colDimGray).Render("Enter run · Esc cancel"))
+	lines = append(lines, "", lipgloss.NewStyle().Foreground(colDimGray).Render(
+		m.keybindings.Display(keyListSelect)+" run · "+m.keybindings.Display(keyListClose)+" cancel"))
 	return lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(colGreen).
