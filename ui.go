@@ -639,6 +639,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			isBrandNewChat := !ok && newTime.After(m.app.AppStartTime)
 
 			if isNewMsgInExistingChat || isBrandNewChat {
+				wasUnread := ok && m.chatWasUnreadBeforeLatest(c, prevID, m.lastMsgTime[c.ID])
 				m.lastMsgID[c.ID] = newID
 				m.lastMsgTime[c.ID] = newTime
 				m.app.ChatCacheDirty[c.ID] = true
@@ -701,7 +702,11 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				}
 
 				if isOwnMsg || (isActiveChat && m.app.MarkReadOnOpen) {
-					m.lastReadMsgID[c.ID] = newID
+					if !wasUnread || (isActiveChat && m.app.MarkReadOnOpen) {
+						m.lastReadMsgID[c.ID] = newID
+					} else if _, tracked := m.lastReadMsgID[c.ID]; !tracked {
+						m.lastReadMsgID[c.ID] = ""
+					}
 					m.promoteChat(c.ID)
 					if isActiveChat && m.app.MarkReadOnOpen {
 						go MarkChatAsRead(func() string {
@@ -1056,13 +1061,18 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 							m.lastMsgID[chat.ID] = newLastID
 							m.lastMsgTime[chat.ID] = newTime
 						} else if old != newLastID && newTime.After(m.lastMsgTime[chat.ID].Add(time.Second)) {
+							wasUnread := m.chatWasUnreadBeforeLatest(*chat, old, m.lastMsgTime[chat.ID])
 							m.lastMsgID[chat.ID] = newLastID
 							m.lastMsgTime[chat.ID] = newTime
 							m.promoteChat(chat.ID)
 
 							isOwnMsg := m.isOwn(latestMsg)
 							if isOwnMsg || (m.focused && m.app.MarkReadOnOpen) {
-								m.lastReadMsgID[chat.ID] = newLastID
+								if !wasUnread || (m.focused && m.app.MarkReadOnOpen) {
+									m.lastReadMsgID[chat.ID] = newLastID
+								} else if _, tracked := m.lastReadMsgID[chat.ID]; !tracked {
+									m.lastReadMsgID[chat.ID] = ""
+								}
 								if m.focused && m.app.MarkReadOnOpen {
 									go MarkChatAsRead(func() string {
 										t, _ := GetValidTokenSilent(m.clientID)
@@ -5245,6 +5255,25 @@ func (m Model) isUnread(c Chat) bool {
 		return !m.isOwn(*c.LastMessagePreview)
 	}
 
+	return false
+}
+
+// chatWasUnreadBeforeLatest evaluates the state against the previous newest
+// message. This lets an outgoing message preserve, rather than overwrite, the
+// user's explicit unread/read state.
+func (m Model) chatWasUnreadBeforeLatest(c Chat, lastID string, lastTime time.Time) bool {
+	if m.manuallyUnread[c.ID] {
+		return true
+	}
+	if readID, ok := m.lastReadMsgID[c.ID]; ok {
+		return readID != lastID
+	}
+	if c.Viewpoint != nil {
+		readTime, _ := time.Parse(time.RFC3339Nano, c.Viewpoint.LastMessageReadDateTime)
+		if !lastTime.IsZero() && !readTime.IsZero() {
+			return lastTime.After(readTime.Add(time.Second))
+		}
+	}
 	return false
 }
 

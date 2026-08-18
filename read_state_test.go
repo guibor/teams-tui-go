@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestChatReadStatePayload(t *testing.T) {
 	payload := chatReadStatePayload("user-1", "tenant-1")
@@ -13,6 +16,55 @@ func TestChatReadStatePayload(t *testing.T) {
 	}
 	if _, present := payload["lastMessageReadDateTime"]; present {
 		t.Fatal("default unread action must omit lastMessageReadDateTime")
+	}
+}
+
+func TestOwnMessagePreservesUnreadState(t *testing.T) {
+	user := "Me"
+	other := "Other"
+	old := filterTestMessage("old", other)
+	newest := filterTestMessage("new", user)
+	newest.CreatedDateTime = "2026-08-02T10:05:00Z"
+	chat := Chat{ID: "chat-1", LastMessagePreview: old}
+	app := NewApp()
+	app.CurrentUserName = &user
+	app.Chats = []Chat{chat}
+	app.SelectedIndex = 0
+	model := NewModel(app, "client", "user")
+	model.latestChats = []Chat{chat}
+	model.stableChatOrder = []string{chat.ID}
+	model.lastMsgID[chat.ID] = old.ID
+	model.lastMsgTime[chat.ID], _ = time.Parse(time.RFC3339, old.CreatedDateTime)
+	model.lastReadMsgID[chat.ID] = "earlier"
+
+	chat.LastMessagePreview = newest
+	model, _ = model.updateInternal(MsgChatsLoaded{Chats: []Chat{chat}})
+	if !model.isUnread(chat) {
+		t.Fatal("outgoing message changed an unread chat to read")
+	}
+	if got := model.lastReadMsgID[chat.ID]; got == newest.ID {
+		t.Fatalf("outgoing message advanced read marker to %q", got)
+	}
+}
+
+func TestOwnMessagePreservesReadState(t *testing.T) {
+	user := "Me"
+	old := filterTestMessage("old", user)
+	newest := filterTestMessage("new", user)
+	newest.CreatedDateTime = "2026-08-02T10:05:00Z"
+	chat := Chat{ID: "chat-1", LastMessagePreview: old}
+	app := NewApp()
+	app.CurrentUserName = &user
+	app.Chats = []Chat{chat}
+	model := NewModel(app, "client", "user")
+	model.lastMsgID[chat.ID] = old.ID
+	model.lastMsgTime[chat.ID], _ = time.Parse(time.RFC3339, old.CreatedDateTime)
+	model.lastReadMsgID[chat.ID] = old.ID
+
+	chat.LastMessagePreview = newest
+	model, _ = model.updateInternal(MsgChatsLoaded{Chats: []Chat{chat}})
+	if got := model.lastReadMsgID[chat.ID]; got != newest.ID {
+		t.Fatalf("read chat did not remain read: marker=%q, want %q", got, newest.ID)
 	}
 }
 
