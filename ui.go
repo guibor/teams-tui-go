@@ -4044,6 +4044,7 @@ func chatFilterIsActive(filter ChatListFilter) bool {
 		(filter.ReadState != "" && filter.ReadState != ChatReadAll) ||
 		filter.FavouritesOnly ||
 		filter.TodayOnly ||
+		filter.WithinHours > 0 ||
 		len(filter.ChatTypes) > 0
 }
 
@@ -4080,6 +4081,9 @@ func chatFilterSummary(filter ChatListFilter) string {
 	}
 	if filter.TodayOnly {
 		parts = append(parts, "today")
+	}
+	if filter.WithinHours > 0 {
+		parts = append(parts, fmt.Sprintf("last %dh", filter.WithinHours))
 	}
 	if query := strings.TrimSpace(filter.Query); query != "" {
 		parts = append(parts, fmt.Sprintf("%q", query))
@@ -4128,6 +4132,9 @@ func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
 	if filter.TodayOnly && !chatHasActivityOn(chat, time.Now().Local()) {
 		return false
 	}
+	if filter.WithinHours > 0 && !chatHasActivitySince(chat, time.Now().Add(-time.Duration(filter.WithinHours)*time.Hour)) {
+		return false
+	}
 
 	query := parseSearchQuery(filter.Query)
 	if len(query.Terms) == 0 {
@@ -4138,6 +4145,20 @@ func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
 }
 
 func chatHasActivityOn(chat Chat, day time.Time) bool {
+	when, ok := chatActivityTime(chat)
+	if !ok {
+		return false
+	}
+	when = when.In(day.Location())
+	return when.Year() == day.Year() && when.YearDay() == day.YearDay()
+}
+
+func chatHasActivitySince(chat Chat, since time.Time) bool {
+	when, ok := chatActivityTime(chat)
+	return ok && !when.Before(since)
+}
+
+func chatActivityTime(chat Chat) (time.Time, bool) {
 	activity := ""
 	if chat.LastMessagePreview != nil {
 		activity = chat.LastMessagePreview.CreatedDateTime
@@ -4147,10 +4168,9 @@ func chatHasActivityOn(chat Chat, day time.Time) bool {
 	}
 	when, err := time.Parse(time.RFC3339Nano, activity)
 	if err != nil {
-		return false
+		return time.Time{}, false
 	}
-	when = when.In(day.Location())
-	return when.Year() == day.Year() && when.YearDay() == day.YearDay()
+	return when, true
 }
 
 const (

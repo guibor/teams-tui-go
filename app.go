@@ -47,6 +47,7 @@ type ChatListFilter struct {
 	ChatTypes      map[string]bool
 	FavouritesOnly bool
 	TodayOnly      bool
+	WithinHours    int
 }
 
 func newChatListFilter() ChatListFilter {

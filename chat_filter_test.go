@@ -756,6 +756,19 @@ func TestTodayBookmarkUsesLocalCalendarDay(t *testing.T) {
 	}
 }
 
+func TestChatHasActivitySinceUsesRollingWindow(t *testing.T) {
+	now := time.Date(2026, 8, 18, 1, 0, 0, 0, time.UTC)
+	recent := Chat{LastMessagePreview: &Message{CreatedDateTime: now.Add(-23 * time.Hour).Format(time.RFC3339)}}
+	old := Chat{LastMessagePreview: &Message{CreatedDateTime: now.Add(-25 * time.Hour).Format(time.RFC3339)}}
+
+	if !chatHasActivitySince(recent, now.Add(-24*time.Hour)) {
+		t.Fatal("activity within the rolling 24-hour window did not match")
+	}
+	if chatHasActivitySince(old, now.Add(-24*time.Hour)) {
+		t.Fatal("activity before the rolling 24-hour window matched")
+	}
+}
+
 func TestFilterReplacementAtSameIndexLoadsReplacementChat(t *testing.T) {
 	app := NewApp()
 	currentUser := "Me"

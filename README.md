@@ -667,7 +667,7 @@ configuration; use the `keybindings` object to replace any application action.
 | `s`          | Component-search all chats and loaded messages             |
 | `v` / `V`    | Filter chats by read state, type, favorite, and text      |
 | `U`          | Toggle unread-only over the active bookmark/filter         |
-| `b`          | Open chat bookmarks (`bu` unread, `bi` inbox/all)         |
+| `b`          | Open chat bookmarks (`bu` unread, `bt` today, `b2` 24h)   |
 | `a`          | Open actions for the selected chat                         |
 | `T`          | Choose a loaded recording or transcript                    |
 | `*`          | Toggle ★ favourite on selected chat (chats only)          |
@@ -748,6 +748,8 @@ local; applying one does not issue a Graph list request.
 | `bi`     | Inbox/all chats (clears filters)    |
 | `ba`     | All chats (alias for `bi`)          |
 | `bt`     | Activity on the current local day   |
+| `b2`     | Activity in the rolling last 24 hours |
+| `bw`     | Activity in the rolling last 7 days |
 | `bf`     | Favorites                           |
 | `bd`     | Direct (1:1)                        |
 | `bg`     | Groups                              |
@@ -778,7 +780,8 @@ appended to the popup.
 ```
 
 Bookmark records support `query`, `read_state`, `chat_types`,
-`favourites_only`, and `today_only`.
+`favourites_only`, `today_only`, and `within_hours`. `within_hours` is a
+rolling window, unlike `today_only`, which follows the local calendar day.
 
 `U` can be toggled after any bookmark and is ANDed with that bookmark. The
 sidebar header shows both states, for example `Today · Unread`.

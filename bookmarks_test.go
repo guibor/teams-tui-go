@@ -26,6 +26,25 @@ func TestCustomBookmarksExtendAndOverrideBuiltins(t *testing.T) {
 	}
 }
 
+func TestRollingActivityBookmarks(t *testing.T) {
+	presets := builtinChatBookmarkPresets()
+	windows := map[string]int{"2": 24, "w": 7 * 24}
+	for key, want := range windows {
+		found := false
+		for _, preset := range presets {
+			if preset.Key == key {
+				found = true
+				if preset.Filter.WithinHours != want {
+					t.Fatalf("bookmark b%s window = %d, want %d", key, preset.Filter.WithinHours, want)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("bookmark b%s not found", key)
+		}
+	}
+}
+
 func TestResolveChatBookmarksValidatesEntries(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	InitConfig()

@@ -169,6 +169,7 @@ type ChatBookmarkConfig struct {
 	ChatTypes      []string       `json:"chat_types,omitempty"`
 	FavouritesOnly bool           `json:"favourites_only,omitempty"`
 	TodayOnly      bool           `json:"today_only,omitempty"`
+	WithinHours    int            `json:"within_hours,omitempty"`
 }
 
 // Config holds persistent application settings.
@@ -662,6 +663,9 @@ func ResolveChatBookmarks() []ChatBookmarkConfig {
 			}
 		}
 		bookmark.ChatTypes = chatTypes
+		if bookmark.WithinHours < 0 {
+			bookmark.WithinHours = 0
+		}
 		bookmarks = append(bookmarks, bookmark)
 	}
 	return bookmarks
