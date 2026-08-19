@@ -200,7 +200,7 @@ func keyDef(action, canonical string, defaults KeyList, contexts ...keyContext) 
 }
 
 var keyBindingDefinitions = []keyBindingDefinition{
-	keyDef(keyAppQuitNow, "ctrl+c", KeyList{"ctrl+c"}, keyContextNormalChat, keyContextNormalChannel),
+	keyDef(keyAppQuitNow, "ctrl+c", KeyList{"ctrl+c", "Q"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyAppQuit, "q", KeyList{"q"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyDashboardLeave, "esc", KeyList{"esc"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyChatFirst, "alt+<", KeyList{"alt+<", "h"}, keyContextNormalChat),

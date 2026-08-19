@@ -85,6 +85,9 @@ func TestComposeCtrlCCtrlCSends(t *testing.T) {
 	if command != nil || !model.app.InputMode || !model.pendingComposeSend {
 		t.Fatalf("first C-c did not start send prefix: cmd=%v input=%v pending=%v", command != nil, model.app.InputMode, model.pendingComposeSend)
 	}
+	if got := model.textarea.Value(); got != "send this" {
+		t.Fatalf("first C-c reached the textarea: %q", got)
+	}
 
 	model, command = model.updateInternal(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if command == nil {

@@ -714,7 +714,7 @@ configuration; use the `keybindings` object to replace any application action.
 | `I`          | Show profile info of sender (`user_profile_enabled`)      |
 | `1-6`        | Send reaction (in Reaction Mode)                          |
 | `q`          | Leave conversation for dashboard; press again to quit     |
-| `Ctrl+C`     | Quit immediately                                           |
+| `Ctrl+C` / `Q` | Quit immediately                                         |
 
 ### Chat List Filter
 

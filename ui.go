@@ -2521,6 +2521,7 @@ func (m Model) handleInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	} else if key == "ctrl+c" {
 		m.pendingComposeSend = true
 		m.app.SetStatus("C-c C-c to send", 2*time.Second)
+		m.app.SkipTextareaUpdate = true
 		return m, nil
 	}
 
