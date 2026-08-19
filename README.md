@@ -198,6 +198,7 @@ and composer.
     "search.global": ["ctrl+s"],
     "new_chat.open": "ctrl+n",
     "filter.toggle_unread_overlay": ["U", "ctrl+u"],
+    "compose.send_prefix": "ctrl+c",
     "compose.send": ["ctrl+s", "ctrl+enter"],
     "chat.analyze": []
   }
@@ -634,7 +635,8 @@ The external editor command can be configured in your `config.json` via the `"ex
 Compose mode is multiline by default: `Enter` inserts a line break and
 `Ctrl+Enter` sends the message. `Ctrl+J` is a portable send alias for terminals
 that cannot distinguish modified Return. The TUI also recognizes the common
-Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding.
+Kitty/iTerm `CSI 13;5u` Ctrl+Enter encoding. Emacs-style `Ctrl+C Ctrl+C` also
+sends; its prefix is configurable with `compose.send_prefix`.
 
 The forward destination chooser starts with known chats and uses the same
 literal/regexp components. `q p` can match `Quarterly Planning`, while
@@ -685,7 +687,7 @@ configuration; use the `keybindings` object to replace any application action.
 | `Ctrl+V`     | Paste image from clipboard (in Compose Mode)              |
 | `Ctrl+f`     | Browse and attach file from computer (in Compose Mode)    |
 | `Ctrl+g`     | Compose/edit message in external editor (in Compose Mode) |
-| `Ctrl+Enter` / `Ctrl+J` | Send message                                  |
+| `Ctrl+Enter` / `Ctrl+J` / `Ctrl+C Ctrl+C` | Send message                 |
 | `Enter`      | Insert a normal new line                                  |
 | `Alt+Enter` / `Shift+Enter` | Insert a new line                             |
 | `Esc`        | Cancel compose                                            |

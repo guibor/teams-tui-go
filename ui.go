@@ -281,6 +281,8 @@ type Model struct {
 
 	// pendingChatGoto records the first g in the normal-mode gg sequence.
 	pendingChatGoto bool
+	// pendingComposeSend records the first key in the Emacs-style C-c C-c send sequence.
+	pendingComposeSend bool
 
 	// Index in stableChatOrder to start the next reaction poll from.
 	nextReactionPollIndex int
@@ -2510,8 +2512,21 @@ func (m Model) handleInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 	}
 
-	switch m.keyName(keyContextCompose, msg) {
+	key := m.keyName(keyContextCompose, msg)
+	if m.pendingComposeSend {
+		m.pendingComposeSend = false
+		if key == "ctrl+c" {
+			key = "ctrl+j"
+		}
+	} else if key == "ctrl+c" {
+		m.pendingComposeSend = true
+		m.app.SetStatus("C-c C-c to send", 2*time.Second)
+		return m, nil
+	}
+
+	switch key {
 	case "esc":
+		m.pendingComposeSend = false
 		m.app.InputMode = false
 		m.app.InputBuffer = ""
 		m.app.EditingMessageID = nil
@@ -2552,6 +2567,7 @@ func (m Model) handleInputModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		}
 
 	case "ctrl+j", "ctrl+enter":
+		m.pendingComposeSend = false
 		content := strings.Trim(m.textarea.Value(), "\n\r")
 		if content == "" {
 			return m, nil
@@ -4155,7 +4171,7 @@ func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
 }
 
 func chatHasActivityOn(chat Chat, day time.Time) bool {
-	when, ok := chatActivityTime(chat)
+	when, ok := chatFilterActivityTime(chat)
 	if !ok {
 		return false
 	}
@@ -4164,11 +4180,11 @@ func chatHasActivityOn(chat Chat, day time.Time) bool {
 }
 
 func chatHasActivitySince(chat Chat, since time.Time) bool {
-	when, ok := chatActivityTime(chat)
+	when, ok := chatFilterActivityTime(chat)
 	return ok && !when.Before(since)
 }
 
-func chatActivityTime(chat Chat) (time.Time, bool) {
+func chatFilterActivityTime(chat Chat) (time.Time, bool) {
 	activity := ""
 	if chat.LastMessagePreview != nil {
 		activity = chat.LastMessagePreview.CreatedDateTime
@@ -7876,7 +7892,7 @@ func (m Model) getHelpContentLines() []string {
 			{"Type", "Write a multiline message"},
 			{"@", "Open autocomplete mention popup"},
 			{m.keybindings.Display(keyMentionNext) + " · " + m.keybindings.Display(keyMentionPrevious), "Navigate suggestions (when mention popup is open)"},
-			{m.keybindings.Display(keyComposeSend), "Send message"},
+			{m.keybindings.Display(keyComposeSend) + " · " + m.keybindings.Primary(keyComposeSendPrefix) + " " + m.keybindings.Primary(keyComposeSendPrefix), "Send message"},
 			{m.keybindings.Display(keyComposeNewline), "Insert new line"},
 			{m.keybindings.Display(keyComposePasteImage), "Paste image from clipboard"},
 			{m.keybindings.Display(keyComposeAttach), "Browse and attach file (feature: file_upload_enabled)"},

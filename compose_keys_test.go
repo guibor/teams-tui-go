@@ -79,6 +79,35 @@ func TestComposeCtrlJSends(t *testing.T) {
 	}
 }
 
+func TestComposeCtrlCCtrlCSends(t *testing.T) {
+	model := newComposeKeyTestModel("send this")
+	model, command := model.updateInternal(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if command != nil || !model.app.InputMode || !model.pendingComposeSend {
+		t.Fatalf("first C-c did not start send prefix: cmd=%v input=%v pending=%v", command != nil, model.app.InputMode, model.pendingComposeSend)
+	}
+
+	model, command = model.updateInternal(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if command == nil {
+		t.Fatal("C-c C-c did not return a send command")
+	}
+	if model.app.InputMode || model.pendingComposeSend {
+		t.Fatalf("C-c C-c did not finish compose: input=%v pending=%v", model.app.InputMode, model.pendingComposeSend)
+	}
+}
+
+func TestComposeCtrlCPrefixDoesNotSwallowFollowingText(t *testing.T) {
+	model := newComposeKeyTestModel("first")
+	model, _ = model.updateInternal(tea.KeyMsg{Type: tea.KeyCtrlC})
+	model, _ = model.updateInternal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+
+	if !model.app.InputMode || model.pendingComposeSend {
+		t.Fatalf("non-prefix continuation changed compose state: input=%v pending=%v", model.app.InputMode, model.pendingComposeSend)
+	}
+	if got := model.textarea.Value(); got != "firstx" {
+		t.Fatalf("following text was not inserted: %q", got)
+	}
+}
+
 func TestComposeEnhancedCtrlEnterSends(t *testing.T) {
 	for _, sequence := range []string{"\x1b[13;5u", "\x1b[27;5;13~"} {
 		model := newComposeKeyTestModel("send this")

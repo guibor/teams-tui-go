@@ -119,6 +119,7 @@ const (
 	keyComposeExternalEditor  = "compose.external_editor"
 	keyComposeAttach          = "compose.attach_file"
 	keyComposePasteImage      = "compose.paste_image"
+	keyComposeSendPrefix      = "compose.send_prefix"
 	keyComposeSend            = "compose.send"
 	keyComposeNewline         = "compose.newline"
 	keyMentionClose           = "mention.close"
@@ -244,6 +245,7 @@ var keyBindingDefinitions = []keyBindingDefinition{
 	keyDef(keyComposeExternalEditor, "ctrl+g", KeyList{"ctrl+g"}, keyContextCompose),
 	keyDef(keyComposeAttach, "ctrl+f", KeyList{"ctrl+f"}, keyContextCompose),
 	keyDef(keyComposePasteImage, "ctrl+v", KeyList{"ctrl+v", "ctrl+shift+v"}, keyContextCompose),
+	keyDef(keyComposeSendPrefix, "ctrl+c", KeyList{"ctrl+c"}, keyContextCompose),
 	keyDef(keyComposeSend, "ctrl+j", KeyList{"ctrl+j", "ctrl+enter"}, keyContextCompose),
 	keyDef(keyComposeNewline, "enter", KeyList{"enter", "alt+enter", "shift+enter"}, keyContextCompose),
 	keyDef(keyMentionClose, "esc", KeyList{"esc"}, keyContextMention),
