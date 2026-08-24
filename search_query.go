@@ -12,6 +12,7 @@ type searchQueryTerm struct {
 	Field   string
 	Value   string
 	Negated bool
+	Pattern *regexp.Regexp
 }
 
 type searchQuery struct {
@@ -102,6 +103,7 @@ func parseSearchQuery(input string) searchQuery {
 		}
 		term.Value = strings.TrimSpace(term.Value)
 		if term.Value != "" {
+			term.Pattern, _ = regexp.Compile(normalizedSearchText(term.Value))
 			query.Terms = append(query.Terms, term)
 		}
 	}
@@ -115,6 +117,11 @@ func normalizedSearchText(text string) string {
 // componentTextScore lets each component match literally or as a regexp, but
 // deliberately does not support arbitrary character-subsequence matching.
 func componentTextScore(text, component string) (int, bool) {
+	pattern, _ := regexp.Compile(normalizedSearchText(component))
+	return componentTextScoreWithPattern(text, component, pattern)
+}
+
+func componentTextScoreWithPattern(text, component string, pattern *regexp.Regexp) (int, bool) {
 	haystack := normalizedSearchText(text)
 	wanted := normalizedSearchText(component)
 	if wanted == "" {
@@ -133,11 +140,10 @@ func componentTextScore(text, component string) (int, bool) {
 		}
 		return max(1, score), true
 	}
-	re, err := regexp.Compile(wanted)
-	if err != nil {
+	if pattern == nil {
 		return 0, false
 	}
-	location := re.FindStringIndex(haystack)
+	location := pattern.FindStringIndex(haystack)
 	if location == nil {
 		return 0, false
 	}
@@ -145,10 +151,15 @@ func componentTextScore(text, component string) (int, bool) {
 }
 
 func componentFieldsScore(fields []string, value string) (int, bool) {
+	pattern, _ := regexp.Compile(normalizedSearchText(value))
+	return componentFieldsScoreWithPattern(fields, value, pattern)
+}
+
+func componentFieldsScoreWithPattern(fields []string, value string, pattern *regexp.Regexp) (int, bool) {
 	best := 0
 	matched := false
 	for _, field := range fields {
-		if score, ok := componentTextScore(field, value); ok {
+		if score, ok := componentTextScoreWithPattern(field, value, pattern); ok {
 			matched = true
 			if score > best {
 				best = score
@@ -177,9 +188,9 @@ func (term searchQueryTerm) match(target searchTarget) (int, bool) {
 	value := normalizedSearchText(term.Value)
 	switch term.Field {
 	case "from":
-		return componentFieldsScore(target.Sender, value)
+		return componentFieldsScoreWithPattern(target.Sender, value, term.Pattern)
 	case "in":
-		return componentFieldsScore(target.Conversation, value)
+		return componentFieldsScoreWithPattern(target.Conversation, value, term.Pattern)
 	case "is":
 		switch value {
 		case "unread":
@@ -212,7 +223,7 @@ func (term searchQueryTerm) match(target searchTarget) (int, bool) {
 		}
 		return 100, target.CreatedAt.Before(day)
 	default:
-		return componentFieldsScore(target.Text, value)
+		return componentFieldsScoreWithPattern(target.Text, value, term.Pattern)
 	}
 }
 

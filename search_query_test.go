@@ -41,6 +41,22 @@ func TestComponentTextScoreUsesLiteralOrRegexpComponents(t *testing.T) {
 	}
 }
 
+func TestParsedSearchQueryCompilesEachPatternOnce(t *testing.T) {
+	query := parseSearchQuery(`planning q.*p [`)
+	if len(query.Terms) != 3 {
+		t.Fatalf("parsed terms = %#v", query.Terms)
+	}
+	if query.Terms[0].Pattern == nil || query.Terms[1].Pattern == nil {
+		t.Fatal("valid search components were not precompiled")
+	}
+	if query.Terms[2].Pattern != nil {
+		t.Fatal("invalid regexp component unexpectedly compiled")
+	}
+	if _, matched := query.Match(searchTarget{Text: []string{"planning q-to-p ["}}); !matched {
+		t.Fatal("precompiled query changed literal-first matching")
+	}
+}
+
 func TestStructuredMessageQuery(t *testing.T) {
 	target := searchTarget{
 		Text:         []string{"Quarterly roadmap approved"},
