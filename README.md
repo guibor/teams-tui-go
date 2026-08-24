@@ -675,6 +675,7 @@ configuration; use the `keybindings` object to replace any application action.
 | `*`          | Toggle ★ favourite on selected chat (chats only)          |
 | `o`          | Open selected chat directly in Teams web in the configured browser |
 | `O`          | Open selected chat in the Teams desktop client            |
+| `M`          | Join a meeting, or call the participant in a direct chat   |
 | `r` / `i`    | Mark selected chat read, then advance to the next chat     |
 | `u`          | Mark selected chat unread, then advance (Normal Mode)     |
 | `c` / `C`    | Compose a new message in the current conversation          |

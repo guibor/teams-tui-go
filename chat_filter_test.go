@@ -84,6 +84,47 @@ func TestTeamsDesktopURLUsesOfficialScheme(t *testing.T) {
 	}
 }
 
+func TestTeamsMeetCallURLChoosesMeetingJoinOrDirectParticipant(t *testing.T) {
+	meeting := Chat{
+		ChatType:          "meeting",
+		OnlineMeetingInfo: &TeamworkOnlineMeetingInfo{JoinWebURL: "https://teams.microsoft.com/l/meetup-join/example"},
+	}
+	if got, action := teamsMeetCallURL(meeting); got != meeting.OnlineMeetingInfo.JoinWebURL || action != "Joining meeting" {
+		t.Fatalf("meeting target = %q, %q", got, action)
+	}
+
+	email := "person@example.com"
+	direct := Chat{ChatType: "oneOnOne", Members: []ChatMember{{Email: &email}}}
+	got, action := teamsMeetCallURL(direct)
+	if got != "https://teams.microsoft.com/l/call/0/0?users=person%40example.com" || action != "Starting call" {
+		t.Fatalf("direct-call target = %q, %q", got, action)
+	}
+
+	if got, _ := teamsMeetCallURL(Chat{ChatType: "group"}); got != "" {
+		t.Fatalf("group chat unexpectedly produced call target %q", got)
+	}
+}
+
+func TestNormalModeMStartsMeetingOrCall(t *testing.T) {
+	app := NewApp()
+	app.TeamsAppCommand = "true"
+	app.Chats = []Chat{{
+		ID:                "meeting-1",
+		ChatType:          "meeting",
+		OnlineMeetingInfo: &TeamworkOnlineMeetingInfo{JoinWebURL: "https://teams.microsoft.com/l/meetup-join/example"},
+	}}
+	app.SelectedIndex = 0
+	model := NewModel(app, "client", "user")
+
+	_, cmd := model.handleNormalModeKey(filterTestKey('M'))
+	if cmd == nil {
+		t.Fatal("normal-mode M did not create a Teams join command")
+	}
+	if app.Status != "Joining meeting in Teams..." {
+		t.Fatalf("unexpected meeting status: %q", app.Status)
+	}
+}
+
 func TestTeamsWebURLBypassesLauncherWithoutChangingOpaqueTarget(t *testing.T) {
 	got := teamsWebURL(" https://teams.microsoft.com/l/chat/19%3Ameeting_NjQ%40thread.v2/conversations?tenantId=abc&groupId=def ")
 	want := "https://teams.microsoft.com/#/l/chat/19%3Ameeting_NjQ%40thread.v2/conversations?tenantId=abc&groupId=def"

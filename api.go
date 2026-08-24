@@ -42,15 +42,21 @@ type ChatMember struct {
 
 // Chat represents a Microsoft Teams chat.
 type Chat struct {
-	ID                 string         `json:"id"`
-	Topic              *string        `json:"topic,omitempty"`
-	ChatType           string         `json:"chatType"`
-	WebURL             string         `json:"webUrl,omitempty"`
-	LastUpdated        *string        `json:"lastUpdatedDateTime,omitempty"`
-	Viewpoint          *ChatViewpoint `json:"viewpoint,omitempty"`
-	LastMessagePreview *Message       `json:"lastMessagePreview,omitempty"`
-	Members            []ChatMember   `json:"members,omitempty"` // expanded for search, otherwise populated separately
-	CachedDisplayName  *string        `json:"-"`                 // computed, never from API
+	ID                 string                     `json:"id"`
+	Topic              *string                    `json:"topic,omitempty"`
+	ChatType           string                     `json:"chatType"`
+	WebURL             string                     `json:"webUrl,omitempty"`
+	LastUpdated        *string                    `json:"lastUpdatedDateTime,omitempty"`
+	Viewpoint          *ChatViewpoint             `json:"viewpoint,omitempty"`
+	LastMessagePreview *Message                   `json:"lastMessagePreview,omitempty"`
+	Members            []ChatMember               `json:"members,omitempty"` // expanded for search, otherwise populated separately
+	OnlineMeetingInfo  *TeamworkOnlineMeetingInfo `json:"onlineMeetingInfo,omitempty"`
+	CachedDisplayName  *string                    `json:"-"` // computed, never from API
+}
+
+// TeamworkOnlineMeetingInfo contains the stable join target for a meeting chat.
+type TeamworkOnlineMeetingInfo struct {
+	JoinWebURL string `json:"joinWebUrl,omitempty"`
 }
 
 // ChatViewpoint contains the read state for the current user.

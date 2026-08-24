@@ -89,6 +89,7 @@ const (
 	keyChatFavorite           = "chat.toggle_favorite"
 	keyChatOpenBrowser        = "chat.open_browser"
 	keyChatOpenApp            = "chat.open_desktop_app"
+	keyChatMeetCall           = "chat.meet_or_call"
 	keyMessageReply           = "message.reply"
 	keyMessageForward         = "message.forward"
 	keyChatMarkRead           = "chat.mark_read"
@@ -155,6 +156,7 @@ const (
 	keyBookmarkClose          = "bookmarks.close"
 	keyThreadOpenBrowser      = "thread_action.open_browser"
 	keyThreadOpenApp          = "thread_action.open_desktop_app"
+	keyThreadMeetCall         = "thread_action.meet_or_call"
 	keyThreadCompose          = "thread_action.compose"
 	keyThreadReply            = "thread_action.reply"
 	keyThreadForward          = "thread_action.forward"
@@ -232,6 +234,7 @@ var keyBindingDefinitions = []keyBindingDefinition{
 	keyDef(keyChatFavorite, "*", KeyList{"*"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyChatOpenBrowser, "o", KeyList{"o"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyChatOpenApp, "O", KeyList{"O"}, keyContextNormalChat, keyContextNormalChannel),
+	keyDef(keyChatMeetCall, "M", KeyList{"M"}, keyContextNormalChat),
 	keyDef(keyMessageReply, "R", KeyList{"R"}, keyContextNormalChat, keyContextNormalChannel, keyContextMessageSelect, keyContextMessageView),
 	keyDef(keyMessageForward, "f", KeyList{"f", "F"}, keyContextNormalChat, keyContextNormalChannel, keyContextMessageSelect, keyContextMessageView),
 	keyDef(keyChatMarkRead, "r", KeyList{"r", "i"}, keyContextNormalChat, keyContextNormalChannel, keyContextMessageSelect, keyContextMessageView),
@@ -303,6 +306,7 @@ var keyBindingDefinitions = []keyBindingDefinition{
 
 	keyDef(keyThreadOpenBrowser, "o", KeyList{"o"}, keyContextThreadActions),
 	keyDef(keyThreadOpenApp, "O", KeyList{"O"}, keyContextThreadActions),
+	keyDef(keyThreadMeetCall, "M", KeyList{"M"}, keyContextThreadActions),
 	keyDef(keyThreadCompose, "c", KeyList{"c", "C"}, keyContextThreadActions),
 	keyDef(keyThreadReply, "R", KeyList{"R"}, keyContextThreadActions),
 	keyDef(keyThreadForward, "f", KeyList{"f", "F"}, keyContextThreadActions),

@@ -16,6 +16,7 @@ type threadActionID string
 const (
 	threadActionOpenBrowser threadActionID = "open-browser"
 	threadActionOpenTeams   threadActionID = "open-teams"
+	threadActionMeetCall    threadActionID = "meet-call"
 	threadActionCompose     threadActionID = "compose"
 	threadActionReply       threadActionID = "reply"
 	threadActionForward     threadActionID = "forward"
@@ -39,6 +40,7 @@ func threadActions() []threadAction {
 	return []threadAction{
 		{Key: "o", Label: "Open in browser", ID: threadActionOpenBrowser},
 		{Key: "O", Label: "Open in Teams desktop", ID: threadActionOpenTeams},
+		{Key: "M", Label: "Join meeting or call person", ID: threadActionMeetCall},
 		{Key: "c", Label: "Compose message", ID: threadActionCompose},
 		{Key: "R", Label: "Reply to latest message", ID: threadActionReply},
 		{Key: "f", Label: "Forward latest message", ID: threadActionForward},
@@ -59,6 +61,8 @@ func threadActionBinding(action threadActionID) string {
 		return keyThreadOpenBrowser
 	case threadActionOpenTeams:
 		return keyThreadOpenApp
+	case threadActionMeetCall:
+		return keyThreadMeetCall
 	case threadActionCompose:
 		return keyThreadCompose
 	case threadActionReply:
@@ -103,6 +107,28 @@ func teamsDesktopURL(webURL string) string {
 	return parsed.String()
 }
 
+func teamsMeetCallURL(chat Chat) (string, string) {
+	if chat.OnlineMeetingInfo != nil {
+		if joinURL := strings.TrimSpace(chat.OnlineMeetingInfo.JoinWebURL); joinURL != "" {
+			return joinURL, "Joining meeting"
+		}
+	}
+	if chat.ChatType != "oneOnOne" {
+		return "", ""
+	}
+	for _, member := range chat.Members {
+		if member.Email == nil || strings.TrimSpace(*member.Email) == "" {
+			continue
+		}
+		callURL := &url.URL{Scheme: "https", Host: "teams.microsoft.com", Path: "/l/call/0/0"}
+		query := callURL.Query()
+		query.Set("users", strings.TrimSpace(*member.Email))
+		callURL.RawQuery = query.Encode()
+		return callURL.String(), "Starting call"
+	}
+	return "", ""
+}
+
 func isTeamsWebHost(host string) bool {
 	return strings.EqualFold(host, "teams.microsoft.com") ||
 		strings.EqualFold(host, "teams.cloud.microsoft")
@@ -112,6 +138,7 @@ func threadActionAdvancesChat(action threadActionID) bool {
 	switch action {
 	case threadActionOpenBrowser,
 		threadActionOpenTeams,
+		threadActionMeetCall,
 		threadActionRead,
 		threadActionUnread,
 		threadActionFavorite,
@@ -222,6 +249,20 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 			return m, nil
 		}
 		m.app.SetStatus("Opening chat in Teams...", 0)
+		return advance(m, openWithCommandCmd(deepLink, m.app.TeamsAppCommand))
+
+	case threadActionMeetCall:
+		target, action := teamsMeetCallURL(chatValue)
+		if target == "" {
+			m.app.SetStatus("This chat has no meeting or direct-call target", 4*time.Second)
+			return m, nil
+		}
+		deepLink := teamsDesktopURL(target)
+		if deepLink == "" {
+			m.app.SetStatus("Could not create a Teams "+action+" link", 4*time.Second)
+			return m, nil
+		}
+		m.app.SetStatus(action+" in Teams...", 0)
 		return advance(m, openWithCommandCmd(deepLink, m.app.TeamsAppCommand))
 
 	case threadActionCompose:

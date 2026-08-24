@@ -2262,6 +2262,9 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	case "O":
 		return m.executeThreadAction(threadActionOpenTeams)
 
+	case "M":
+		return m.executeThreadAction(threadActionMeetCall)
+
 	case "R":
 		message, ok := m.newestLoadedMessage()
 		if !ok {
@@ -7783,6 +7786,7 @@ func (m Model) getHelpContentLines() []string {
 			{m.keybindings.Display(keyArtifactsOpen), "Choose a loaded meeting recording or transcript"},
 			{m.keybindings.Display(keyChatFavorite), "Toggle favourite (chats only)"},
 			{m.keybindings.Display(keyChatOpenBrowser) + " · " + m.keybindings.Display(keyChatOpenApp), "Open selected chat in Teams web / Teams desktop"},
+			{m.keybindings.Display(keyChatMeetCall), "Join selected meeting or call direct-chat participant"},
 			{m.keybindings.Display(keyChatMarkRead), "Mark selected chat read"},
 			{m.keybindings.Display(keyChatMarkUnread), "Mark selected chat unread"},
 			{m.keybindings.Display(keyChatExport), "Export complete chat history as Markdown"},
