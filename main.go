@@ -942,6 +942,17 @@ func main() {
 	// Load persisted notification mode and settings.
 	app.ChannelMsgRefreshMin = ResolveChannelMsgRefreshMin()
 	app.MarkReadOnOpen = ResolveMarkReadOnOpen()
+	if cfg := LoadConfig(); cfg != nil {
+		if cfg.DefaultSnoozeMinutes != nil && *cfg.DefaultSnoozeMinutes > 0 {
+			app.DefaultSnoozeMinutes = *cfg.DefaultSnoozeMinutes
+		}
+		if cfg.WorkdayStart != nil {
+			app.WorkdayStart = *cfg.WorkdayStart
+		}
+		if cfg.WorkdayEnd != nil {
+			app.WorkdayEnd = *cfg.WorkdayEnd
+		}
+	}
 	app.ExportDirectory = ResolveExportDirectory()
 	app.ThreadAnalysisAgent = ResolveThreadAnalysisAgent()
 	app.ThreadAnalysisCommand = ResolveThreadAnalysisCommand()
@@ -1031,6 +1042,7 @@ func main() {
 
 	// Load persisted favourites and apply them so favourites appear at the top on launch.
 	model.favourites = LoadFavourites()
+	model.snoozed = LoadSnoozedChats()
 	model.unhiddenChannels = LoadUnhiddenChannels()
 
 	// Fetch any favourited chats that weren't returned by the regular API call

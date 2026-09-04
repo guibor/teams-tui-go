@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -55,6 +56,47 @@ func SaveFavourites(favs map[string]bool) error {
 		return fmt.Errorf("could not marshal favourites: %w", err)
 	}
 	return os.WriteFile(filepath.Join(dir, "favourites.json"), data, 0o600)
+}
+
+func LoadSnoozedChats() map[string]time.Time {
+	dir, err := GetAppDir()
+	if err != nil {
+		return make(map[string]time.Time)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "snoozed_chats.json"))
+	if err != nil {
+		return make(map[string]time.Time)
+	}
+	var encoded map[string]string
+	if json.Unmarshal(data, &encoded) != nil {
+		return make(map[string]time.Time)
+	}
+	now := time.Now()
+	result := make(map[string]time.Time)
+	for id, value := range encoded {
+		if until, err := time.Parse(time.RFC3339, value); err == nil && until.After(now) {
+			result[id] = until
+		}
+	}
+	return result
+}
+
+func SaveSnoozedChats(snoozed map[string]time.Time) error {
+	dir, err := GetAppDir()
+	if err != nil {
+		return err
+	}
+	encoded := make(map[string]string, len(snoozed))
+	for id, until := range snoozed {
+		if id != "" && until.After(time.Now()) {
+			encoded[id] = until.Format(time.RFC3339)
+		}
+	}
+	data, err := json.MarshalIndent(encoded, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "snoozed_chats.json"), data, 0o600)
 }
 
 // LoadUnhiddenChannels reads the list of unhidden channel IDs from unhidden_channels.json.
@@ -182,6 +224,9 @@ type Config struct {
 	SearchContextLimit      *int                 `json:"search_context_limit,omitempty"`
 	ChatLimit               *int                 `json:"chat_limit,omitempty"`
 	MarkReadOnOpen          *bool                `json:"mark_read_on_open,omitempty"`
+	DefaultSnoozeMinutes    *int                 `json:"default_snooze_minutes,omitempty"`
+	WorkdayStart            *string              `json:"workday_start,omitempty"`
+	WorkdayEnd              *string              `json:"workday_end,omitempty"`
 	ExportDirectory         *string              `json:"export_directory,omitempty"`
 	ThreadAnalysisAgent     *string              `json:"thread_analysis_agent,omitempty"`
 	ThreadAnalysisCommand   *string              `json:"thread_analysis_command,omitempty"`
@@ -349,6 +394,21 @@ func InitConfig() {
 	if cfg.MarkReadOnOpen == nil {
 		v := false
 		cfg.MarkReadOnOpen = &v
+		modified = true
+	}
+	if cfg.DefaultSnoozeMinutes == nil {
+		v := 180
+		cfg.DefaultSnoozeMinutes = &v
+		modified = true
+	}
+	if cfg.WorkdayStart == nil {
+		v := "07:00"
+		cfg.WorkdayStart = &v
+		modified = true
+	}
+	if cfg.WorkdayEnd == nil {
+		v := "18:00"
+		cfg.WorkdayEnd = &v
 		modified = true
 	}
 	if cfg.ExportDirectory == nil {

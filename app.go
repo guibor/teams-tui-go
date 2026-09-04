@@ -48,6 +48,7 @@ type ChatListFilter struct {
 	FavouritesOnly bool
 	TodayOnly      bool
 	WithinHours    int
+	SnoozedOnly    bool
 }
 
 func newChatListFilter() ChatListFilter {
@@ -144,6 +145,9 @@ type App struct {
 	NotificationShowPreview    bool
 	NotificationPreviewLen     int
 	MarkReadOnOpen             bool
+	DefaultSnoozeMinutes       int
+	WorkdayStart               string
+	WorkdayEnd                 string
 	ExportDirectory            string
 	ThreadAnalysisAgent        string
 	ThreadAnalysisCommand      string
@@ -213,6 +217,8 @@ type App struct {
 	ActiveChatFilter           ChatListFilter
 	DraftChatFilter            ChatListFilter
 	UnreadOverlay              bool
+	SnoozePopupMode            bool
+	SnoozeSelectedIndex        int
 	AppStartTime               time.Time
 	ChatIconTheme              string
 	CustomChatIcons            map[string]string
@@ -323,6 +329,9 @@ func NewApp() *App {
 		CustomChatIcons:           make(map[string]string),
 		AppStartTime:              time.Now(),
 		MentionCanceledStartIndex: -1,
+		DefaultSnoozeMinutes:      180,
+		WorkdayStart:              "07:00",
+		WorkdayEnd:                "18:00",
 	}
 }
 

@@ -316,6 +316,9 @@ and source link to `thread_capture_org_file` instead.
   ```json
   {
 	"mark_read_on_open": false,
+	"default_snooze_minutes": 180,
+	"workday_start": "07:00",
+	"workday_end": "18:00",
 	"show_chat_dates": false,
 	"export_directory": "~/Downloads",
 	"thread_capture_format": "markdown",
@@ -670,6 +673,7 @@ configuration; use the `keybindings` object to replace any application action.
 | `v` / `V`    | Filter chats by read state, type, favorite, and text      |
 | `U`          | Toggle unread-only over the active bookmark/filter         |
 | `b`          | Open chat bookmarks (`bu` unread, `bt` today, `b2` 24h)   |
+| `z` / `Z`    | Snooze for the default duration / choose a wake time       |
 | `a`          | Open actions for the selected chat                         |
 | `T`          | Choose a loaded recording or transcript                    |
 | `*`          | Toggle ★ favourite on selected chat (chats only)          |
@@ -753,6 +757,7 @@ local; applying one does not issue a Graph list request.
 | `bt`     | Activity on the current local day   |
 | `b2`     | Activity in the rolling last 24 hours |
 | `bw`     | Activity in the rolling last 7 days |
+| `bs`     | Locally snoozed chats and their wake state |
 | `bf`     | Favorites                           |
 | `bd`     | Direct (1:1)                        |
 | `bg`     | Groups                              |
@@ -788,6 +793,16 @@ rolling window, unlike `today_only`, which follows the local calendar day.
 
 `U` can be toggled after any bookmark and is ANDed with that bookmark. The
 sidebar header shows both states, for example `Today · Unread`.
+
+### Snooze
+
+`z` hides the selected chat for `default_snooze_minutes` (three hours by
+default) and advances by stable chat identity. `Z` offers one hour, three
+hours, end of workday, tomorrow morning, next week, and unsnooze. Tomorrow
+uses `workday_start` (07:00 by default); end of workday uses `workday_end`
+(18:00 by default), falling back to the next workday morning after that time.
+Snoozes are local, survive restarts, never alter Teams read state, and wake
+immediately when a new incoming message arrives.
 
 ### Thread Actions
 

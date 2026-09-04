@@ -46,6 +46,7 @@ const (
 	keyContextFilterInput    keyContext = "filter-input"
 	keyContextFilter         keyContext = "filter"
 	keyContextBookmarks      keyContext = "bookmarks"
+	keyContextSnooze         keyContext = "snooze"
 	keyContextThreadActions  keyContext = "thread-actions"
 	keyContextArtifacts      keyContext = "artifacts"
 	keyContextHelp           keyContext = "help"
@@ -96,6 +97,8 @@ const (
 	keyChatMarkUnread         = "chat.mark_unread"
 	keyChatExport             = "chat.export_markdown"
 	keyChatAnalyze            = "chat.analyze"
+	keyChatSnooze             = "chat.snooze"
+	keyChatSnoozeMenu         = "chat.snooze_menu"
 	keyPresenceOpen           = "presence.open"
 	keyChannelToggleHidden    = "channel.toggle_hidden"
 	keyMessageNext            = "message.next"
@@ -241,6 +244,8 @@ var keyBindingDefinitions = []keyBindingDefinition{
 	keyDef(keyChatMarkUnread, "u", KeyList{"u"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyChatExport, "E", KeyList{"E"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyChatAnalyze, "A", KeyList{"A"}, keyContextNormalChat, keyContextNormalChannel),
+	keyDef(keyChatSnooze, "z", KeyList{"z"}, keyContextNormalChat),
+	keyDef(keyChatSnoozeMenu, "Z", KeyList{"Z"}, keyContextNormalChat),
 	keyDef(keyPresenceOpen, "p", KeyList{"p"}, keyContextNormalChat, keyContextNormalChannel, keyContextMessageSelect),
 	keyDef(keyChannelToggleHidden, "h", KeyList{"h"}, keyContextNormalChannel),
 
@@ -303,6 +308,7 @@ var keyBindingDefinitions = []keyBindingDefinition{
 	keyDef(keyFilterFavorites, "f", KeyList{"f"}, keyContextFilter),
 	keyDef(keyFilterClear, "x", KeyList{"x"}, keyContextFilter),
 	keyDef(keyBookmarkClose, "esc", KeyList{"esc", "q", "b"}, keyContextBookmarks),
+	keyDef("snooze.close", "esc", KeyList{"esc", "q", "Z"}, keyContextSnooze),
 
 	keyDef(keyThreadOpenBrowser, "o", KeyList{"o"}, keyContextThreadActions),
 	keyDef(keyThreadOpenApp, "O", KeyList{"O"}, keyContextThreadActions),
