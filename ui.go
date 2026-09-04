@@ -348,6 +348,9 @@ type Model struct {
 	// Loaded from and persisted to favourites.json in the app config dir.
 	favourites map[string]bool
 
+	// snoozed holds local wake deadlines by chat ID.
+	snoozed map[string]time.Time
+
 	// unhiddenChannels holds channel IDs that are unhidden by the user.
 	// Loaded from and persisted to unhidden_channels.json in the app config dir.
 	unhiddenChannels map[string]bool
@@ -451,6 +454,7 @@ func NewModel(app *App, clientID, userID string) Model {
 		pendingEdits:             make(map[string]string),
 		chatCache:                make(map[string]Chat),
 		favourites:               make(map[string]bool),
+		snoozed:                  make(map[string]time.Time),
 		unhiddenChannels:         make(map[string]bool),
 		originalTeamIndex:        make(map[string]int),
 		originalChannelIndex:     make(map[string]int),
@@ -518,6 +522,14 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 	// ── Heartbeat tick ───────────────────────────────────────────────────
 	case MsgTick:
 		cmds = append(cmds, tickCmd())
+		if m.pruneExpiredSnoozes(time.Now()) {
+			m = m.rebuildChatList()
+			var reconcileCmd tea.Cmd
+			m, reconcileCmd = m.reconcileSelectedChatConversation()
+			if reconcileCmd != nil {
+				cmds = append(cmds, reconcileCmd)
+			}
+		}
 
 		// Clear expired status messages.
 		if m.app.StatusUntil != nil && time.Now().After(*m.app.StatusUntil) {
@@ -676,6 +688,9 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				if m.app.CurrentUserName != nil && c.LastMessagePreview.From != nil &&
 					c.LastMessagePreview.From.User != nil && c.LastMessagePreview.From.User.DisplayName != nil {
 					isOwnMsg = *c.LastMessagePreview.From.User.DisplayName == *m.app.CurrentUserName
+				}
+				if !isOwnMsg {
+					m.wakeChat(c.ID)
 				}
 
 				isActiveChat := false
@@ -1895,6 +1910,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.ChatBookmarkPopupMode {
 		return m.handleChatBookmarkPopupKey(msg)
 	}
+	if m.app.SnoozePopupMode {
+		return m.handleSnoozePopupKey(msg)
+	}
 	if m.app.ThreadActionPopupMode {
 		return m.handleThreadActionPopupKey(msg)
 	}
@@ -2314,6 +2332,22 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.app.GetSelectedChat() != nil {
 			return m.executeThreadAction(threadActionAnalyze)
 		}
+
+	case "z":
+		if m.channelSelectedIndex >= 0 {
+			m.app.SetStatus("Snooze currently supports chats", 3*time.Second)
+			return m, nil
+		}
+		return m.quickSnooze()
+
+	case "Z":
+		if m.channelSelectedIndex >= 0 {
+			m.app.SetStatus("Snooze currently supports chats", 3*time.Second)
+			return m, nil
+		}
+		m.app.SnoozePopupMode = true
+		m.app.SnoozeSelectedIndex = 1
+		return m, nil
 
 	case "p":
 		// Show presence popup for chats (requires presence_enabled feature).
@@ -3421,6 +3455,11 @@ func (m Model) View() string {
 		}
 		modal := m.renderChatBookmarkPopup(popupW, popupH)
 		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
+	} else if m.app.SnoozePopupMode {
+		popupW := max(38, m.width*40/100)
+		popupH := max(14, m.height*60/100)
+		modal := m.renderSnoozePopup(popupW, popupH)
+		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 	} else if m.app.ThreadActionPopupMode {
 		popupW := m.width * 50 / 100
 		popupH := m.height * 70 / 100
@@ -3587,12 +3626,10 @@ func (m Model) renderConversationHeader(w int, detail string) string {
 		if rtl {
 			styled = padLeft(styled, w)
 		}
-		rendered = append(rendered, styled)
+		rendered = append(rendered, styled+"\x1b[K")
 	}
-	if detail != "" {
-		detail = ansi.Truncate(detail, w, "…")
-		rendered = append(rendered, lipgloss.NewStyle().Foreground(colDimGray).Render(detail))
-	}
+	detail = ansi.Truncate(detail, w, "…")
+	rendered = append(rendered, lipgloss.NewStyle().Foreground(colDimGray).Render(detail)+"\x1b[K")
 	return lipgloss.JoinVertical(lipgloss.Left, rendered...)
 }
 
@@ -4075,6 +4112,7 @@ func chatFilterIsActive(filter ChatListFilter) bool {
 		filter.FavouritesOnly ||
 		filter.TodayOnly ||
 		filter.WithinHours > 0 ||
+		filter.SnoozedOnly ||
 		len(filter.ChatTypes) > 0
 }
 
@@ -4115,6 +4153,9 @@ func chatFilterSummary(filter ChatListFilter) string {
 	if filter.WithinHours > 0 {
 		parts = append(parts, fmt.Sprintf("last %dh", filter.WithinHours))
 	}
+	if filter.SnoozedOnly {
+		parts = append(parts, "snoozed")
+	}
 	if query := strings.TrimSpace(filter.Query); query != "" {
 		parts = append(parts, fmt.Sprintf("%q", query))
 	}
@@ -4138,6 +4179,10 @@ func (m Model) activeChatViewSummary() string {
 }
 
 func (m Model) chatMatchesFilter(chat Chat, filter ChatListFilter) bool {
+	snoozed := m.chatSnoozed(chat.ID, time.Now())
+	if filter.SnoozedOnly != snoozed {
+		return false
+	}
 	unread := m.isUnread(chat)
 	if m.app.UnreadOverlay && !unread {
 		return false
@@ -4580,7 +4625,9 @@ func (m Model) renderChatList(w, h int) string {
 			nameStyle = lipgloss.NewStyle().Foreground(colWhite).Bold(true)
 		}
 		dateText := ""
-		if m.app.ShowChatDates {
+		if m.app.ActiveChatFilter.SnoozedOnly {
+			dateText = fmt.Sprintf("%16s ", m.snoozed[c.ID].Local().Format("Mon 15:04"))
+		} else if m.app.ShowChatDates {
 			dateText = fmt.Sprintf("%16s ", chatLastMessageTimestamp(c, renderedAt))
 		}
 		dateColumn := lipgloss.NewStyle().Foreground(colDimGray).Render(dateText)
@@ -7791,6 +7838,7 @@ func (m Model) getHelpContentLines() []string {
 			{m.keybindings.Display(keyChatMarkUnread), "Mark selected chat unread"},
 			{m.keybindings.Display(keyChatExport), "Export complete chat history as Markdown"},
 			{m.keybindings.Display(keyChatAnalyze), "Export complete chat and run configured analysis"},
+			{m.keybindings.Display(keyChatSnooze) + " · " + m.keybindings.Display(keyChatSnoozeMenu), "Snooze for default duration / choose wake time"},
 			{m.keybindings.Display(keyChannelToggleHidden), "Toggle hide/unhide channel (channels only)"},
 			{m.keybindings.Display(keyPresenceOpen), "Presence status of chat participants (feature: presence_enabled)"},
 			{m.keybindings.Display(keyNotificationsCycle), "Cycle notification mode"},
