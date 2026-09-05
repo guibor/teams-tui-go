@@ -28,6 +28,8 @@ import (
 const graphAPIBase = "https://graph.microsoft.com/v1.0"
 const graphAPIBeta = "https://graph.microsoft.com/beta"
 
+var graphHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 // ---------------------------------------------------------------------------
 // Data models
 // ---------------------------------------------------------------------------
@@ -525,7 +527,7 @@ func graphGetOnce(accessToken, path string) ([]byte, error) {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", path, err)
 	}
@@ -549,7 +551,7 @@ func graphGetEventuallyConsistent(accessToken, path string) ([]byte, error) {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("ConsistencyLevel", "eventual")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("GET %s: %w", path, err)
 	}
@@ -574,7 +576,7 @@ func graphPost(accessToken, path string, payload any) error {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("POST %s: %w", path, err)
 	}
@@ -596,7 +598,7 @@ func graphPut(accessToken, path string, content []byte, contentType string) ([]b
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", contentType)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("PUT %s: %w", path, err)
 	}
@@ -675,7 +677,7 @@ func uploadFileInSession(accessToken, createSessionURL string, content []byte) (
 		req.Header.Set("Content-Length", fmt.Sprintf("%d", len(chunk)))
 		req.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, end-1, totalSize))
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := graphHTTPClient.Do(req)
 		if err != nil {
 			return nil, fmt.Errorf("upload chunk bytes %d-%d: %w", offset, end-1, err)
 		}
@@ -777,7 +779,7 @@ func graphPatch(accessToken, path string, payload any) error {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("PATCH %s: %w", path, err)
 	}
@@ -802,7 +804,7 @@ func graphDelete(accessToken, path string, useBeta bool) error {
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("DELETE %s: %w", path, err)
 	}
@@ -2526,7 +2528,7 @@ func graphPostWithResponse(accessToken, path string, payload any) ([]byte, error
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("POST %s: %w", path, err)
 	}
@@ -2697,7 +2699,7 @@ func postChat(accessToken string, payload any) ([]byte, string, error) {
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return nil, "", fmt.Errorf("POST /chats: %w", err)
 	}
@@ -2984,7 +2986,7 @@ func DownloadFile(accessToken, fileURL, destPath string) error {
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphHTTPClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("DownloadFile: request: %w", err)
 	}

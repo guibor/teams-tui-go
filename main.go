@@ -33,11 +33,11 @@ func loadChatsCmd(clientID string, existingChats []Chat, currentUserName *string
 	return func() tea.Msg {
 		token, err := GetValidTokenSilent(clientID)
 		if err != nil {
-			return MsgChatsLoaded{Chats: existingChats, CurrentUserName: currentUserName}
+			return MsgChatsLoaded{Chats: existingChats, CurrentUserName: currentUserName, Err: err}
 		}
 		chats, currentUser, err := GetChats(token, existingChats, currentUserName, currentUserID)
 		if err != nil {
-			return MsgChatsLoaded{Chats: existingChats, CurrentUserName: currentUserName}
+			return MsgChatsLoaded{Chats: existingChats, CurrentUserName: currentUserName, Err: err}
 		}
 		return MsgChatsLoaded{Chats: chats, CurrentUserName: currentUser}
 	}

@@ -64,6 +64,7 @@ var (
 type MsgChatsLoaded struct {
 	Chats           []Chat
 	CurrentUserName *string
+	Err             error
 }
 
 // MsgFileAttached is sent when a file has been read from disk.
@@ -635,6 +636,12 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		m.loadingChats = false
 		manualRefresh := m.manualChatRefresh
 		m.manualChatRefresh = false
+		if msg.Err != nil {
+			if manualRefresh {
+				m.app.SetStatus("Chat refresh failed: "+msg.Err.Error(), 12*time.Second)
+			}
+			break
+		}
 		m.latestChats = msg.Chats
 		if msg.CurrentUserName != nil {
 			m.app.SetCurrentUser(*msg.CurrentUserName)
@@ -814,6 +821,10 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 
 		// Build stable order.
 		m = m.mergeChats(m.latestChats)
+		// Restore selection by stable identity, never by the old row number.
+		if selectedID != "" {
+			m.app.SetSelectedChatID(selectedID)
+		}
 		if manualRefresh {
 			covered := 0
 			for _, chat := range m.latestChats {
@@ -827,11 +838,6 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			}
 			m.app.SetStatus(fmt.Sprintf("Refreshed %d chats · viewpoints %d/%d · %s",
 				len(m.latestChats), covered, len(m.latestChats), state), 10*time.Second)
-		}
-
-		// Restore selection by stable identity, never by the old row number.
-		if selectedID != "" {
-			m.app.SetSelectedChatID(selectedID)
 		}
 
 		// A filtered refresh can remove the selected chat while retaining the
