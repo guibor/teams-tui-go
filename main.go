@@ -169,24 +169,28 @@ func exportCompleteChatMarkdown(clientID string, chat Chat, directory string) (s
 	return path, len(messages), err
 }
 
-func buildThreadAnalysisCommand(command, agent, markdownPath string) (*exec.Cmd, error) {
+func buildThreadAnalysisCommand(command, agent, destination, model, markdownPath string) (*exec.Cmd, error) {
 	parts := strings.Fields(command)
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty thread_analysis_command")
 	}
 	args := append(append([]string{}, parts[1:]...), "--agent", strings.TrimSpace(agent), markdownPath)
-	return exec.Command(parts[0], args...), nil
+	cmd := exec.Command(parts[0], args...)
+	cmd.Env = append(os.Environ(),
+		"TEAMS_THREAD_ANALYSIS_DESTINATION="+strings.TrimSpace(destination),
+		"TEAMS_THREAD_ANALYSIS_MODEL="+strings.TrimSpace(model))
+	return cmd, nil
 }
 
 // analyzeChatThreadCmd performs the same complete paginated export as E, then
 // invokes the configured bridge without blocking the Bubble Tea event loop.
-func analyzeChatThreadCmd(clientID string, chat Chat, directory, agent, command string) tea.Cmd {
+func analyzeChatThreadCmd(clientID string, chat Chat, directory, agent, destination, model, command string) tea.Cmd {
 	return func() tea.Msg {
 		path, count, err := exportCompleteChatMarkdown(clientID, chat, directory)
 		if err != nil {
 			return MsgThreadAnalysisLaunched{Agent: agent, Err: err}
 		}
-		cmd, err := buildThreadAnalysisCommand(command, agent, path)
+		cmd, err := buildThreadAnalysisCommand(command, agent, destination, model, path)
 		if err != nil {
 			return MsgThreadAnalysisLaunched{Path: path, Count: count, Agent: agent, Err: err}
 		}
@@ -956,6 +960,9 @@ func main() {
 	app.ExportDirectory = ResolveExportDirectory()
 	app.ThreadAnalysisAgent = ResolveThreadAnalysisAgent()
 	app.ThreadAnalysisCommand = ResolveThreadAnalysisCommand()
+	app.ThreadAnalysisDestination = ResolveThreadAnalysisDestination()
+	app.ThreadAnalysisModel = ResolveThreadAnalysisModel()
+	app.ThreadAnalysisModels = ResolveThreadAnalysisModels()
 	app.ThreadCaptureFormat = ResolveThreadCaptureFormat()
 	app.ThreadCaptureFile = ResolveThreadCaptureFile()
 	app.ThreadCaptureOrgFile = ResolveThreadCaptureOrgFile()

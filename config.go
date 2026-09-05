@@ -216,28 +216,31 @@ type ChatBookmarkConfig struct {
 
 // Config holds persistent application settings.
 type Config struct {
-	ClientID                *string              `json:"client_id,omitempty"`
-	NotificationMode        *NotificationMode    `json:"notification_mode,omitempty"`
-	NotificationShowPreview *bool                `json:"notification_show_preview,omitempty"`
-	NotificationPreviewLen  *int                 `json:"notification_preview_len,omitempty"`
-	MessageLimit            *int                 `json:"message_limit,omitempty"`
-	SearchContextLimit      *int                 `json:"search_context_limit,omitempty"`
-	ChatLimit               *int                 `json:"chat_limit,omitempty"`
-	MarkReadOnOpen          *bool                `json:"mark_read_on_open,omitempty"`
-	DefaultSnoozeMinutes    *int                 `json:"default_snooze_minutes,omitempty"`
-	WorkdayStart            *string              `json:"workday_start,omitempty"`
-	WorkdayEnd              *string              `json:"workday_end,omitempty"`
-	ExportDirectory         *string              `json:"export_directory,omitempty"`
-	ThreadAnalysisAgent     *string              `json:"thread_analysis_agent,omitempty"`
-	ThreadAnalysisCommand   *string              `json:"thread_analysis_command,omitempty"`
-	ThreadCaptureFormat     *ThreadCaptureFormat `json:"thread_capture_format,omitempty"`
-	ThreadCaptureFile       *string              `json:"thread_capture_file,omitempty"`
-	ThreadCaptureOrgFile    *string              `json:"thread_capture_org_file,omitempty"`
-	ChatIconTheme           *string              `json:"chat_icon_theme,omitempty"`
-	ShowChatDates           *bool                `json:"show_chat_dates,omitempty"`
-	CustomChatIcons         map[string]string    `json:"custom_chat_icons,omitempty"`
-	ChatBookmarks           []ChatBookmarkConfig `json:"chat_bookmarks"`
-	KeyBindings             KeyBindingConfig     `json:"keybindings"`
+	ClientID                  *string              `json:"client_id,omitempty"`
+	NotificationMode          *NotificationMode    `json:"notification_mode,omitempty"`
+	NotificationShowPreview   *bool                `json:"notification_show_preview,omitempty"`
+	NotificationPreviewLen    *int                 `json:"notification_preview_len,omitempty"`
+	MessageLimit              *int                 `json:"message_limit,omitempty"`
+	SearchContextLimit        *int                 `json:"search_context_limit,omitempty"`
+	ChatLimit                 *int                 `json:"chat_limit,omitempty"`
+	MarkReadOnOpen            *bool                `json:"mark_read_on_open,omitempty"`
+	DefaultSnoozeMinutes      *int                 `json:"default_snooze_minutes,omitempty"`
+	WorkdayStart              *string              `json:"workday_start,omitempty"`
+	WorkdayEnd                *string              `json:"workday_end,omitempty"`
+	ExportDirectory           *string              `json:"export_directory,omitempty"`
+	ThreadAnalysisAgent       *string              `json:"thread_analysis_agent,omitempty"`
+	ThreadAnalysisCommand     *string              `json:"thread_analysis_command,omitempty"`
+	ThreadAnalysisDestination *string              `json:"thread_analysis_destination,omitempty"`
+	ThreadAnalysisModel       *string              `json:"thread_analysis_model,omitempty"`
+	ThreadAnalysisModels      []string             `json:"thread_analysis_models,omitempty"`
+	ThreadCaptureFormat       *ThreadCaptureFormat `json:"thread_capture_format,omitempty"`
+	ThreadCaptureFile         *string              `json:"thread_capture_file,omitempty"`
+	ThreadCaptureOrgFile      *string              `json:"thread_capture_org_file,omitempty"`
+	ChatIconTheme             *string              `json:"chat_icon_theme,omitempty"`
+	ShowChatDates             *bool                `json:"show_chat_dates,omitempty"`
+	CustomChatIcons           map[string]string    `json:"custom_chat_icons,omitempty"`
+	ChatBookmarks             []ChatBookmarkConfig `json:"chat_bookmarks"`
+	KeyBindings               KeyBindingConfig     `json:"keybindings"`
 
 	// Optional feature flags — each defaults to false (disabled).
 	// When enabled, the corresponding Graph API permission must be granted
@@ -424,6 +427,20 @@ func InitConfig() {
 	if cfg.ThreadAnalysisCommand == nil {
 		command := ""
 		cfg.ThreadAnalysisCommand = &command
+		modified = true
+	}
+	if cfg.ThreadAnalysisDestination == nil {
+		destination := "terminal"
+		cfg.ThreadAnalysisDestination = &destination
+		modified = true
+	}
+	if cfg.ThreadAnalysisModel == nil {
+		model := "default"
+		cfg.ThreadAnalysisModel = &model
+		modified = true
+	}
+	if len(cfg.ThreadAnalysisModels) == 0 {
+		cfg.ThreadAnalysisModels = []string{"default"}
 		modified = true
 	}
 	if cfg.ThreadCaptureFormat == nil {
@@ -653,6 +670,42 @@ func ResolveThreadAnalysisCommand() string {
 		}
 	}
 	return ""
+}
+
+func ResolveThreadAnalysisDestination() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ThreadAnalysisDestination != nil {
+		if value := strings.TrimSpace(*cfg.ThreadAnalysisDestination); value != "" {
+			return value
+		}
+	}
+	return "terminal"
+}
+
+func ResolveThreadAnalysisModel() string {
+	cfg := LoadConfig()
+	if cfg != nil && cfg.ThreadAnalysisModel != nil {
+		if value := strings.TrimSpace(*cfg.ThreadAnalysisModel); value != "" {
+			return value
+		}
+	}
+	return "default"
+}
+
+func ResolveThreadAnalysisModels() []string {
+	cfg := LoadConfig()
+	if cfg != nil && len(cfg.ThreadAnalysisModels) > 0 {
+		models := make([]string, 0, len(cfg.ThreadAnalysisModels))
+		for _, model := range cfg.ThreadAnalysisModels {
+			if model = strings.TrimSpace(model); model != "" {
+				models = append(models, model)
+			}
+		}
+		if len(models) > 0 {
+			return models
+		}
+	}
+	return []string{"default"}
 }
 
 func normalizeThreadCaptureFormat(format ThreadCaptureFormat) ThreadCaptureFormat {

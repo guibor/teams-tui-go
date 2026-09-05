@@ -97,6 +97,7 @@ const (
 	keyChatMarkUnread         = "chat.mark_unread"
 	keyChatExport             = "chat.export_markdown"
 	keyChatAnalyze            = "chat.analyze"
+	keyChatAnalyzeChoose      = "chat.analyze_choose"
 	keyChatSnooze             = "chat.snooze"
 	keyChatSnoozeMenu         = "chat.snooze_menu"
 	keyPresenceOpen           = "presence.open"
@@ -169,6 +170,7 @@ const (
 	keyThreadCapture          = "thread_action.capture"
 	keyThreadExport           = "thread_action.export_markdown"
 	keyThreadAnalyze          = "thread_action.analyze"
+	keyThreadAnalyzeChoose    = "thread_action.analyze_choose"
 	keyThreadCopyLink         = "thread_action.copy_link"
 	keyThreadArtifacts        = "thread_action.artifacts"
 	keyArtifactOpen           = "artifact.open"
@@ -244,6 +246,7 @@ var keyBindingDefinitions = []keyBindingDefinition{
 	keyDef(keyChatMarkUnread, "u", KeyList{"u"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyChatExport, "E", KeyList{"E"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyChatAnalyze, "A", KeyList{"A"}, keyContextNormalChat, keyContextNormalChannel),
+	keyDef(keyChatAnalyzeChoose, "X", KeyList{"X"}, keyContextNormalChat),
 	keyDef(keyChatSnooze, "z", KeyList{"z"}, keyContextNormalChat),
 	keyDef(keyChatSnoozeMenu, "Z", KeyList{"Z"}, keyContextNormalChat),
 	keyDef(keyPresenceOpen, "p", KeyList{"p"}, keyContextNormalChat, keyContextNormalChannel, keyContextMessageSelect),
@@ -322,6 +325,7 @@ var keyBindingDefinitions = []keyBindingDefinition{
 	keyDef(keyThreadCapture, "a", KeyList{"a"}, keyContextThreadActions),
 	keyDef(keyThreadExport, "e", KeyList{"e"}, keyContextThreadActions),
 	keyDef(keyThreadAnalyze, "A", KeyList{"A"}, keyContextThreadActions),
+	keyDef(keyThreadAnalyzeChoose, "X", KeyList{"X"}, keyContextThreadActions),
 	keyDef(keyThreadCopyLink, "y", KeyList{"y"}, keyContextThreadActions),
 	keyDef(keyThreadArtifacts, "t", KeyList{"t"}, keyContextThreadActions),
 	keyDef(keyArtifactOpen, "enter", KeyList{"enter", "o"}, keyContextArtifacts),

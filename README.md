@@ -350,9 +350,19 @@ status line retains the saved Markdown path for manual recovery.
 {
   "export_directory": "~/Downloads",
   "thread_analysis_agent": "codex",
+	"thread_analysis_destination": "terminal",
+	"thread_analysis_model": "gpt-5.6-luna",
+	"thread_analysis_models": ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "default"],
   "thread_analysis_command": "/usr/local/bin/thread-analysis-bridge"
 }
 ```
+
+The configured action (`A`) shows its command, destination, agent, and model in
+the thread-actions window. The interactive action (`X`) asks for a destination
+(`terminal`, `emacs`, or `codex-app`) and then a model from
+`thread_analysis_models`. Destination and model are exposed to the bridge as
+`TEAMS_THREAD_ANALYSIS_DESTINATION` and `TEAMS_THREAD_ANALYSIS_MODEL`; the
+existing `--agent AGENT PATH` command contract remains unchanged.
 
 ### Search Queries
 

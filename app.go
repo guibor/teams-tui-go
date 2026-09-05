@@ -117,112 +117,119 @@ type FeatureFlags struct {
 
 // App holds all runtime state for the Teams TUI application.
 type App struct {
-	Chats                      []Chat
-	Status                     string
-	SearchStatus               string
-	SelectedIndex              int    // derived visible-row cursor for rendering
-	SelectedChatID             string // canonical selected chat identity
-	CurrentUserName            *string
-	CurrentUserID              string // used for markChatRead
-	Messages                   []Message
-	MessagesConversationID     string // chat/channel that owns Messages
-	LoadingMessages            bool
-	SearchLoadingMessages      bool
-	InputMode                  bool
-	InputBuffer                string
-	ScrollOffset               int
-	MaxScroll                  int
-	ChatScrollOffset           int
-	ChannelScrollOffset        int
-	SnapToBottom               bool
-	MessageSelectedIndex       int
-	MessageSelectionMode       bool
-	MessagePopupMode           bool
-	MessagePopupScrollOffset   int
-	ReactionMode               bool
-	DeleteConfirmMode          bool
-	NotificationMode           NotificationMode
-	NotificationShowPreview    bool
-	NotificationPreviewLen     int
-	MarkReadOnOpen             bool
-	DefaultSnoozeMinutes       int
-	WorkdayStart               string
-	WorkdayEnd                 string
-	ExportDirectory            string
-	ThreadAnalysisAgent        string
-	ThreadAnalysisCommand      string
-	ThreadCaptureFormat        ThreadCaptureFormat
-	ThreadCaptureFile          string
-	ThreadCaptureOrgFile       string
-	ShowChatDates              bool
-	VisualBellUntil            *time.Time
-	StatusUntil                *time.Time
-	SearchStatusUntil          *time.Time
-	NextLink                   string
-	PendingScrollID            string
-	EditingMessageID           *string
-	ReplyToMessage             *Message // source message for a quoted reply
-	PendingForwardText         string   // editable Markdown prepared while choosing a forward target
-	UrlSelectionMode           bool
-	UrlSelectionOpenMode       bool // true if opening, false if yanking/copying
-	UrlSelectedIndex           int
-	UrlsInMessage              []string
-	MessageLineOffsets         []int
-	SearchMode                 bool
-	SearchActive               bool
-	SearchQuery                string
-	SearchPopupMode            bool
-	SearchPopupSelectedIndex   int
-	SearchPopupScrollOffset    int
-	SearchPopupResults         []SearchPopupItem
-	HistoryMessages            map[string][]Message
-	HistoryNextLink            map[string]string
-	HistoryInitialized         map[string]bool
-	ChatMessagesLoadedOnce     map[string]bool
-	ChatCacheDirty             map[string]bool
-	SearchStates               map[string]*ChatSearchState
-	CachedMessages             map[string][]Message // per-chat message cache for instant restore on revisit
-	CachedNextLink             map[string]string    // per-chat NextLink cache
-	MainChatScrollOffset       int
-	MainChatSnapToBottom       bool
-	UserSearchPopupMode        bool
-	UserSearchMode             bool
-	UserSearchQuery            string
-	UserSearchStatus           string
-	UserSearchStatusUntil      *time.Time
-	UserSearchLocalResults     []Chat
-	UserSearchMemberResults    []Chat
-	UserSearchMessageResults   []MessageSearchResult
-	UserSearchChannelResults   []channelEntry
-	UserSearchDirectoryResults []User
-	UserSearchSelectedIndex    int
-	UserSearchLoading          bool
-	NewChatMode                bool
-	NewChatLocalResults        []User
-	NewChatSelectedUsers       []User
-	NewChatDirectoryQuery      string
-	NewChatComposePending      bool
-	ChatFilterPopupMode        bool
-	ChatFilterInputMode        bool
-	ChatFilterSelectedIndex    int
-	ChatBookmarkPopupMode      bool
-	ChatBookmarkSelectedIndex  int
-	ChatBookmarks              []ChatBookmarkConfig
-	ActiveChatBookmark         string
-	ThreadActionPopupMode      bool
-	ThreadActionSelectedIndex  int
-	ArtifactPopupMode          bool
-	ArtifactSelectedIndex      int
-	Artifacts                  []ConversationArtifact
-	ActiveChatFilter           ChatListFilter
-	DraftChatFilter            ChatListFilter
-	UnreadOverlay              bool
-	SnoozePopupMode            bool
-	SnoozeSelectedIndex        int
-	AppStartTime               time.Time
-	ChatIconTheme              string
-	CustomChatIcons            map[string]string
-	Features                   FeatureFlags
+	Chats                            []Chat
+	Status                           string
+	SearchStatus                     string
+	SelectedIndex                    int    // derived visible-row cursor for rendering
+	SelectedChatID                   string // canonical selected chat identity
+	CurrentUserName                  *string
+	CurrentUserID                    string // used for markChatRead
+	Messages                         []Message
+	MessagesConversationID           string // chat/channel that owns Messages
+	LoadingMessages                  bool
+	SearchLoadingMessages            bool
+	InputMode                        bool
+	InputBuffer                      string
+	ScrollOffset                     int
+	MaxScroll                        int
+	ChatScrollOffset                 int
+	ChannelScrollOffset              int
+	SnapToBottom                     bool
+	MessageSelectedIndex             int
+	MessageSelectionMode             bool
+	MessagePopupMode                 bool
+	MessagePopupScrollOffset         int
+	ReactionMode                     bool
+	DeleteConfirmMode                bool
+	NotificationMode                 NotificationMode
+	NotificationShowPreview          bool
+	NotificationPreviewLen           int
+	MarkReadOnOpen                   bool
+	DefaultSnoozeMinutes             int
+	WorkdayStart                     string
+	WorkdayEnd                       string
+	ExportDirectory                  string
+	ThreadAnalysisAgent              string
+	ThreadAnalysisCommand            string
+	ThreadAnalysisDestination        string
+	ThreadAnalysisModel              string
+	ThreadAnalysisModels             []string
+	ThreadAnalysisPopupMode          bool
+	ThreadAnalysisStage              int
+	ThreadAnalysisSelectedIndex      int
+	ThreadAnalysisPendingDestination string
+	ThreadCaptureFormat              ThreadCaptureFormat
+	ThreadCaptureFile                string
+	ThreadCaptureOrgFile             string
+	ShowChatDates                    bool
+	VisualBellUntil                  *time.Time
+	StatusUntil                      *time.Time
+	SearchStatusUntil                *time.Time
+	NextLink                         string
+	PendingScrollID                  string
+	EditingMessageID                 *string
+	ReplyToMessage                   *Message // source message for a quoted reply
+	PendingForwardText               string   // editable Markdown prepared while choosing a forward target
+	UrlSelectionMode                 bool
+	UrlSelectionOpenMode             bool // true if opening, false if yanking/copying
+	UrlSelectedIndex                 int
+	UrlsInMessage                    []string
+	MessageLineOffsets               []int
+	SearchMode                       bool
+	SearchActive                     bool
+	SearchQuery                      string
+	SearchPopupMode                  bool
+	SearchPopupSelectedIndex         int
+	SearchPopupScrollOffset          int
+	SearchPopupResults               []SearchPopupItem
+	HistoryMessages                  map[string][]Message
+	HistoryNextLink                  map[string]string
+	HistoryInitialized               map[string]bool
+	ChatMessagesLoadedOnce           map[string]bool
+	ChatCacheDirty                   map[string]bool
+	SearchStates                     map[string]*ChatSearchState
+	CachedMessages                   map[string][]Message // per-chat message cache for instant restore on revisit
+	CachedNextLink                   map[string]string    // per-chat NextLink cache
+	MainChatScrollOffset             int
+	MainChatSnapToBottom             bool
+	UserSearchPopupMode              bool
+	UserSearchMode                   bool
+	UserSearchQuery                  string
+	UserSearchStatus                 string
+	UserSearchStatusUntil            *time.Time
+	UserSearchLocalResults           []Chat
+	UserSearchMemberResults          []Chat
+	UserSearchMessageResults         []MessageSearchResult
+	UserSearchChannelResults         []channelEntry
+	UserSearchDirectoryResults       []User
+	UserSearchSelectedIndex          int
+	UserSearchLoading                bool
+	NewChatMode                      bool
+	NewChatLocalResults              []User
+	NewChatSelectedUsers             []User
+	NewChatDirectoryQuery            string
+	NewChatComposePending            bool
+	ChatFilterPopupMode              bool
+	ChatFilterInputMode              bool
+	ChatFilterSelectedIndex          int
+	ChatBookmarkPopupMode            bool
+	ChatBookmarkSelectedIndex        int
+	ChatBookmarks                    []ChatBookmarkConfig
+	ActiveChatBookmark               string
+	ThreadActionPopupMode            bool
+	ThreadActionSelectedIndex        int
+	ArtifactPopupMode                bool
+	ArtifactSelectedIndex            int
+	Artifacts                        []ConversationArtifact
+	ActiveChatFilter                 ChatListFilter
+	DraftChatFilter                  ChatListFilter
+	UnreadOverlay                    bool
+	SnoozePopupMode                  bool
+	SnoozeSelectedIndex              int
+	AppStartTime                     time.Time
+	ChatIconTheme                    string
+	CustomChatIcons                  map[string]string
+	Features                         FeatureFlags
 
 	// ── Presence popup (Feature: presence_enabled) ───────────────────────
 	PresencePopupMode    bool

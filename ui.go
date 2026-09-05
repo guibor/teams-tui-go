@@ -1913,6 +1913,9 @@ func (m Model) handleKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 	if m.app.SnoozePopupMode {
 		return m.handleSnoozePopupKey(msg)
 	}
+	if m.app.ThreadAnalysisPopupMode {
+		return m.handleThreadAnalysisPopupKey(msg)
+	}
 	if m.app.ThreadActionPopupMode {
 		return m.handleThreadActionPopupKey(msg)
 	}
@@ -2328,6 +2331,15 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.channelSelectedIndex >= 0 {
 			m.app.SetStatus("Agent thread analysis currently supports chats", 5*time.Second)
 			break
+		}
+
+	case "X":
+		if m.channelSelectedIndex >= 0 {
+			m.app.SetStatus("Agent thread analysis currently supports chats", 5*time.Second)
+			break
+		}
+		if m.app.GetSelectedChat() != nil {
+			return m.executeThreadAction(threadActionAnalyzeChoose)
 		}
 		if m.app.GetSelectedChat() != nil {
 			return m.executeThreadAction(threadActionAnalyze)
@@ -3459,6 +3471,11 @@ func (m Model) View() string {
 		popupW := max(38, m.width*40/100)
 		popupH := max(14, m.height*60/100)
 		modal := m.renderSnoozePopup(popupW, popupH)
+		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
+	} else if m.app.ThreadAnalysisPopupMode {
+		popupW := max(52, m.width*50/100)
+		popupH := max(15, m.height*60/100)
+		modal := m.renderThreadAnalysisPopup(popupW, popupH)
 		result = lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 	} else if m.app.ThreadActionPopupMode {
 		popupW := m.width * 50 / 100
@@ -7838,6 +7855,7 @@ func (m Model) getHelpContentLines() []string {
 			{m.keybindings.Display(keyChatMarkUnread), "Mark selected chat unread"},
 			{m.keybindings.Display(keyChatExport), "Export complete chat history as Markdown"},
 			{m.keybindings.Display(keyChatAnalyze), "Export complete chat and run configured analysis"},
+			{m.keybindings.Display(keyChatAnalyzeChoose), "Choose analysis destination and model"},
 			{m.keybindings.Display(keyChatSnooze) + " · " + m.keybindings.Display(keyChatSnoozeMenu), "Snooze for default duration / choose wake time"},
 			{m.keybindings.Display(keyChannelToggleHidden), "Toggle hide/unhide channel (channels only)"},
 			{m.keybindings.Display(keyPresenceOpen), "Presence status of chat participants (feature: presence_enabled)"},
@@ -7930,6 +7948,7 @@ func (m Model) getHelpContentLines() []string {
 			{m.keybindings.Display(keyThreadRead) + " · " + m.keybindings.Display(keyThreadUnread) + " · " + m.keybindings.Display(keyThreadFavorite), "Mark read / unread / toggle favorite"},
 			{m.keybindings.Display(keyThreadCapture), "Capture in the configured dated thread list"},
 			{m.keybindings.Display(keyThreadAnalyze), "Export complete transcript and run analysis"},
+			{m.keybindings.Display(keyThreadAnalyzeChoose), "Choose analysis destination and model"},
 			{m.keybindings.Display(keyThreadExport) + " · " + m.keybindings.Display(keyThreadCopyLink), "Export complete transcript / copy Teams link"},
 			{m.keybindings.Display(keyThreadArtifacts), "Choose a recording or transcript"},
 			{m.keybindings.Display(keyListNext) + " · " + m.keybindings.Display(keyListPrevious) + " · " + m.keybindings.Display(keyListSelect), "Navigate and run an action"},
@@ -7970,6 +7989,8 @@ func (m Model) getHelpContentLines() []string {
 	contentLines = append(contentLines,
 		fmt.Sprintf("  chat_limit               %d", ResolveChatLimit()),
 		fmt.Sprintf("  thread_analysis_agent    %s", m.app.ThreadAnalysisAgent),
+		fmt.Sprintf("  thread_analysis_target   %s", m.threadAnalysisSummary()),
+		fmt.Sprintf("  thread_analysis_command  %s", m.app.ThreadAnalysisCommand),
 		fmt.Sprintf("  terminal_image_protocol  %s", resolveTerminalImageProtocol()),
 		fmt.Sprintf("  file_preview_enabled      %s", featureState(m.app.Features.FilePreview)),
 		fmt.Sprintf("  file_preview_in_terminal  %s", featureState(m.app.Features.FilePreviewInTerminal)),

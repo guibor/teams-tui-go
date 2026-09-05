@@ -14,20 +14,21 @@ import (
 type threadActionID string
 
 const (
-	threadActionOpenBrowser threadActionID = "open-browser"
-	threadActionOpenTeams   threadActionID = "open-teams"
-	threadActionMeetCall    threadActionID = "meet-call"
-	threadActionCompose     threadActionID = "compose"
-	threadActionReply       threadActionID = "reply"
-	threadActionForward     threadActionID = "forward"
-	threadActionRead        threadActionID = "read"
-	threadActionUnread      threadActionID = "unread"
-	threadActionFavorite    threadActionID = "favorite"
-	threadActionCapture     threadActionID = "capture"
-	threadActionExport      threadActionID = "export"
-	threadActionAnalyze     threadActionID = "analyze"
-	threadActionCopyLink    threadActionID = "copy-link"
-	threadActionArtifacts   threadActionID = "artifacts"
+	threadActionOpenBrowser   threadActionID = "open-browser"
+	threadActionOpenTeams     threadActionID = "open-teams"
+	threadActionMeetCall      threadActionID = "meet-call"
+	threadActionCompose       threadActionID = "compose"
+	threadActionReply         threadActionID = "reply"
+	threadActionForward       threadActionID = "forward"
+	threadActionRead          threadActionID = "read"
+	threadActionUnread        threadActionID = "unread"
+	threadActionFavorite      threadActionID = "favorite"
+	threadActionCapture       threadActionID = "capture"
+	threadActionExport        threadActionID = "export"
+	threadActionAnalyze       threadActionID = "analyze"
+	threadActionAnalyzeChoose threadActionID = "analyze-choose"
+	threadActionCopyLink      threadActionID = "copy-link"
+	threadActionArtifacts     threadActionID = "artifacts"
 )
 
 type threadAction struct {
@@ -49,7 +50,8 @@ func threadActions() []threadAction {
 		{Key: "*", Label: "Toggle favorite", ID: threadActionFavorite},
 		{Key: "a", Label: "Capture in configured thread list", ID: threadActionCapture},
 		{Key: "e", Label: "Export complete Markdown transcript", ID: threadActionExport},
-		{Key: "A", Label: "Analyze complete thread with configured command", ID: threadActionAnalyze},
+		{Key: "A", Label: "Analyze complete thread", ID: threadActionAnalyze},
+		{Key: "X", Label: "Choose analysis destination and model", ID: threadActionAnalyzeChoose},
 		{Key: "y", Label: "Copy Teams link", ID: threadActionCopyLink},
 		{Key: "t", Label: "Choose recording or transcript", ID: threadActionArtifacts},
 	}
@@ -81,6 +83,8 @@ func threadActionBinding(action threadActionID) string {
 		return keyThreadExport
 	case threadActionAnalyze:
 		return keyThreadAnalyze
+	case threadActionAnalyzeChoose:
+		return keyThreadAnalyzeChoose
 	case threadActionCopyLink:
 		return keyThreadCopyLink
 	case threadActionArtifacts:
@@ -94,6 +98,9 @@ func (m Model) configuredThreadActions() []threadAction {
 	actions := threadActions()
 	for index := range actions {
 		actions[index].Key = m.keybindings.Primary(threadActionBinding(actions[index].ID))
+		if actions[index].ID == threadActionAnalyze {
+			actions[index].Label = "Analyze complete thread (" + m.threadAnalysisSummary() + ")"
+		}
 	}
 	return actions
 }
@@ -308,14 +315,13 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		return advance(m, exportChatMarkdownCmd(m.clientID, chatValue, m.app.ExportDirectory))
 
 	case threadActionAnalyze:
-		m.app.SetStatus("Exporting complete chat history for "+m.app.ThreadAnalysisAgent+" analysis...", 0)
-		return advance(m, analyzeChatThreadCmd(
-			m.clientID,
-			chatValue,
-			m.app.ExportDirectory,
-			m.app.ThreadAnalysisAgent,
-			m.app.ThreadAnalysisCommand,
-		))
+		return m.launchThreadAnalysis(chatValue, m.app.ThreadAnalysisDestination, m.app.ThreadAnalysisModel)
+
+	case threadActionAnalyzeChoose:
+		m.app.ThreadAnalysisPopupMode = true
+		m.app.ThreadAnalysisStage = 0
+		m.app.ThreadAnalysisSelectedIndex = 0
+		return m, nil
 
 	case threadActionCopyLink:
 		if chatURL == "" {
@@ -388,6 +394,8 @@ func (m Model) renderThreadActionPopup(w, h int) string {
 	lines := []string{
 		lipgloss.NewStyle().Foreground(colYellow).Bold(true).Render("Thread actions"),
 		lipgloss.NewStyle().Foreground(colDimGray).Render(chatName),
+		lipgloss.NewStyle().Foreground(colDimGray).Render("Analysis: " + m.threadAnalysisSummary()),
+		lipgloss.NewStyle().Foreground(colDimGray).Render("Command: " + m.app.ThreadAnalysisCommand),
 		"",
 	}
 	for index, action := range m.configuredThreadActions() {
