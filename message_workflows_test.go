@@ -183,21 +183,22 @@ func TestReadActionWrapsToFirstVisibleChat(t *testing.T) {
 
 func TestThreadActionAdvancePolicy(t *testing.T) {
 	for _, action := range []threadActionID{
-		threadActionOpenBrowser,
-		threadActionOpenTeams,
 		threadActionRead,
 		threadActionUnread,
-		threadActionFavorite,
-		threadActionCapture,
-		threadActionExport,
-		threadActionAnalyze,
-		threadActionCopyLink,
 	} {
 		if !threadActionAdvancesChat(action) {
 			t.Errorf("action %s should advance", action)
 		}
 	}
 	for _, action := range []threadActionID{
+		threadActionOpenBrowser,
+		threadActionOpenTeams,
+		threadActionMeetCall,
+		threadActionFavorite,
+		threadActionCapture,
+		threadActionExport,
+		threadActionAnalyze,
+		threadActionCopyLink,
 		threadActionCompose,
 		threadActionReply,
 		threadActionForward,
@@ -209,15 +210,15 @@ func TestThreadActionAdvancePolicy(t *testing.T) {
 	}
 }
 
-func TestCaptureActionAdvancesWhileComposeRetainsChat(t *testing.T) {
+func TestCaptureAndComposeRetainChat(t *testing.T) {
 	model := newWorkflowChatListModel("chat-1", "chat-2")
 	model.app.ThreadCaptureFile = t.TempDir() + "/threads.md"
 	model, cmd := model.executeThreadAction(threadActionCapture)
 	if cmd == nil {
 		t.Fatal("capture action returned no command")
 	}
-	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-2" {
-		t.Fatalf("capture selected %#v, want chat-2", selected)
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-1" {
+		t.Fatalf("capture selected %#v, want current chat-1", selected)
 	}
 
 	model = newWorkflowChatListModel("chat-1", "chat-2")
@@ -230,7 +231,7 @@ func TestCaptureActionAdvancesWhileComposeRetainsChat(t *testing.T) {
 	}
 }
 
-func TestArtifactChooserAdvancesAfterOpeningResource(t *testing.T) {
+func TestArtifactChooserRetainsChatAfterOpeningResource(t *testing.T) {
 	model := newWorkflowChatListModel("chat-1", "chat-2")
 	model.app.ArtifactPopupMode = true
 	model.app.Artifacts = []ConversationArtifact{{
@@ -245,11 +246,11 @@ func TestArtifactChooserAdvancesAfterOpeningResource(t *testing.T) {
 	if model.app.ArtifactPopupMode {
 		t.Fatal("artifact chooser remained open after dispatch")
 	}
-	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-2" {
-		t.Fatalf("artifact open selected %#v, want chat-2", selected)
+	if selected := model.app.GetSelectedChat(); selected == nil || selected.ID != "chat-1" {
+		t.Fatalf("artifact open selected %#v, want current chat-1", selected)
 	}
-	if model.app.MessagesConversationID != "chat-2" {
-		t.Fatalf("artifact open transcript owner = %q, want chat-2", model.app.MessagesConversationID)
+	if model.app.MessagesConversationID != "chat-1" {
+		t.Fatalf("artifact open transcript owner = %q, want chat-1", model.app.MessagesConversationID)
 	}
 }
 

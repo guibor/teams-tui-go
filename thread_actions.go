@@ -136,16 +136,7 @@ func isTeamsWebHost(host string) bool {
 
 func threadActionAdvancesChat(action threadActionID) bool {
 	switch action {
-	case threadActionOpenBrowser,
-		threadActionOpenTeams,
-		threadActionMeetCall,
-		threadActionRead,
-		threadActionUnread,
-		threadActionFavorite,
-		threadActionCapture,
-		threadActionExport,
-		threadActionAnalyze,
-		threadActionCopyLink:
+	case threadActionRead, threadActionUnread:
 		return true
 	default:
 		return false
@@ -302,9 +293,6 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		}
 		_ = SaveFavourites(m.favourites)
 		m = m.rebuildChatList()
-		if nextChatID != "" {
-			return advance(m, nil)
-		}
 		return m.reconcileSelectedChatConversation()
 
 	case threadActionCapture:

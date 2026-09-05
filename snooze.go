@@ -104,6 +104,9 @@ func (m Model) applySnooze(until time.Time) (Model, tea.Cmd) {
 	_ = SaveSnoozedChats(m.snoozed)
 	m.app.SnoozePopupMode = false
 	m = m.rebuildChatList()
+	if m.app.SetSelectedChatID(chatID) {
+		return m.reconcileSelectedChatConversation()
+	}
 	if nextID != "" {
 		m.app.SetSelectedChatID(nextID)
 	}

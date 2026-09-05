@@ -61,6 +61,30 @@ func TestSnoozedBookmarkShowsOnlySnoozedChats(t *testing.T) {
 	}
 }
 
+func TestResnoozeRetainsChatWhenItRemainsInCurrentView(t *testing.T) {
+	app := NewApp()
+	first := Chat{ID: "first", LastMessagePreview: filterTestMessage("first-msg", "Other")}
+	second := Chat{ID: "second", LastMessagePreview: filterTestMessage("second-msg", "Other")}
+	app.SetChats([]Chat{first, second})
+	app.SetSelectedChatID(first.ID)
+	app.MessagesConversationID = first.ID
+	filter := newChatListFilter()
+	filter.SnoozedOnly = true
+	app.ActiveChatFilter = filter
+	model := NewModel(app, "client", "user")
+	model.latestChats = []Chat{first, second}
+	model.stableChatOrder = []string{first.ID, second.ID}
+	model.snoozed[first.ID] = time.Now().Add(time.Hour)
+	model.snoozed[second.ID] = time.Now().Add(time.Hour)
+	model = model.rebuildChatList()
+	app.SetSelectedChatID(first.ID)
+
+	model, _ = model.applySnooze(time.Now().Add(3 * time.Hour))
+	if app.SelectedChatID != first.ID || app.MessagesConversationID != first.ID {
+		t.Fatalf("resnooze changed current chat: selected=%q transcript=%q", app.SelectedChatID, app.MessagesConversationID)
+	}
+}
+
 func TestIncomingMessageWakesSnoozedChat(t *testing.T) {
 	user := "Me"
 	old := filterTestMessage("old", "Other")
