@@ -362,7 +362,9 @@ the thread-actions window. The interactive action (`X`) asks for a destination
 (`terminal`, `emacs`, or `codex-app`) and then a model from
 `thread_analysis_models`. Destination and model are exposed to the bridge as
 `TEAMS_THREAD_ANALYSIS_DESTINATION` and `TEAMS_THREAD_ANALYSIS_MODEL`; the
-existing `--agent AGENT PATH` command contract remains unchanged.
+existing `--agent AGENT PATH` command contract remains unchanged. Commands may
+also contain `{destination}`, `{model}`, and `{agent}` placeholders when the
+selection must be passed explicitly as command-line arguments.
 
 ### Search Queries
 

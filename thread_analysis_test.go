@@ -57,3 +57,16 @@ func TestBuildThreadAnalysisCommandRejectsEmptyCommand(t *testing.T) {
 		t.Fatal("expected empty thread analysis command to fail")
 	}
 }
+
+func TestBuildThreadAnalysisCommandExpandsRoutingPlaceholders(t *testing.T) {
+	cmd, err := buildThreadAnalysisCommand(
+		"/bridge --destination {destination} --model={model}",
+		"codex", "codex-app", "gpt-5.6-luna", "/tmp/thread.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/bridge", "--destination", "codex-app", "--model=gpt-5.6-luna", "--agent", "codex", "/tmp/thread.md"}
+	if !reflect.DeepEqual(cmd.Args, want) {
+		t.Fatalf("command args = %#v, want %#v", cmd.Args, want)
+	}
+}

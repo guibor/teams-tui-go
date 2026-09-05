@@ -174,6 +174,14 @@ func buildThreadAnalysisCommand(command, agent, destination, model, markdownPath
 	if len(parts) == 0 {
 		return nil, fmt.Errorf("empty thread_analysis_command")
 	}
+	replacements := strings.NewReplacer(
+		"{agent}", strings.TrimSpace(agent),
+		"{destination}", strings.TrimSpace(destination),
+		"{model}", strings.TrimSpace(model),
+	)
+	for index := range parts {
+		parts[index] = replacements.Replace(parts[index])
+	}
 	args := append(append([]string{}, parts[1:]...), "--agent", strings.TrimSpace(agent), markdownPath)
 	cmd := exec.Command(parts[0], args...)
 	cmd.Env = append(os.Environ(),
