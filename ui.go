@@ -5366,9 +5366,10 @@ func (m Model) isUnread(c Chat) bool {
 		readTime, _ := time.Parse(time.RFC3339Nano, c.Viewpoint.LastMessageReadDateTime)
 		lastTime := m.lastMsgTime[c.ID]
 		if !lastTime.IsZero() && !readTime.IsZero() {
-			// If latest message is newer than last read time, it's unread.
-			// Add 1s buffer for safety.
-			return lastTime.After(readTime.Add(time.Second))
+			// Graph defines unread as the latest message being strictly newer
+			// than the caller's read pointer. Do not round or add tolerance:
+			// Teams can place an explicit unread pointer milliseconds earlier.
+			return lastTime.After(readTime)
 		}
 	}
 	// Fallback when server viewpoint read time is missing/uninitialized:
@@ -5418,7 +5419,7 @@ func serverChatUnread(c Chat) (bool, bool) {
 	if readErr != nil || readTime.IsZero() {
 		return false, false
 	}
-	return lastTime.After(readTime.Add(time.Second)), true
+	return lastTime.After(readTime), true
 }
 
 func serverChatReadState(c Chat) string {
@@ -5445,7 +5446,7 @@ func (m Model) chatWasUnreadBeforeLatest(c Chat, lastID string, lastTime time.Ti
 	if c.Viewpoint != nil {
 		readTime, _ := time.Parse(time.RFC3339Nano, c.Viewpoint.LastMessageReadDateTime)
 		if !lastTime.IsZero() && !readTime.IsZero() {
-			return lastTime.After(readTime.Add(time.Second))
+			return lastTime.After(readTime)
 		}
 	}
 	return false

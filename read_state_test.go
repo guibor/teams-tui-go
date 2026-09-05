@@ -166,3 +166,13 @@ func TestServerChatReadStateReportsUnavailableAndReadState(t *testing.T) {
 		t.Fatalf("cleared mark-unread viewpoint state = %q", got)
 	}
 }
+
+func TestServerChatReadStatePreservesSubsecondManualUnreadPointer(t *testing.T) {
+	message := filterTestMessage("latest", "Other")
+	message.CreatedDateTime = "2026-08-02T10:00:00.900Z"
+	chat := Chat{LastMessagePreview: message,
+		Viewpoint: &ChatViewpoint{LastMessageReadDateTime: "2026-08-02T10:00:00.800Z"}}
+	if got := serverChatReadState(chat); got != "unread" {
+		t.Fatalf("subsecond manual-unread pointer state = %q, want unread", got)
+	}
+}

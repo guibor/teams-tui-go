@@ -276,6 +276,8 @@ Each chat refresh also reconciles Microsoft Graph's per-user `viewpoint`.
 The initial server timestamp establishes read state; a later timestamp change
 reflects reads or unread marks made in Teams or another client. Unchanged
 server timestamps do not roll back a newer local action while Graph converges.
+The comparison is exact, preserving the sub-second read-pointer movement used
+when Teams marks only the latest message unread.
 Messages from the
 previous chat are never retained or merged into the replacement pane.
 
