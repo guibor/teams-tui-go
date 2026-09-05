@@ -264,10 +264,16 @@ immediately selects and loads the next visible chat, wrapping at the end. To
 restore the original mark-on-open behavior, set `mark_read_on_open` to `true`.
 
 Filtering and background refreshes preserve selection by chat ID. The next
-chat is captured by ID before an action can change read/favorite state, so a
-filtered-list rebuild cannot skip another row. Completed thread actions also
-advance through this path. Compose, reply, forward, and the recording/transcript
-chooser retain the current chat while they need its context. Messages from the
+chat is captured by ID before a read-state action can change the visible list,
+so a filtered-list rebuild cannot skip another row. Non-disposition actions,
+including export, capture, analysis, open, favorite, and recording/transcript
+actions, retain the current chat.
+
+Each chat refresh also reconciles Microsoft Graph's per-user `viewpoint`.
+The initial server timestamp establishes read state; a later timestamp change
+reflects reads or unread marks made in Teams or another client. Unchanged
+server timestamps do not roll back a newer local action while Graph converges.
+Messages from the
 previous chat are never retained or merged into the replacement pane.
 
 The sidebar has one fixed summary header. Applying a filter/bookmark or toggling

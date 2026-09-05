@@ -316,6 +316,9 @@ type Model struct {
 
 	// Track last-read message IDs per chat to avoid redundant API calls.
 	lastReadMsgID map[string]string
+	// Last server viewpoint observed per chat. A changed value represents an
+	// external Teams read-state update and is reconciled into local state.
+	serverReadTime map[string]time.Time
 	// Explicitly unread chats are protected from auto-read until the user
 	// navigates away and opens them again.
 	manuallyUnread map[string]bool
@@ -447,6 +450,7 @@ func NewModel(app *App, clientID, userID string) Model {
 		lastMsgTime:              make(map[string]time.Time),
 		messageRequestGeneration: make(map[string]uint64),
 		lastReadMsgID:            make(map[string]string),
+		serverReadTime:           make(map[string]time.Time),
 		manuallyUnread:           make(map[string]bool),
 		lastReadReactions:        make(map[string]map[string]bool),
 		reactionsInitialized:     make(map[string]bool),
@@ -761,6 +765,8 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				m.lastMsgID[c.ID] = newID
 				m.lastMsgTime[c.ID] = newTime
 			}
+
+			m.reconcileServerReadState(c)
 
 			// Detect new reactions on LastMessagePreview
 			if m.lastReadReactions[c.ID] == nil {
@@ -5340,6 +5346,35 @@ func (m Model) isUnread(c Chat) bool {
 	}
 
 	return false
+}
+
+// reconcileServerReadState applies an initial or changed Graph viewpoint to
+// the local marker. An unchanged viewpoint is ignored so eventual consistency
+// cannot roll back a newer local read/unread action or outgoing-message rule.
+func (m *Model) reconcileServerReadState(c Chat) {
+	if c.Viewpoint == nil || c.LastMessagePreview == nil {
+		return
+	}
+	readTime, err := time.Parse(time.RFC3339Nano, c.Viewpoint.LastMessageReadDateTime)
+	if err != nil || readTime.IsZero() {
+		return
+	}
+	previous, observed := m.serverReadTime[c.ID]
+	m.serverReadTime[c.ID] = readTime
+	if observed && previous.Equal(readTime) {
+		return
+	}
+	lastTime, err := time.Parse(time.RFC3339Nano, c.LastMessagePreview.CreatedDateTime)
+	if err != nil || lastTime.IsZero() {
+		return
+	}
+	if lastTime.After(readTime.Add(time.Second)) {
+		m.lastReadMsgID[c.ID] = ""
+		delete(m.manuallyUnread, c.ID)
+		return
+	}
+	m.lastReadMsgID[c.ID] = c.LastMessagePreview.ID
+	delete(m.manuallyUnread, c.ID)
 }
 
 // chatWasUnreadBeforeLatest evaluates the state against the previous newest

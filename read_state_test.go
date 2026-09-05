@@ -90,3 +90,58 @@ func TestMarkReadRespectsNavigationPolicy(t *testing.T) {
 		t.Fatal("auto-read overrode an explicitly unread chat before navigation")
 	}
 }
+
+func TestChangedServerViewpointReconcilesExternalRead(t *testing.T) {
+	message := filterTestMessage("latest", "Other")
+	message.CreatedDateTime = "2026-08-02T10:00:00Z"
+	chat := Chat{ID: "chat-1", LastMessagePreview: message,
+		Viewpoint: &ChatViewpoint{LastMessageReadDateTime: "2026-08-02T09:00:00Z"}}
+	model := NewModel(NewApp(), "client", "user")
+	model.latestChats = []Chat{chat}
+	model.lastMsgID[chat.ID] = message.ID
+	model.lastMsgTime[chat.ID], _ = time.Parse(time.RFC3339, message.CreatedDateTime)
+	model.reconcileServerReadState(chat)
+	if !model.isUnread(chat) {
+		t.Fatal("initial server viewpoint did not establish unread state")
+	}
+
+	chat.Viewpoint.LastMessageReadDateTime = "2026-08-02T10:01:00Z"
+	model.reconcileServerReadState(chat)
+	if model.isUnread(chat) || model.lastReadMsgID[chat.ID] != message.ID {
+		t.Fatal("newer Teams viewpoint did not reconcile chat to read")
+	}
+}
+
+func TestUnchangedServerViewpointDoesNotRollBackLocalRead(t *testing.T) {
+	message := filterTestMessage("latest", "Other")
+	message.CreatedDateTime = "2026-08-02T10:00:00Z"
+	chat := Chat{ID: "chat-1", LastMessagePreview: message,
+		Viewpoint: &ChatViewpoint{LastMessageReadDateTime: "2026-08-02T09:00:00Z"}}
+	model := NewModel(NewApp(), "client", "user")
+	model.lastMsgID[chat.ID] = message.ID
+	model.lastMsgTime[chat.ID], _ = time.Parse(time.RFC3339, message.CreatedDateTime)
+	model.reconcileServerReadState(chat)
+	model.lastReadMsgID[chat.ID] = message.ID
+
+	model.reconcileServerReadState(chat)
+	if model.isUnread(chat) {
+		t.Fatal("unchanged, eventually consistent viewpoint rolled back local read")
+	}
+}
+
+func TestChangedServerViewpointReconcilesExternalUnread(t *testing.T) {
+	message := filterTestMessage("latest", "Other")
+	message.CreatedDateTime = "2026-08-02T10:00:00Z"
+	chat := Chat{ID: "chat-1", LastMessagePreview: message,
+		Viewpoint: &ChatViewpoint{LastMessageReadDateTime: "2026-08-02T10:01:00Z"}}
+	model := NewModel(NewApp(), "client", "user")
+	model.lastMsgID[chat.ID] = message.ID
+	model.lastMsgTime[chat.ID], _ = time.Parse(time.RFC3339, message.CreatedDateTime)
+	model.reconcileServerReadState(chat)
+
+	chat.Viewpoint.LastMessageReadDateTime = "2026-08-02T09:00:00Z"
+	model.reconcileServerReadState(chat)
+	if !model.isUnread(chat) {
+		t.Fatal("older changed Teams viewpoint did not reconcile chat to unread")
+	}
+}
