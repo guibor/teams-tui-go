@@ -262,6 +262,9 @@ Navigation is non-destructive by default. Select a chat and press `r` to mark
 it read (`i` is also accepted) or `u` to mark it unread. A successful dispatch
 immediately selects and loads the next visible chat, wrapping at the end. To
 restore the original mark-on-open behavior, set `mark_read_on_open` to `true`.
+Press `C-r` to force an immediate chat/read-state refresh. Its completion
+status reports Graph viewpoint coverage and the selected chat's authoritative
+Graph state, making client discrepancies diagnosable.
 
 Filtering and background refreshes preserve selection by chat ID. The next
 chat is captured by ID before a read-state action can change the visible list,

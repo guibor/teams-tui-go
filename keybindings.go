@@ -72,6 +72,7 @@ const (
 	keyNotificationsCycle     = "notifications.cycle"
 	keyChatDatesToggle        = "chat_dates.toggle"
 	keyHelpOpen               = "help.open"
+	keyChatRefresh            = "chat.refresh"
 	keyComposeStart           = "compose.start"
 	keyNewChatOpen            = "new_chat.open"
 	keySearchGlobal           = "search.global"
@@ -221,6 +222,7 @@ var keyBindingDefinitions = []keyBindingDefinition{
 	keyDef(keyNotificationsCycle, "n", KeyList{"n"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyChatDatesToggle, "D", KeyList{"D"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyHelpOpen, "?", KeyList{"?"}, keyContextNormalChat, keyContextNormalChannel),
+	keyDef(keyChatRefresh, "ctrl+r", KeyList{"ctrl+r"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keyComposeStart, "c", KeyList{"c", "C"}, keyContextNormalChat, keyContextNormalChannel, keyContextMessageSelect, keyContextMessageView),
 	keyDef(keyNewChatOpen, "N", KeyList{"N"}, keyContextNormalChat, keyContextNormalChannel),
 	keyDef(keySearchGlobal, "s", KeyList{"s"}, keyContextNormalChat, keyContextNormalChannel),

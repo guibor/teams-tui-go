@@ -145,3 +145,24 @@ func TestChangedServerViewpointReconcilesExternalUnread(t *testing.T) {
 		t.Fatal("older changed Teams viewpoint did not reconcile chat to unread")
 	}
 }
+
+func TestServerChatReadStateReportsUnavailableAndReadState(t *testing.T) {
+	if got := serverChatReadState(Chat{}); got != "unavailable" {
+		t.Fatalf("missing viewpoint state = %q", got)
+	}
+	message := filterTestMessage("latest", "Other")
+	message.CreatedDateTime = "2026-08-02T10:00:00Z"
+	chat := Chat{LastMessagePreview: message,
+		Viewpoint: &ChatViewpoint{LastMessageReadDateTime: "2026-08-02T10:01:00Z"}}
+	if got := serverChatReadState(chat); got != "read" {
+		t.Fatalf("read viewpoint state = %q", got)
+	}
+	chat.Viewpoint.LastMessageReadDateTime = "2026-08-02T09:00:00Z"
+	if got := serverChatReadState(chat); got != "unread" {
+		t.Fatalf("unread viewpoint state = %q", got)
+	}
+	chat.Viewpoint.LastMessageReadDateTime = ""
+	if got := serverChatReadState(chat); got != "unread" {
+		t.Fatalf("cleared mark-unread viewpoint state = %q", got)
+	}
+}

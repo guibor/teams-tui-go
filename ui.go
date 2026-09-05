@@ -324,7 +324,8 @@ type Model struct {
 	manuallyUnread map[string]bool
 
 	// Track whether a chat list load is in progress.
-	loadingChats bool
+	loadingChats      bool
+	manualChatRefresh bool
 
 	// Track last-read reaction keys per chat.
 	lastReadReactions map[string]map[string]bool
@@ -549,7 +550,7 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		if !m.loadingChats && time.Since(m.lastChatRefresh) >= 15*time.Second {
 			m.lastChatRefresh = time.Now()
 			m.loadingChats = true
-			cmds = append(cmds, loadChatsCmd(m.clientID, m.app.Chats, m.app.CurrentUserName, m.userID))
+			cmds = append(cmds, loadChatsCmd(m.clientID, m.latestChats, m.app.CurrentUserName, m.userID))
 		}
 
 		isSleepMode := (m.app.SelectedIndex < 0 && m.channelSelectedIndex < 0)
@@ -632,6 +633,8 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 	// ── Chat list loaded ─────────────────────────────────────────────────
 	case MsgChatsLoaded:
 		m.loadingChats = false
+		manualRefresh := m.manualChatRefresh
+		m.manualChatRefresh = false
 		m.latestChats = msg.Chats
 		if msg.CurrentUserName != nil {
 			m.app.SetCurrentUser(*msg.CurrentUserName)
@@ -811,6 +814,20 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 
 		// Build stable order.
 		m = m.mergeChats(m.latestChats)
+		if manualRefresh {
+			covered := 0
+			for _, chat := range m.latestChats {
+				if _, known := serverChatUnread(chat); known {
+					covered++
+				}
+			}
+			state := "no chat selected"
+			if chat := m.app.GetSelectedChat(); chat != nil {
+				state = "selected Graph state " + serverChatReadState(*chat)
+			}
+			m.app.SetStatus(fmt.Sprintf("Refreshed %d chats · viewpoints %d/%d · %s",
+				len(m.latestChats), covered, len(m.latestChats), state), 10*time.Second)
+		}
 
 		// Restore selection by stable identity, never by the old row number.
 		if selectedID != "" {
@@ -2234,6 +2251,15 @@ func (m Model) handleNormalModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		} else {
 			m = m.leaveActiveConversation()
 			m.app.SetStatus("Dashboard", 2*time.Second)
+		}
+
+	case "ctrl+r":
+		if !m.loadingChats {
+			m.loadingChats = true
+			m.manualChatRefresh = true
+			m.lastChatRefresh = time.Now()
+			m.app.SetStatus("Refreshing chats and Graph read state...", 0)
+			return m, loadChatsCmd(m.clientID, m.latestChats, m.app.CurrentUserName, m.userID)
 		}
 
 	case "K", "pgup":
@@ -5352,29 +5378,52 @@ func (m Model) isUnread(c Chat) bool {
 // the local marker. An unchanged viewpoint is ignored so eventual consistency
 // cannot roll back a newer local read/unread action or outgoing-message rule.
 func (m *Model) reconcileServerReadState(c Chat) {
-	if c.Viewpoint == nil || c.LastMessagePreview == nil {
+	unread, known := serverChatUnread(c)
+	if !known {
 		return
 	}
-	readTime, err := time.Parse(time.RFC3339Nano, c.Viewpoint.LastMessageReadDateTime)
-	if err != nil || readTime.IsZero() {
-		return
-	}
+	readTime, _ := time.Parse(time.RFC3339Nano, c.Viewpoint.LastMessageReadDateTime)
 	previous, observed := m.serverReadTime[c.ID]
 	m.serverReadTime[c.ID] = readTime
 	if observed && previous.Equal(readTime) {
 		return
 	}
-	lastTime, err := time.Parse(time.RFC3339Nano, c.LastMessagePreview.CreatedDateTime)
-	if err != nil || lastTime.IsZero() {
-		return
-	}
-	if lastTime.After(readTime.Add(time.Second)) {
+	if unread {
 		m.lastReadMsgID[c.ID] = ""
 		delete(m.manuallyUnread, c.ID)
 		return
 	}
 	m.lastReadMsgID[c.ID] = c.LastMessagePreview.ID
 	delete(m.manuallyUnread, c.ID)
+}
+
+func serverChatUnread(c Chat) (bool, bool) {
+	if c.Viewpoint == nil || c.LastMessagePreview == nil {
+		return false, false
+	}
+	lastTime, lastErr := time.Parse(time.RFC3339Nano, c.LastMessagePreview.CreatedDateTime)
+	if lastErr != nil || lastTime.IsZero() {
+		return false, false
+	}
+	if strings.TrimSpace(c.Viewpoint.LastMessageReadDateTime) == "" {
+		return true, true
+	}
+	readTime, readErr := time.Parse(time.RFC3339Nano, c.Viewpoint.LastMessageReadDateTime)
+	if readErr != nil || readTime.IsZero() {
+		return false, false
+	}
+	return lastTime.After(readTime.Add(time.Second)), true
+}
+
+func serverChatReadState(c Chat) string {
+	unread, known := serverChatUnread(c)
+	if !known {
+		return "unavailable"
+	}
+	if unread {
+		return "unread"
+	}
+	return "read"
 }
 
 // chatWasUnreadBeforeLatest evaluates the state against the previous newest
@@ -7867,6 +7916,7 @@ func (m Model) getHelpContentLines() []string {
 		{"Navigation", [][2]string{
 			{m.keybindings.Display(keyChatNext), "Navigate list down (within section)"},
 			{m.keybindings.Display(keyChatPrevious), "Navigate list up (within section)"},
+			{m.keybindings.Display(keyChatRefresh), "Refresh chats and Graph read state"},
 			{m.keybindings.Display(keyChatFirst) + " · " + m.keybindings.Display(keyChatLast), "Jump to first / last chat"},
 			{m.keybindings.Primary(keyChatFirstPrefix) + m.keybindings.Primary(keyChatFirstPrefix), "Alternative first-chat sequence"},
 			{m.keybindings.Display(keyMessageTop) + " · " + m.keybindings.Display(keyMessageBottom), "Jump to top / bottom of loaded messages"},
