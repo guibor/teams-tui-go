@@ -87,6 +87,26 @@ func TestFullViewRendersFilteredChatHeaderOnce(t *testing.T) {
 	if count := strings.Count(stripANSI(model.View()), header); count != 1 {
 		t.Fatalf("full view rendered filtered chat header %d times, want once", count)
 	}
+	if got := lipgloss.Height(model.View()); got != model.height {
+		t.Fatalf("full view height = %d, terminal height = %d", got, model.height)
+	}
+}
+
+func TestFullViewNeverExceedsTerminalHeightWithWrappedConversationHeader(t *testing.T) {
+	name := "A very long meeting conversation title that wraps over several lines in the right pane"
+	chat := Chat{ID: "meeting", ChatType: "meeting", CachedDisplayName: &name,
+		LastMessagePreview: filterTestMessage("latest", "Other")}
+	app := NewApp()
+	app.SetChats([]Chat{chat})
+	app.SetSelectedChatID(chat.ID)
+	app.MessagesConversationID = chat.ID
+	app.Status = "Refreshing chats and Graph read state with a deliberately long diagnostic"
+	model := NewModel(app, "client", "user")
+	model.width = 80
+	model.height = 12
+	if got := lipgloss.Height(model.View()); got > model.height {
+		t.Fatalf("full view overflowed terminal: rendered=%d terminal=%d\n%s", got, model.height, stripANSI(model.View()))
+	}
 }
 
 func TestRightPaneHeaderShowsCompleteSelectedChatName(t *testing.T) {

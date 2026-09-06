@@ -5089,17 +5089,25 @@ func renderConversationDaySeparator(day time.Time, width int) string {
 // ---------------------------------------------------------------------------
 
 func (m Model) renderStatusBar(w int) string {
+	contentWidth := w - 2
+	if contentWidth < 1 {
+		contentWidth = 1
+	}
+	oneLine := func(text string) string {
+		text = strings.ReplaceAll(text, "\n", " ")
+		return ansi.Truncate(text, contentWidth, "…")
+	}
 	if m.app.DeleteConfirmMode {
 		return bellBorder.Width(w - 2).Height(1).Render(
 			lipgloss.NewStyle().Foreground(colRed).Bold(true).Render(
-				"DELETE MESSAGE? (y:yes / n:no)",
+				oneLine("DELETE MESSAGE? (y:yes / n:no)"),
 			),
 		)
 	}
 	if m.app.ReactionMode {
 		return normalBorder.Width(w - 2).Height(1).Render(
 			lipgloss.NewStyle().Foreground(colYellow).Render(
-				"REACT: 1:👍 2:❤️ 3:😂 4:😮 5:😢 6:😡 (ESC:cancel)",
+				oneLine("REACT: 1:👍 2:❤️ 3:😂 4:😮 5:😢 6:😡 (ESC:cancel)"),
 			),
 		)
 	}
@@ -5108,10 +5116,10 @@ func (m Model) renderStatusBar(w int) string {
 		text = "⏳ Loading older messages... | " + text
 	}
 	if m.app.VisualBellActive() {
-		return bellBorder.Width(w - 2).Height(1).Render(text)
+		return bellBorder.Width(w - 2).Height(1).Render(oneLine(text))
 	}
 	return normalBorder.Width(w - 2).Height(1).Render(
-		lipgloss.NewStyle().Foreground(colGreen).Render(text),
+		lipgloss.NewStyle().Foreground(colGreen).Render(oneLine(text)),
 	)
 }
 
