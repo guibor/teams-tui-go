@@ -820,8 +820,8 @@ sidebar header shows both states, for example `Today · Unread`.
 ### Snooze
 
 `z` hides the selected chat for `default_snooze_minutes` (three hours by
-default) and advances by stable chat identity. `Z` offers one hour, three
-hours, end of workday, tomorrow morning, next week, and unsnooze. Tomorrow
+default) and advances by stable chat identity. `Z` offers ten minutes, one
+hour, three hours, end of workday, tomorrow morning, next week, and unsnooze. Tomorrow
 uses `workday_start` (07:00 by default); end of workday uses `workday_end`
 (18:00 by default), falling back to the next workday morning after that time.
 Snoozes are local, survive restarts, never alter Teams read state, and wake

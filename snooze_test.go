@@ -12,17 +12,29 @@ func TestSnoozeChoicesUseConfiguredWorkday(t *testing.T) {
 	app.WorkdayEnd = "18:00"
 	model := NewModel(app, "client", "user")
 	location := time.FixedZone("local", 2*60*60)
+	choice := func(key string) snoozeChoice {
+		for _, candidate := range snoozeChoices() {
+			if candidate.Key == key {
+				return candidate
+			}
+		}
+		t.Fatalf("missing snooze choice %q", key)
+		return snoozeChoice{}
+	}
 
 	beforeEnd := time.Date(2026, 9, 4, 16, 0, 0, 0, location)
-	if got := snoozeChoices()[2].Until(model, beforeEnd); got.Hour() != 18 || got.Day() != 4 {
+	if got := choice("e").Until(model, beforeEnd); got.Hour() != 18 || got.Day() != 4 {
 		t.Fatalf("end-of-day wake = %v", got)
 	}
 	afterEnd := time.Date(2026, 9, 4, 20, 0, 0, 0, location)
-	if got := snoozeChoices()[2].Until(model, afterEnd); got.Hour() != 7 || got.Day() != 5 {
+	if got := choice("e").Until(model, afterEnd); got.Hour() != 7 || got.Day() != 5 {
 		t.Fatalf("after-hours wake = %v", got)
 	}
-	if got := snoozeChoices()[3].Until(model, beforeEnd); got.Hour() != 7 || got.Day() != 5 {
+	if got := choice("t").Until(model, beforeEnd); got.Hour() != 7 || got.Day() != 5 {
 		t.Fatalf("tomorrow wake = %v", got)
+	}
+	if got := choice("m").Until(model, beforeEnd); !got.Equal(beforeEnd.Add(10 * time.Minute)) {
+		t.Fatalf("ten-minute wake = %v", got)
 	}
 }
 

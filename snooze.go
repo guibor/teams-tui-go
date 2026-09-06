@@ -40,6 +40,7 @@ func nextLocalClock(now time.Time, clock string, fallbackHour int, forceTomorrow
 
 func snoozeChoices() []snoozeChoice {
 	return []snoozeChoice{
+		{Key: "m", Label: "10 minutes", Until: func(_ Model, now time.Time) time.Time { return now.Add(10 * time.Minute) }},
 		{Key: "1", Label: "1 hour", Until: func(_ Model, now time.Time) time.Time { return now.Add(time.Hour) }},
 		{Key: "3", Label: "3 hours", Until: func(_ Model, now time.Time) time.Time { return now.Add(3 * time.Hour) }},
 		{Key: "e", Label: "End of workday", Until: func(m Model, now time.Time) time.Time {
