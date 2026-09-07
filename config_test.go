@@ -80,6 +80,20 @@ func TestResolveThreadCaptureSettings(t *testing.T) {
 	}
 }
 
+func TestSaveThreadAnalysisSelection(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	InitConfig()
+	if err := SaveThreadAnalysisSelection(" codex-app ", " gpt-5.6-luna "); err != nil {
+		t.Fatalf("SaveThreadAnalysisSelection: %v", err)
+	}
+	if got := ResolveThreadAnalysisDestination(); got != "codex-app" {
+		t.Fatalf("destination = %q, want codex-app", got)
+	}
+	if got := ResolveThreadAnalysisModel(); got != "gpt-5.6-luna" {
+		t.Fatalf("model = %q, want gpt-5.6-luna", got)
+	}
+}
+
 func TestInitConfig(t *testing.T) {
 	// Set XDG_CONFIG_HOME to a temporary directory to avoid writing to the user's actual config.
 	tmpDir, err := os.MkdirTemp("", "teams-tui-config-test")

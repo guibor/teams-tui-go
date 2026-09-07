@@ -92,10 +92,12 @@ type MsgThreadExported struct {
 // MsgThreadAnalysisLaunched reports completion of a full-history export and
 // its handoff to a configured external analysis command.
 type MsgThreadAnalysisLaunched struct {
-	Path  string
-	Count int
-	Agent string
-	Err   error
+	Path        string
+	Count       int
+	Agent       string
+	Destination string
+	Model       string
+	Err         error
 }
 
 // MsgThreadCaptured reports completion of a local thread-list capture.
@@ -1445,6 +1447,12 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				m.app.SetStatus("Thread analysis export failed: "+msg.Err.Error(), 8*time.Second)
 			}
 		} else {
+			m.app.ThreadAnalysisDestination = msg.Destination
+			m.app.ThreadAnalysisModel = msg.Model
+			if err := SaveThreadAnalysisSelection(msg.Destination, msg.Model); err != nil {
+				m.app.SetStatus(fmt.Sprintf("Started %s analysis, but could not remember selection: %v", msg.Agent, err), 10*time.Second)
+				break
+			}
 			m.app.SetStatus(fmt.Sprintf("Started %s analysis of %d messages: %s", msg.Agent, msg.Count, msg.Path), 9*time.Second)
 		}
 

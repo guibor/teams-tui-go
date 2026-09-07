@@ -321,6 +321,12 @@ func (m Model) executeThreadAction(action threadActionID) (Model, tea.Cmd) {
 		m.app.ThreadAnalysisPopupMode = true
 		m.app.ThreadAnalysisStage = 0
 		m.app.ThreadAnalysisSelectedIndex = 0
+		for index, destination := range threadAnalysisDestinations {
+			if destination == m.app.ThreadAnalysisDestination {
+				m.app.ThreadAnalysisSelectedIndex = index
+				break
+			}
+		}
 		return m, nil
 
 	case threadActionCopyLink:

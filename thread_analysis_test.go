@@ -39,13 +39,16 @@ func TestBuildThreadAnalysisCommandKeepsExportPathAsOneArgument(t *testing.T) {
 
 func TestAnalysisChooserSelectsDestinationThenModel(t *testing.T) {
 	model := newWorkflowChatListModel("chat-1", "chat-2")
+	model.app.ThreadAnalysisDestination = "codex-app"
 	model.app.ThreadAnalysisModels = []string{"gpt-5.6-sol", "gpt-5.6-luna"}
 	model.app.ThreadAnalysisModel = "gpt-5.6-luna"
 	model, _ = model.executeThreadAction(threadActionAnalyzeChoose)
 	if !model.app.ThreadAnalysisPopupMode || model.app.ThreadAnalysisStage != 0 {
 		t.Fatal("chooser did not open on destination stage")
 	}
-	model.app.ThreadAnalysisSelectedIndex = 0
+	if model.app.ThreadAnalysisSelectedIndex != 2 {
+		t.Fatalf("destination selected=%d, want remembered codex-app", model.app.ThreadAnalysisSelectedIndex)
+	}
 	model, _ = model.handleThreadAnalysisPopupKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if model.app.ThreadAnalysisStage != 1 || model.app.ThreadAnalysisSelectedIndex != 1 {
 		t.Fatalf("model stage=%d selected=%d, want stage 1 selected configured model", model.app.ThreadAnalysisStage, model.app.ThreadAnalysisSelectedIndex)

@@ -196,11 +196,11 @@ func analyzeChatThreadCmd(clientID string, chat Chat, directory, agent, destinat
 	return func() tea.Msg {
 		path, count, err := exportCompleteChatMarkdown(clientID, chat, directory)
 		if err != nil {
-			return MsgThreadAnalysisLaunched{Agent: agent, Err: err}
+			return MsgThreadAnalysisLaunched{Agent: agent, Destination: destination, Model: model, Err: err}
 		}
 		cmd, err := buildThreadAnalysisCommand(command, agent, destination, model, path)
 		if err != nil {
-			return MsgThreadAnalysisLaunched{Path: path, Count: count, Agent: agent, Err: err}
+			return MsgThreadAnalysisLaunched{Path: path, Count: count, Agent: agent, Destination: destination, Model: model, Err: err}
 		}
 		output, err := cmd.CombinedOutput()
 		if err != nil {
@@ -209,7 +209,7 @@ func analyzeChatThreadCmd(clientID string, chat Chat, directory, agent, destinat
 				err = fmt.Errorf("%w: %s", err, detail)
 			}
 		}
-		return MsgThreadAnalysisLaunched{Path: path, Count: count, Agent: agent, Err: err}
+		return MsgThreadAnalysisLaunched{Path: path, Count: count, Agent: agent, Destination: destination, Model: model, Err: err}
 	}
 }
 

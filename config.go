@@ -571,6 +571,19 @@ func SaveConfig(cfg *Config) error {
 	return os.WriteFile(filepath.Join(dir, "config.json"), data, 0o600)
 }
 
+// SaveThreadAnalysisSelection remembers the last successfully launched target.
+func SaveThreadAnalysisSelection(destination, model string) error {
+	cfg := LoadConfig()
+	if cfg == nil {
+		cfg = &Config{}
+	}
+	destination = strings.TrimSpace(destination)
+	model = strings.TrimSpace(model)
+	cfg.ThreadAnalysisDestination = &destination
+	cfg.ThreadAnalysisModel = &model
+	return SaveConfig(cfg)
+}
+
 // ResolveClientID returns the client ID using the precedence:
 //  1. CLIENT_ID environment variable (loads .env first)
 //  2. config.json → client_id
