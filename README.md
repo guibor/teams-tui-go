@@ -32,7 +32,7 @@ Authenticates via **OAuth2 Device Code Flow** (no browser redirect needed), fetc
 - 💾 Token persistence — only authenticate once; tokens refresh automatically
 
 **Optional features** (enable per-feature in `config.json`; see [AZURE_SETUP.md](AZURE_SETUP.md)):
-- 📎 **File Preview & Download** (`file_preview_enabled`) — Tab through attachments in the message popup and press Enter to download them to `~/Downloads/`
+- 📎 **File Preview & Download** (`file_preview_enabled`) — Tab through attachments in the message popup; press **Enter** to download and open, or **d** to download only to `~/Downloads/`
   - **Terminal Image Preview** (`file_preview_in_terminal`) — Displays the highlighted image attachment directly inside the details popup on the right side using the Kitty Graphics Protocol (requires `file_preview_enabled: true`)
 - ⬆️ **File Browsing & Uploading** (`file_upload_enabled`) — Press `Ctrl+f` in compose mode to open a file browser and attach small files (up to 50MB) from your computer. Files are uploaded to OneDrive/SharePoint and attached to your message.
 - 🟢 **User Presence** (`presence_enabled`) — press `p` in message selection mode to see real-time availability of the message sender
@@ -370,7 +370,8 @@ The external editor command can be configured in your `config.json` via the `"ex
 | `v`          | View details/reactions of selected message (Message Mode) |
 | `Ctrl+g`     | View selected message in external editor (in Message Mode / Message View Popup) |
 | `Tab`        | Switch to attachment cursor in `v` popup (in Message View Popup) |
-| `Enter`      | Download selected attachment (in `v` attachment cursor)   |
+| `Enter`      | Download and open selected attachment (in `v` attachment cursor) |
+| `d`          | Download selected attachment without opening (in `v` attachment cursor) |
 | `r`          | React to selected message (in Message Mode)               |
 | `y`          | Copy (yank) message text (in Message Mode)                |
 | `u`          | Copy (yank) URL from message (in Message Mode / History Search) |

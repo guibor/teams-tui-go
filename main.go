@@ -365,14 +365,14 @@ func loadUserProfileCmd(clientID, userID string) tea.Cmd {
 
 // downloadFileCmd downloads a file attachment to destPath.
 // Requires Files.Read scope; returns MsgFileDownloaded.
-func downloadFileCmd(clientID, fileURL, destPath string) tea.Cmd {
+func downloadFileCmd(clientID, fileURL, destPath string, openAfterDownload bool) tea.Cmd {
 	return func() tea.Msg {
 		token, err := GetValidTokenSilent(clientID)
 		if err != nil {
 			return MsgFileDownloaded{Err: err}
 		}
 		err = DownloadFile(token, fileURL, destPath)
-		return MsgFileDownloaded{DestPath: destPath, Err: err}
+		return MsgFileDownloaded{DestPath: destPath, Err: err, OpenAfterDownload: openAfterDownload}
 	}
 }
 

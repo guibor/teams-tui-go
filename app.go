@@ -109,6 +109,8 @@ type App struct {
 	VisualBellUntil            *time.Time
 	StatusUntil                *time.Time
 	SearchStatusUntil          *time.Time
+	MessagePopupStatus         string
+	MessagePopupStatusUntil    *time.Time
 	NextLink                   string
 	PendingScrollID            string
 	EditingMessageID           *string
@@ -350,6 +352,17 @@ func (a *App) SetSearchStatus(msg string, duration time.Duration) {
 		a.SearchStatusUntil = &t
 	} else {
 		a.SearchStatusUntil = nil
+	}
+}
+
+// SetMessagePopupStatus sets the message view popup status text, optionally clearing it after duration.
+func (a *App) SetMessagePopupStatus(msg string, duration time.Duration) {
+	a.MessagePopupStatus = msg
+	if duration > 0 {
+		t := time.Now().Add(duration)
+		a.MessagePopupStatusUntil = &t
+	} else {
+		a.MessagePopupStatusUntil = nil
 	}
 }
 

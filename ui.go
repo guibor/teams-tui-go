@@ -149,8 +149,9 @@ type MsgUserProfileLoaded struct {
 
 // MsgFileDownloaded is sent when a file download has completed.
 type MsgFileDownloaded struct {
-	DestPath string
-	Err      error
+	DestPath          string
+	Err               error
+	OpenAfterDownload bool
 }
 
 // MsgImagesOpened is sent when a batch image download+open has completed.
@@ -457,6 +458,11 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		if m.app.SearchStatusUntil != nil && time.Now().After(*m.app.SearchStatusUntil) {
 			m.app.SearchStatus = ""
 			m.app.SearchStatusUntil = nil
+			m.tickDidWork = true
+		}
+		if m.app.MessagePopupStatusUntil != nil && time.Now().After(*m.app.MessagePopupStatusUntil) {
+			m.app.MessagePopupStatus = ""
+			m.app.MessagePopupStatusUntil = nil
 			m.tickDidWork = true
 		}
 
@@ -1317,22 +1323,46 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 	// ── File downloaded ─────────────────────────────────────────
 	case MsgFileDownloaded:
 		if msg.Err == nil {
-			m.app.SetStatus("Saved to: "+msg.DestPath, 6*time.Second)
-			_ = openFile(msg.DestPath)
+			savedName := filepath.Base(msg.DestPath)
+			statusMsg := "Saved to: " + msg.DestPath
+			popupStatusMsg := "Downloaded: " + savedName
+			if msg.OpenAfterDownload {
+				popupStatusMsg = "Downloaded and opened: " + savedName
+			}
+			m.app.SetStatus(statusMsg, 6*time.Second)
+			if m.app.MessagePopupMode {
+				m.app.SetMessagePopupStatus(popupStatusMsg, 6*time.Second)
+			}
+			if msg.OpenAfterDownload {
+				_ = openFile(msg.DestPath)
+			}
 		} else {
-			m.app.SetStatus("Download failed: "+msg.Err.Error(), 5*time.Second)
+			errMsg := "Download failed: " + msg.Err.Error()
+			m.app.SetStatus(errMsg, 5*time.Second)
+			if m.app.MessagePopupMode {
+				m.app.SetMessagePopupStatus(errMsg, 5*time.Second)
+			}
 		}
 
 	// ── Images opened with image viewer ─────────────────────────
 	case MsgImagesOpened:
 		if msg.Err == nil {
 			statusMsg := "Opened in image viewer: " + msg.SelectedPath
+			popupStatusMsg := "Opened in image viewer: " + filepath.Base(msg.SelectedPath)
 			if msg.TotalImages > 1 {
 				statusMsg = fmt.Sprintf("Opened %d images in viewer (selected: %s)", msg.TotalImages, filepath.Base(msg.SelectedPath))
+				popupStatusMsg = fmt.Sprintf("Opened %d images in viewer (selected: %s)", msg.TotalImages, filepath.Base(msg.SelectedPath))
 			}
 			m.app.SetStatus(statusMsg, 6*time.Second)
+			if m.app.MessagePopupMode {
+				m.app.SetMessagePopupStatus(popupStatusMsg, 6*time.Second)
+			}
 		} else {
-			m.app.SetStatus("Image viewer error: "+msg.Err.Error(), 5*time.Second)
+			errMsg := "Image viewer error: " + msg.Err.Error()
+			m.app.SetStatus(errMsg, 5*time.Second)
+			if m.app.MessagePopupMode {
+				m.app.SetMessagePopupStatus(errMsg, 5*time.Second)
+			}
 		}
 
 	case MsgPreviewDownloaded:
@@ -2268,6 +2298,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		} else {
 			m.app.MessagePopupMode = false
 			m.app.AttachmentCursorMode = false
+			m.app.SetMessagePopupStatus("", 0)
 			cmd = clearKittyImagesCmd()
 		}
 		return m, cmd
@@ -2289,36 +2320,17 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	case "enter":
 		if m.app.AttachmentCursorMode {
-			// Download/open selected attachment.
-			if m.app.MessageSelectedIndex < len(m.app.Messages) {
-				msgObj := m.app.Messages[m.app.MessageSelectedIndex]
-				vAtts := viewableAttachments(msgObj)
-				if m.app.AttachmentSelectedIndex < len(vAtts) {
-					att := vAtts[m.app.AttachmentSelectedIndex]
-					if !m.app.Features.FilePreview {
-						m.app.SetStatus("File preview disabled — enable 'file_preview_enabled' in config.json", 5*time.Second)
-					} else if att.ContentURL != nil && *att.ContentURL != "" {
-						name := getAttachmentSavedName(att, "attachment")
-						// If this is an image and image_viewer is configured, use the
-						// batch image viewer path (downloads all images in the message).
-						if isImageAttachment(att) && m.app.ImageViewer != "" {
-							m.app.SetStatus("Downloading images for viewer...", 0)
-							return m, downloadAndOpenImagesCmd(m.clientID, att, vAtts, m.app.ImageViewer)
-						}
-						// Fallback: single-file download + default opener.
-						destPath := filepath.Join(getDownloadsDir(), name)
-						m.app.SetStatus("Downloading: "+name+" ...", 0)
-						return m, downloadFileCmd(m.clientID, *att.ContentURL, destPath)
-					} else {
-						m.app.SetStatus("No download URL for this attachment", 3*time.Second)
-					}
-				}
-			}
-			return m, nil
+			return m.downloadSelectedAttachment(true)
 		}
 		m.app.MessagePopupMode = false
 		m.app.AttachmentCursorMode = false
+		m.app.SetMessagePopupStatus("", 0)
 		return m, clearKittyImagesCmd()
+
+	case "d":
+		if m.app.AttachmentCursorMode {
+			return m.downloadSelectedAttachment(false)
+		}
 
 	case "tab":
 		var cmd tea.Cmd
@@ -5869,7 +5881,7 @@ func (m Model) renderMessagePopup(w, h int) string {
 		attHeaderStyle := lipgloss.NewStyle().Foreground(colYellow).Bold(true)
 		attHeader := "Attachments:"
 		if m.app.AttachmentCursorMode {
-			attHeader += " [Tab:exit | ↑↓:select | Enter:download]"
+			attHeader += " [Tab:exit | ↑↓:select | Enter:open | d:download]"
 		} else if m.app.Features.FilePreview {
 			attHeader += " [Tab to select & download]"
 		}
@@ -6007,15 +6019,25 @@ func (m Model) renderMessagePopup(w, h int) string {
 		finalLines = append(finalLines, "")
 	}
 
-	targetH := innerH - 1
-	if len(finalLines) > targetH {
-		finalLines = finalLines[:targetH]
+	statusFooterLines := []string{}
+	if m.app.MessagePopupStatus != "" {
+		statusFooterLines = append(statusFooterLines, formatMessagePopupStatus(m.app.MessagePopupStatus))
+	}
+	statusFooterLines = append(statusFooterLines, footer)
+
+	contentH := innerH - len(statusFooterLines)
+	if contentH < 1 {
+		contentH = 1
+	}
+	if len(finalLines) > contentH {
+		finalLines = finalLines[:contentH]
 	} else {
-		for len(finalLines) < targetH {
+		for len(finalLines) < contentH {
 			finalLines = append(finalLines, "")
 		}
 	}
-	finalLines = append(finalLines, footer)
+
+	bottomBlock := strings.Join(statusFooterLines, "\n")
 
 	var combinedContent string
 	if showImagePreview {
@@ -6030,19 +6052,19 @@ func (m Model) renderMessagePopup(w, h int) string {
 		rightPanelStr := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(borderColor).
-			Width(previewW).Height(targetH).
+			Width(previewW).Height(contentH).
 			Align(lipgloss.Center, lipgloss.Center).
 			Render(previewText)
 
-		leftPanelBodyStr := strings.Join(finalLines[:targetH], "\n")
+		leftPanelBodyStr := strings.Join(finalLines, "\n")
 		leftAndRight := lipgloss.JoinHorizontal(lipgloss.Top,
 			lipgloss.NewStyle().Width(contentW).Render(leftPanelBodyStr),
 			"  ",
 			rightPanelStr,
 		)
-		combinedContent = leftAndRight + "\n" + footer
+		combinedContent = leftAndRight + "\n" + bottomBlock
 	} else {
-		combinedContent = strings.Join(finalLines, "\n")
+		combinedContent = strings.Join(finalLines, "\n") + "\n" + bottomBlock
 	}
 
 	box := lipgloss.NewStyle().
@@ -6175,7 +6197,8 @@ func (m Model) getHelpContentLines() []string {
 			{"j / k", "Navigate to next/prev message"},
 			{"J / K", "Scroll message body"},
 			{"Tab", "Switch to attachment cursor mode"},
-			{"Enter", "Download selected attachment (feature: file_preview_enabled)"},
+			{"Enter", "Download and open selected attachment (feature: file_preview_enabled)"},
+			{"d", "Download selected attachment without opening (feature: file_preview_enabled)"},
 			{"ESC / q / v", "Close popup"},
 		}},
 		{"History Search (/)", [][2]string{
@@ -6626,6 +6649,62 @@ func (m Model) renderUserProfilePopup(w, h int) string {
 }
 
 // ---------------------------------------------------------------------------
+// downloadSelectedAttachment downloads the currently selected attachment in the
+// message popup. When openAfterDownload is true, images may open in the configured
+// image viewer and other files open with the system default handler after download.
+func (m Model) downloadSelectedAttachment(openAfterDownload bool) (Model, tea.Cmd) {
+	if m.app.MessageSelectedIndex >= len(m.app.Messages) {
+		return m, nil
+	}
+	msgObj := m.app.Messages[m.app.MessageSelectedIndex]
+	vAtts := viewableAttachments(msgObj)
+	if m.app.AttachmentSelectedIndex >= len(vAtts) {
+		return m, nil
+	}
+	att := vAtts[m.app.AttachmentSelectedIndex]
+	if !m.app.Features.FilePreview {
+		setAttachmentDownloadStatus(m.app, "File preview disabled — enable 'file_preview_enabled' in config.json", 5*time.Second)
+		return m, nil
+	}
+	if att.ContentURL == nil || *att.ContentURL == "" {
+		setAttachmentDownloadStatus(m.app, "No download URL for this attachment", 3*time.Second)
+		return m, nil
+	}
+
+	name := getAttachmentSavedName(att, "attachment")
+	if openAfterDownload && isImageAttachment(att) && m.app.ImageViewer != "" {
+		setAttachmentDownloadStatus(m.app, "Downloading images for viewer...", 0)
+		return m, downloadAndOpenImagesCmd(m.clientID, att, vAtts, m.app.ImageViewer)
+	}
+
+	destPath := filepath.Join(getDownloadsDir(), name)
+	if openAfterDownload {
+		setAttachmentDownloadStatus(m.app, "Downloading: "+name+" ...", 0)
+	} else {
+		setAttachmentDownloadStatus(m.app, "Saving: "+name+" ...", 0)
+	}
+	return m, downloadFileCmd(m.clientID, *att.ContentURL, destPath, openAfterDownload)
+}
+
+func setAttachmentDownloadStatus(app *App, msg string, duration time.Duration) {
+	app.SetStatus(msg, duration)
+	app.SetMessagePopupStatus(msg, duration)
+}
+
+func formatMessagePopupStatus(msg string) string {
+	lower := strings.ToLower(msg)
+	var style lipgloss.Style
+	switch {
+	case strings.Contains(lower, "failed") || strings.Contains(lower, "error") || strings.Contains(lower, "disabled"):
+		style = lipgloss.NewStyle().Foreground(colRed).Bold(true)
+	case strings.Contains(msg, "..."):
+		style = lipgloss.NewStyle().Foreground(colYellow).Italic(true)
+	default:
+		style = lipgloss.NewStyle().Foreground(colGreen).Bold(true)
+	}
+	return style.Render(msg)
+}
+
 // getDownloadsDir returns the XDG downloads directory or ~/Downloads
 // ---------------------------------------------------------------------------
 func getDownloadsDir() string {
