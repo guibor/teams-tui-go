@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.2.9] - 2026-09-11
+
+### Features
+
+- *(message-popup)* **Add download-only shortcut and in-popup attachment status** - ([a7c79c3](https://github.com/nospor/teams-tui-go/commit/a7c79c3f2438a3758419928bd47b22247c064374))
+
+
+> Press d in attachment cursor mode to save files without opening them,
+> while Enter keeps download-and-open behavior. Show download progress and
+> result inside the message view popup so feedback is visible above the
+> modal footer.
+
+
+
+### Bug Fixes
+
+- *(markdown)* **Prevent spurious blank lines in message edit round-trip** - ([ae9a585](https://github.com/nospor/teams-tui-go/commit/ae9a585a7af8830159f0879160dd8a1130f19f77))
+
+
+- *(downloads)* **Avoid 15s timeout when downloading large attachments** - ([ff923ab](https://github.com/nospor/teams-tui-go/commit/ff923ab1a282e79ffb5d2e439eeaacdcd74e23da))
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.8 [skip ci]** - ([07eba4c](https://github.com/nospor/teams-tui-go/commit/07eba4c28f10848feeaf0f61a561928b669ae021))
+
+
+
 ## [1.2.8] - 2026-09-03
 
 ### Features
