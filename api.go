@@ -28,6 +28,13 @@ import (
 const graphAPIBase = "https://graph.microsoft.com/v1.0"
 const graphAPIBeta = "https://graph.microsoft.com/beta"
 
+// downloadClient is used for attachment downloads. Large files can take much
+// longer than API calls, so this client has a generous timeout instead of the
+// 15s limit set on http.DefaultClient in main.
+var downloadClient = &http.Client{
+	Timeout: 30 * time.Minute,
+}
+
 // ---------------------------------------------------------------------------
 // Data models
 // ---------------------------------------------------------------------------
@@ -2659,7 +2666,7 @@ func DownloadFile(accessToken, fileURL, destPath string) error {
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("DownloadFile: request: %w", err)
 	}
@@ -2669,14 +2676,19 @@ func DownloadFile(accessToken, fileURL, destPath string) error {
 		return fmt.Errorf("DownloadFile: HTTP %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("DownloadFile: read body: %w", err)
-	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return fmt.Errorf("DownloadFile: create directories: %w", err)
 	}
-	return os.WriteFile(destPath, data, 0o600)
+	f, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("DownloadFile: create file: %w", err)
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("DownloadFile: write file: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
