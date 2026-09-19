@@ -55,7 +55,7 @@ func TestExternalProviderFailureNeverFallsBackToDeviceCode(t *testing.T) {
 	defer server.Close()
 
 	originalDeviceCodeURL := deviceCodeURL
-	deviceCodeURL = server.URL
+	deviceCodeURL = func() string { return server.URL }
 	t.Cleanup(func() { deviceCodeURL = originalDeviceCodeURL })
 	t.Setenv(externalTokenCommandEnv, filepath.Join(t.TempDir(), "missing-command"))
 
@@ -85,7 +85,7 @@ func TestExternalOnlyBuildNeverReadsCacheOrStartsDeviceFlow(t *testing.T) {
 	}))
 	defer server.Close()
 	originalDeviceCodeURL := deviceCodeURL
-	deviceCodeURL = server.URL
+	deviceCodeURL = func() string { return server.URL }
 	t.Cleanup(func() { deviceCodeURL = originalDeviceCodeURL })
 
 	_, err := GetAccessToken("unused-client-id")

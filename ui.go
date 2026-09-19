@@ -202,8 +202,9 @@ type MsgUserProfileLoaded struct {
 
 // MsgFileDownloaded is sent when a file download has completed.
 type MsgFileDownloaded struct {
-	DestPath string
-	Err      error
+	DestPath          string
+	Err               error
+	OpenAfterDownload bool
 }
 
 // MsgImagesOpened is sent when a batch image download+open has completed.
@@ -385,6 +386,27 @@ type Model struct {
 
 	lastWrittenMessages  int
 	lastWrittenReactions int
+
+	// tickDidWork is set by the MsgTick handler when that tick actually
+	// changed something visible. Update consults it to decide whether the
+	// memoized view can be reused. Reset after every Update.
+	tickDidWork bool
+
+	// viewCache holds the last string produced by View(). Bubble Tea calls
+	// View() after every message, including the 100ms heartbeat tick, which
+	// would otherwise re-render the whole UI ten times a second while idle.
+	// The cache is shared via pointer because View() has a value receiver.
+	viewCache *viewCache
+}
+
+// viewCache memoizes the rendered UI between Update calls that cannot have
+// changed it. Update marks the cache dirty for every message except a tick
+// that did no work, so anything that mutates state still repaints promptly.
+type viewCache struct {
+	dirty bool
+	// w/h guard against a resize slipping through while dirty is false.
+	w, h int
+	view string
 }
 
 // NewModel creates the initial Bubble Tea model.
@@ -472,6 +494,7 @@ func NewModel(app *App, clientID, userID string) Model {
 		keybindings:              defaultKeybindings,
 		lastWrittenMessages:      -1,
 		lastWrittenReactions:     -1,
+		viewCache:                &viewCache{dirty: true},
 	}
 }
 
@@ -525,12 +548,13 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 		if popupH < 15 {
 			popupH = 15
 		}
-		m.filepicker.SetHeight(popupH - 7)
+		m.filepicker.SetHeight(popupH - 8)
 
 	// ── Heartbeat tick ───────────────────────────────────────────────────
 	case MsgTick:
 		cmds = append(cmds, tickCmd())
 		if m.pruneExpiredSnoozes(time.Now()) {
+			m.tickDidWork = true
 			m = m.rebuildChatList()
 			var reconcileCmd tea.Cmd
 			m, reconcileCmd = m.reconcileSelectedChatConversation()
@@ -539,14 +563,31 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 			}
 		}
 
+		// The tick fires 10x/sec purely to drive timers. Most do nothing, so
+		// the branches below set tickDidWork when they change something the
+		// user can see; if none do, Update skips the repaint and the unread
+		// scan. Commands dispatched here don't count — their results arrive
+		// as their own messages, which mark the view dirty when they land.
+
 		// Clear expired status messages.
 		if m.app.StatusUntil != nil && time.Now().After(*m.app.StatusUntil) {
 			m.app.Status = ""
 			m.app.StatusUntil = nil
+			m.tickDidWork = true
 		}
 		if m.app.SearchStatusUntil != nil && time.Now().After(*m.app.SearchStatusUntil) {
 			m.app.SearchStatus = ""
 			m.app.SearchStatusUntil = nil
+			m.tickDidWork = true
+		}
+		if m.app.MessagePopupStatusUntil != nil && time.Now().After(*m.app.MessagePopupStatusUntil) {
+			m.app.MessagePopupStatus = ""
+			m.app.MessagePopupStatusUntil = nil
+			m.tickDidWork = true
+		}
+		if m.app.VisualBellUntil != nil && time.Now().After(*m.app.VisualBellUntil) {
+			m.app.VisualBellUntil = nil
+			m.tickDidWork = true
 		}
 
 		// Periodic chat refresh every ~15 s.
@@ -1596,22 +1637,46 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 	// ── File downloaded ─────────────────────────────────────────
 	case MsgFileDownloaded:
 		if msg.Err == nil {
-			m.app.SetStatus("Saved to: "+msg.DestPath, 6*time.Second)
-			_ = openFile(msg.DestPath)
+			savedName := filepath.Base(msg.DestPath)
+			statusMsg := "Saved to: " + msg.DestPath
+			popupStatusMsg := "Downloaded: " + savedName
+			if msg.OpenAfterDownload {
+				popupStatusMsg = "Downloaded and opened: " + savedName
+			}
+			m.app.SetStatus(statusMsg, 6*time.Second)
+			if m.app.MessagePopupMode {
+				m.app.SetMessagePopupStatus(popupStatusMsg, 6*time.Second)
+			}
+			if msg.OpenAfterDownload {
+				_ = openFile(msg.DestPath)
+			}
 		} else {
-			m.app.SetStatus("Download failed: "+msg.Err.Error(), 5*time.Second)
+			errMsg := "Download failed: " + msg.Err.Error()
+			m.app.SetStatus(errMsg, 5*time.Second)
+			if m.app.MessagePopupMode {
+				m.app.SetMessagePopupStatus(errMsg, 5*time.Second)
+			}
 		}
 
 	// ── Images opened with image viewer ─────────────────────────
 	case MsgImagesOpened:
 		if msg.Err == nil {
 			statusMsg := "Opened in image viewer: " + msg.SelectedPath
+			popupStatusMsg := "Opened in image viewer: " + filepath.Base(msg.SelectedPath)
 			if msg.TotalImages > 1 {
 				statusMsg = fmt.Sprintf("Opened %d images in viewer (selected: %s)", msg.TotalImages, filepath.Base(msg.SelectedPath))
+				popupStatusMsg = fmt.Sprintf("Opened %d images in viewer (selected: %s)", msg.TotalImages, filepath.Base(msg.SelectedPath))
 			}
 			m.app.SetStatus(statusMsg, 6*time.Second)
+			if m.app.MessagePopupMode {
+				m.app.SetMessagePopupStatus(popupStatusMsg, 6*time.Second)
+			}
 		} else {
-			m.app.SetStatus("Image viewer error: "+msg.Err.Error(), 5*time.Second)
+			errMsg := "Image viewer error: " + msg.Err.Error()
+			m.app.SetStatus(errMsg, 5*time.Second)
+			if m.app.MessagePopupMode {
+				m.app.SetMessagePopupStatus(errMsg, 5*time.Second)
+			}
 		}
 
 	case MsgPreviewDownloaded:
@@ -1854,6 +1919,10 @@ func (m Model) updateInternal(msg tea.Msg) (Model, tea.Cmd) {
 				m.app.MentionSearch = query
 				m.app.MentionStartIndex = startIdx
 				m = m.rebuildMentionSuggestions()
+				if len(m.app.MentionSuggestions) == 0 {
+					m.app.MentionPopupMode = false
+					m.app.MentionSuggestions = nil
+				}
 			}
 		} else {
 			m.app.MentionCanceledStartIndex = -1
@@ -2800,6 +2869,7 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		} else {
 			m.app.MessagePopupMode = false
 			m.app.AttachmentCursorMode = false
+			m.app.SetMessagePopupStatus("", 0)
 			cmd = clearTerminalImagesCmd()
 		}
 		return m, cmd
@@ -2845,36 +2915,17 @@ func (m Model) handleMessagePopupKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 
 	case "enter":
 		if m.app.AttachmentCursorMode {
-			// Download/open selected attachment.
-			if m.app.MessageSelectedIndex < len(m.app.Messages) {
-				msgObj := m.app.Messages[m.app.MessageSelectedIndex]
-				vAtts := viewableAttachments(msgObj)
-				if m.app.AttachmentSelectedIndex < len(vAtts) {
-					att := vAtts[m.app.AttachmentSelectedIndex]
-					if !m.app.Features.FilePreview {
-						m.app.SetStatus("File preview disabled — enable 'file_preview_enabled' in config.json", 5*time.Second)
-					} else if att.ContentURL != nil && *att.ContentURL != "" {
-						name := getAttachmentSavedName(att, "attachment")
-						// If this is an image and image_viewer is configured, use the
-						// batch image viewer path (downloads all images in the message).
-						if isImageAttachment(att) && m.app.ImageViewer != "" {
-							m.app.SetStatus("Downloading images for viewer...", 0)
-							return m, downloadAndOpenImagesCmd(m.clientID, att, vAtts, m.app.ImageViewer)
-						}
-						// Fallback: single-file download + default opener.
-						destPath := filepath.Join(getDownloadsDir(), name)
-						m.app.SetStatus("Downloading: "+name+" ...", 0)
-						return m, downloadFileCmd(m.clientID, *att.ContentURL, destPath)
-					} else {
-						m.app.SetStatus("No download URL for this attachment", 3*time.Second)
-					}
-				}
-			}
-			return m, nil
+			return m.downloadSelectedAttachment(true)
 		}
 		m.app.MessagePopupMode = false
 		m.app.AttachmentCursorMode = false
+		m.app.SetMessagePopupStatus("", 0)
 		return m, clearTerminalImagesCmd()
+
+	case "d":
+		if m.app.AttachmentCursorMode {
+			return m.downloadSelectedAttachment(false)
+		}
 
 	case "tab":
 		var cmd tea.Cmd
@@ -3003,7 +3054,7 @@ func (m Model) handleMessageSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if m.app.MessageSelectedIndex < len(m.app.Messages) {
 			msgObj := m.app.Messages[m.app.MessageSelectedIndex]
 			if msgObj.Body != nil && msgObj.Body.Content != nil {
-				text := stripANSI(HTMLToText(*msgObj.Body.Content, msgObj.Attachments, msgObj.Mentions))
+				text := stripANSI(HTMLToText(*msgObj.Body.Content, msgObj.Attachments, msgObj.Mentions, nil))
 				if err := clipboard.WriteAll(text); err == nil {
 					m.app.SetStatus("Message copied to clipboard", 3*time.Second)
 				} else {
@@ -3359,6 +3410,8 @@ func (m Model) handleUrlSelectionModeKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 // the new model plus any commands.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	updatedModel, cmd := m.updateInternal(msg)
+	previousOwner := updatedModel.app.MessagesConversationID
+	previousSelection := updatedModel.app.SelectedChatID
 	var reconcileCmd tea.Cmd
 	updatedModel, reconcileCmd = updatedModel.reconcileSelectedChatConversation()
 	if reconcileCmd != nil {
@@ -3368,7 +3421,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = tea.Batch(cmd, reconcileCmd)
 		}
 	}
-	updatedModel = updatedModel.writeAppState()
+
+	// A heartbeat tick that changed nothing cannot have changed the unread
+	// counts or the rendered view either, so skip both. Everything else falls
+	// through to the full path — defaulting to "do the work" keeps this safe
+	// when new message types are added.
+	_, isTick := msg.(MsgTick)
+	idleTick := isTick && !updatedModel.tickDidWork && reconcileCmd == nil &&
+		previousOwner == updatedModel.app.MessagesConversationID && previousSelection == updatedModel.app.SelectedChatID
+
+	if !idleTick {
+		// Scanning every chat for unread messages/reactions is O(chats) and
+		// costs more than a repaint on large accounts; it only needs to run
+		// when something might actually have changed.
+		updatedModel = updatedModel.writeAppState()
+		if updatedModel.viewCache != nil {
+			updatedModel.viewCache.dirty = true
+		}
+	}
+	updatedModel.tickDidWork = false
 	return updatedModel, cmd
 }
 
@@ -3427,8 +3498,39 @@ func (m Model) writeAppState() Model {
 // Main View
 // ---------------------------------------------------------------------------
 
-// View renders the complete TUI.
+// View returns the rendered TUI, reusing the previous render when nothing has
+// changed since it was produced.
+//
+// Bubble Tea calls View() after every message, and the 100ms heartbeat tick
+// means that happens 10x/sec even on a completely idle screen. Rendering costs
+// ~1-3ms depending on history size, which burned a few percent of a CPU core
+// continuously. Bubble Tea already skips the terminal write when the output is
+// unchanged, but it does so only after calling View(), so the work still had to
+// be avoided here.
+//
+// The render functions are pure with respect to the terminal — they compute
+// strings from model state without performing I/O — so skipping a redundant
+// call is unobservable. Update() marks the cache dirty for everything except a
+// tick that did no work.
 func (m Model) View() string {
+	if m.viewCache != nil && !m.viewCache.dirty &&
+		m.viewCache.w == m.width && m.viewCache.h == m.height {
+		return m.viewCache.view
+	}
+
+	out := m.renderView()
+
+	if m.viewCache != nil {
+		m.viewCache.dirty = false
+		m.viewCache.w = m.width
+		m.viewCache.h = m.height
+		m.viewCache.view = out
+	}
+	return out
+}
+
+// renderView builds the complete TUI from scratch.
+func (m Model) renderView() string {
 	if m.width == 0 {
 		return "Loading..."
 	}
@@ -3901,7 +4003,7 @@ func (m Model) renderRightPanel(w, h int) string {
 		// Build a one-line preview using the same style as renderMessageReference.
 		preview := ""
 		if ref.Body != nil && ref.Body.Content != nil {
-			preview = stripANSI(HTMLToText(*ref.Body.Content, ref.Attachments, ref.Mentions))
+			preview = stripANSI(HTMLToText(*ref.Body.Content, ref.Attachments, ref.Mentions, nil))
 		}
 		preview = strings.ReplaceAll(preview, "\n", " ")
 		const maxPrev = 80
@@ -5179,6 +5281,36 @@ func wordWrap(s string, maxW int) []string {
 	return lines
 }
 
+// conversationNameMap builds a lookup of chat ID → display name for forwarded-message quotes.
+func (m Model) conversationNameMap() map[string]string {
+	out := make(map[string]string, len(m.chatCache))
+	for _, c := range m.chatCache {
+		if c.CachedDisplayName != nil && *c.CachedDisplayName != "" {
+			out[c.ID] = *c.CachedDisplayName
+		}
+	}
+	for _, c := range m.app.Chats {
+		if c.CachedDisplayName != nil && *c.CachedDisplayName != "" {
+			out[c.ID] = *c.CachedDisplayName
+		}
+	}
+	return out
+}
+
+// messagePlainText renders a message body with chat-name resolution for forwarded quotes.
+func (m Model) messagePlainText(msg *Message) string {
+	if msg.IsSystemEvent() || msg.Body == nil || msg.Body.Content == nil {
+		return msg.GetPlainText()
+	}
+	for _, att := range msg.Attachments {
+		if att.ContentType != nil && strings.EqualFold(*att.ContentType, "forwardedMessageReference") {
+			msg.ProcessInlineImages()
+			return HTMLToText(*msg.Body.Content, msg.Attachments, msg.Mentions, m.conversationNameMap())
+		}
+	}
+	return msg.GetPlainText()
+}
+
 func (m Model) getWrappedMessageLines(msg *Message, maxW int, searchQuery string, searchActive bool) ([]string, []bool) {
 	queryKey := ""
 	if searchActive {
@@ -5189,7 +5321,7 @@ func (m Model) getWrappedMessageLines(msg *Message, maxW int, searchQuery string
 		return msg.WrappedLinesCached, msg.WrappedLinesRTLCached
 	}
 
-	body := msg.GetPlainText()
+	body := m.messagePlainText(msg)
 	if msg.IsSystemEvent() && body != "" {
 		body = "• " + body
 	}
@@ -5788,7 +5920,7 @@ func stripANSI(s string) string {
 func (m *Model) notify(senderName string, msg Message) {
 	body := ""
 	if m.app.NotificationShowPreview {
-		if text := msg.GetPlainText(); text != "" {
+		if text := m.messagePlainText(&msg); text != "" {
 			body = stripANSI(text)
 			// Remove newlines and collapse spaces for a cleaner notification body.
 			body = strings.ReplaceAll(body, "\n", " ")
@@ -6506,7 +6638,7 @@ func (m Model) handleSearchPopupNavigationKey(msg tea.KeyMsg) (Model, tea.Cmd) {
 		if len(m.app.SearchPopupResults) > 0 && m.app.SearchPopupSelectedIndex < len(m.app.SearchPopupResults) {
 			msgObj := m.app.SearchPopupResults[m.app.SearchPopupSelectedIndex].Message
 			if msgObj.Body != nil && msgObj.Body.Content != nil {
-				text := stripANSI(HTMLToText(*msgObj.Body.Content, msgObj.Attachments, msgObj.Mentions))
+				text := stripANSI(HTMLToText(*msgObj.Body.Content, msgObj.Attachments, msgObj.Mentions, nil))
 				if err := clipboard.WriteAll(text); err == nil {
 					m.app.SetSearchStatus("Message copied to clipboard", 3*time.Second)
 				} else {
@@ -7538,12 +7670,15 @@ func (m Model) renderUserSearchPopup(w, h int) string {
 }
 
 // viewableAttachments returns the subset of a message's attachments that should
-// be shown in the view popup — i.e. real files, excluding quoted-reply references
-// (contentType "messageReference") which are already rendered inline as blockquotes.
+// be shown in the view popup — i.e. real files, excluding quoted-reply and
+// forwarded-message references which are already rendered inline as blockquotes.
 func viewableAttachments(msg Message) []MessageAttachment {
 	var out []MessageAttachment
 	for _, att := range msg.Attachments {
 		if att.ContentType != nil && strings.EqualFold(*att.ContentType, "messageReference") {
+			continue
+		}
+		if att.ContentType != nil && strings.EqualFold(*att.ContentType, "forwardedMessageReference") {
 			continue
 		}
 		out = append(out, att)
@@ -7640,11 +7775,12 @@ func (m Model) renderMessagePopup(w, h int) string {
 		attHeaderStyle := lipgloss.NewStyle().Foreground(colYellow).Bold(true)
 		attHeader := "Attachments:"
 		if m.app.AttachmentCursorMode {
-			attHeader += fmt.Sprintf(" [%s:exit | %s/%s:select | %s:download]",
+			attHeader += fmt.Sprintf(" [%s:exit | %s/%s:select | %s:open | %s:download]",
 				m.keybindings.Primary(keyMessageViewAttachments),
 				m.keybindings.Primary(keyMessageNext),
 				m.keybindings.Primary(keyMessagePrevious),
-				m.keybindings.Primary(keyMessageViewOpen))
+				m.keybindings.Primary(keyMessageViewOpen),
+				m.keybindings.Primary(keyMessageViewDownload))
 		} else if m.app.Features.FilePreview {
 			attHeader += " [" + m.keybindings.Primary(keyMessageViewAttachments) + " to select and download]"
 		}
@@ -7734,7 +7870,7 @@ func (m Model) renderMessagePopup(w, h int) string {
 		bodyMaxH = 4
 	}
 
-	body := msg.GetPlainText()
+	body := m.messagePlainText(&msg)
 	var wrappedBody []string
 	if body != "" {
 		wrappedBody = wordWrap(body, contentW)
@@ -7802,15 +7938,25 @@ func (m Model) renderMessagePopup(w, h int) string {
 		finalLines = append(finalLines, "")
 	}
 
-	targetH := innerH - 1
-	if len(finalLines) > targetH {
-		finalLines = finalLines[:targetH]
+	statusFooterLines := []string{}
+	if m.app.MessagePopupStatus != "" {
+		statusFooterLines = append(statusFooterLines, formatMessagePopupStatus(m.app.MessagePopupStatus))
+	}
+	statusFooterLines = append(statusFooterLines, footer)
+
+	contentH := innerH - len(statusFooterLines)
+	if contentH < 1 {
+		contentH = 1
+	}
+	if len(finalLines) > contentH {
+		finalLines = finalLines[:contentH]
 	} else {
-		for len(finalLines) < targetH {
+		for len(finalLines) < contentH {
 			finalLines = append(finalLines, "")
 		}
 	}
-	finalLines = append(finalLines, footer)
+
+	bottomBlock := strings.Join(statusFooterLines, "\n")
 
 	var combinedContent string
 	if showImagePreview {
@@ -7825,19 +7971,19 @@ func (m Model) renderMessagePopup(w, h int) string {
 		rightPanelStr := lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(borderColor).
-			Width(previewW).Height(targetH).
+			Width(previewW).Height(contentH).
 			Align(lipgloss.Center, lipgloss.Center).
 			Render(previewText)
 
-		leftPanelBodyStr := strings.Join(finalLines[:targetH], "\n")
+		leftPanelBodyStr := strings.Join(finalLines, "\n")
 		leftAndRight := lipgloss.JoinHorizontal(lipgloss.Top,
 			lipgloss.NewStyle().Width(contentW).Render(leftPanelBodyStr),
 			"  ",
 			rightPanelStr,
 		)
-		combinedContent = leftAndRight + "\n" + footer
+		combinedContent = leftAndRight + "\n" + bottomBlock
 	} else {
-		combinedContent = strings.Join(finalLines, "\n")
+		combinedContent = strings.Join(finalLines, "\n") + "\n" + bottomBlock
 	}
 
 	box := lipgloss.NewStyle().
@@ -8001,7 +8147,8 @@ func (m Model) getHelpContentLines() []string {
 			{m.keybindings.Display(keyMessageForward), "Forward message"},
 			{m.keybindings.Display(keyChatMarkRead), "Mark conversation read"},
 			{m.keybindings.Display(keyMessageViewAttachments), "Switch to attachment cursor mode"},
-			{m.keybindings.Display(keyMessageViewOpen), "Download selected attachment (feature: file_preview_enabled)"},
+			{m.keybindings.Display(keyMessageViewOpen), "Download and open attachment (feature: file_preview_enabled)"},
+			{m.keybindings.Display(keyMessageViewDownload), "Download attachment without opening"},
 			{m.keybindings.Display(keyMessageViewClose), "Close popup"},
 		}},
 		{"History Search (" + m.keybindings.Primary(keySearchHistory) + ")", [][2]string{
@@ -8517,6 +8664,62 @@ func (m Model) renderUserProfilePopup(w, h int) string {
 }
 
 // ---------------------------------------------------------------------------
+// downloadSelectedAttachment downloads the currently selected attachment in the
+// message popup. When openAfterDownload is true, images may open in the configured
+// image viewer and other files open with the system default handler after download.
+func (m Model) downloadSelectedAttachment(openAfterDownload bool) (Model, tea.Cmd) {
+	if m.app.MessageSelectedIndex < 0 || m.app.MessageSelectedIndex >= len(m.app.Messages) {
+		return m, nil
+	}
+	msgObj := m.app.Messages[m.app.MessageSelectedIndex]
+	vAtts := viewableAttachments(msgObj)
+	if m.app.AttachmentSelectedIndex < 0 || m.app.AttachmentSelectedIndex >= len(vAtts) {
+		return m, nil
+	}
+	att := vAtts[m.app.AttachmentSelectedIndex]
+	if !m.app.Features.FilePreview {
+		setAttachmentDownloadStatus(m.app, "File preview disabled — enable 'file_preview_enabled' in config.json", 5*time.Second)
+		return m, nil
+	}
+	if att.ContentURL == nil || *att.ContentURL == "" {
+		setAttachmentDownloadStatus(m.app, "No download URL for this attachment", 3*time.Second)
+		return m, nil
+	}
+
+	name := getAttachmentSavedName(att, "attachment")
+	if openAfterDownload && isImageAttachment(att) && m.app.ImageViewer != "" {
+		setAttachmentDownloadStatus(m.app, "Downloading images for viewer...", 0)
+		return m, downloadAndOpenImagesCmd(m.clientID, att, vAtts, m.app.ImageViewer)
+	}
+
+	destPath := filepath.Join(getDownloadsDir(), name)
+	if openAfterDownload {
+		setAttachmentDownloadStatus(m.app, "Downloading: "+name+" ...", 0)
+	} else {
+		setAttachmentDownloadStatus(m.app, "Saving: "+name+" ...", 0)
+	}
+	return m, downloadFileCmd(m.clientID, *att.ContentURL, destPath, openAfterDownload)
+}
+
+func setAttachmentDownloadStatus(app *App, msg string, duration time.Duration) {
+	app.SetStatus(msg, duration)
+	app.SetMessagePopupStatus(msg, duration)
+}
+
+func formatMessagePopupStatus(msg string) string {
+	lower := strings.ToLower(msg)
+	var style lipgloss.Style
+	switch {
+	case strings.Contains(lower, "failed") || strings.Contains(lower, "error") || strings.Contains(lower, "disabled"):
+		style = lipgloss.NewStyle().Foreground(colRed).Bold(true)
+	case strings.Contains(msg, "..."):
+		style = lipgloss.NewStyle().Foreground(colYellow).Italic(true)
+	default:
+		style = lipgloss.NewStyle().Foreground(colGreen).Bold(true)
+	}
+	return style.Render(msg)
+}
+
 // getDownloadsDir returns the XDG downloads directory or ~/Downloads
 // ---------------------------------------------------------------------------
 func getDownloadsDir() string {
@@ -8601,6 +8804,9 @@ func getCursorPos(ta textarea.Model) int {
 }
 
 // getMentionQuery looks backward from the cursor in a string to find an active '@' mention search.
+// An '@' only counts as a mention when it starts a word: it must be at the start of the
+// string or immediately preceded by whitespace. Embedded '@' characters (e.g. inside an
+// email address like jvernon@amsci.org) are ignored.
 func getMentionQuery(val string, cursor int) (int, string, bool) {
 	runes := []rune(val)
 	if cursor < 0 || cursor > len(runes) {
@@ -8612,6 +8818,12 @@ func getMentionQuery(val string, cursor int) (int, string, bool) {
 			break
 		}
 		if r == '@' {
+			if i > 0 {
+				prev := runes[i-1]
+				if prev != ' ' && prev != '\n' && prev != '\r' && prev != '\t' {
+					break
+				}
+			}
 			query := string(runes[i+1 : cursor])
 			return i, query, true
 		}
@@ -8797,14 +9009,19 @@ func (m Model) renderFilePickerPopup(w, h int) string {
 
 	currentDir := lipgloss.NewStyle().Foreground(colWhite).Bold(true).Render("Directory: " + m.filepicker.CurrentDirectory)
 	sortMode := lipgloss.NewStyle().Foreground(colYellow).Render(fmt.Sprintf("Sorted by: %s (%s)", m.filepicker.SortBy.String(), m.filepicker.SortOrder.String()))
+	hiddenStatus := "off"
+	if m.filepicker.ShowHidden {
+		hiddenStatus = "on"
+	}
+	hiddenMode := lipgloss.NewStyle().Foreground(colDimGray).Render("Hidden: " + hiddenStatus)
 
 	var lines []string
-	lines = append(lines, title, currentDir, sortMode, "")
+	lines = append(lines, title, currentDir, sortMode, hiddenMode, "")
 
 	// Render the filepicker component
 	lines = append(lines, m.filepicker.View())
 
-	footer := dimStyle.Italic(true).Render("j/k or ↑/↓: Navigate • s: Change Sort • o: Change Order • Enter: Attach • Esc / q: Cancel")
+	footer := dimStyle.Italic(true).Render("j/k or ↑/↓: Navigate • s: Change Sort • o: Change Order • .: Toggle Hidden • Enter: Attach • Esc / q: Cancel")
 	lines = append(lines, "", footer)
 
 	return lipgloss.NewStyle().

@@ -42,7 +42,13 @@ changelog. Before this publication cleanup, fork `7d671cf` had 52 unique commits
 and upstream had 17 unique commits since their shared ancestor. The upstream
 count includes changelog and merge commits.
 
-Notable upstream work not merged by ancestry at that snapshot:
+All 17 upstream commits through `969f60b` have now been merged with their
+history preserved. The integration keeps external-only authentication,
+configurable key dispatch, transcript ownership checks, RTL rendering, and
+readable system events. It also tests snooze expiry with cached rendering and
+uses temporary files so failed downloads do not poison the attachment cache.
+
+Notable upstream work included in the merge:
 
 | Commit | Change |
 | --- | --- |
@@ -56,10 +62,10 @@ Notable upstream work not merged by ancestry at that snapshot:
 | [a7c79c3](https://github.com/nospor/teams-tui-go/commit/a7c79c3) | Download-only shortcut and attachment status in the popup |
 | [ae9a585](https://github.com/nospor/teams-tui-go/commit/ae9a585) | Prevent blank lines in message edit round-trips |
 
-This is a comparison, not an upstream merge. Some areas overlap with independent
-fork changes, so absence from Git ancestry does not prove the same bug exists
-here. Integration should review and test authentication, custom key dispatch,
-message rendering, and asynchronous selection behavior together.
+Some areas overlap with independent fork changes. Conflicts were resolved
+around the fork's behavior rather than replacing complete files with upstream
+copies. Automated tests cover these paths; live tenant sign-in and native
+desktop launches still need validation on the user's machine.
 
 To refresh the comparison from a checkout:
 

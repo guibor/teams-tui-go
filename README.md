@@ -117,6 +117,11 @@ Missing settings are added with backwards-compatible defaults at startup.
 
 #### Built-in device login
 
+For a single-tenant app registration, set `TENANT_ID` to your tenant ID or
+domain in the environment or `.env`. It defaults to `common`. This affects
+only built-in device login and token refresh; an external provider owns its
+own tenant selection.
+
 No helper application is required. Run `teams-tui-go`, follow the displayed
 Microsoft verification URL, enter the device code, and approve the requested
 Graph permissions. The resulting refresh token is stored under the app's
@@ -645,6 +650,7 @@ When in compose mode (`c` or `C`), you can paste images (PNG/JPEG) directly from
 When `file_upload_enabled` is set to `true` in `config.json`, you can attach small files (under 4MB) from your local computer to chat or channel messages.
 - In compose mode (`c` or `C`), press **`Ctrl+f`** to open the offline file browser overlay.
 - Navigate directories using `j`/`k` (or arrow keys) and enter directories with `Enter`. Move to parent directories via `..`.
+- Press `.` to toggle the display of hidden files/folders (e.g. `.config`, `.cache`).
 - Highlight a file and press **`Enter`** to select and attach it.
 - A placeholder like `[File: filename.ext]` is inserted into the textarea. You can move, copy, or delete it to control inline message rendering.
 - When sending the message, files are automatically uploaded to OneDrive (for chats) or SharePoint (for channels) and attached as reference attachments to the message.
@@ -726,7 +732,8 @@ configuration; use the `keybindings` object to replace any application action.
 | `v`          | View details/reactions of selected message (Message Mode) |
 | `Ctrl+g`     | View selected message in external editor (in Message Mode / Message View Popup) |
 | `Tab`        | Switch to attachment cursor in `v` popup (in Message View Popup) |
-| `Enter`      | Download selected attachment (in `v` attachment cursor)   |
+| `Enter`      | Download and open selected attachment (in `v` attachment cursor) |
+| `d`          | Download without opening (in `v` attachment cursor)       |
 | `+` / `a`    | React to selected message (in Message Mode)               |
 | `c` / `C`    | Compose without quoting (Message Mode / Message View)     |
 | `r` / `i`    | Mark the selected message's conversation read and advance |

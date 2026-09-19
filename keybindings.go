@@ -119,6 +119,7 @@ const (
 	keyMessageViewClose       = "message_view.close"
 	keyMessageViewAttachments = "message_view.toggle_attachments"
 	keyMessageViewOpen        = "message_view.open_attachment"
+	keyMessageViewDownload    = "message_view.download_attachment"
 	keyMessageViewScrollDown  = "message_view.scroll_down"
 	keyMessageViewScrollUp    = "message_view.scroll_up"
 	keyComposeCancel          = "compose.cancel"
@@ -282,6 +283,7 @@ var keyBindingDefinitions = []keyBindingDefinition{
 	keyDef(keyMessageViewClose, "esc", KeyList{"esc", "q", "v"}, keyContextMessageView),
 	keyDef(keyMessageViewAttachments, "tab", KeyList{"tab"}, keyContextMessageView),
 	keyDef(keyMessageViewOpen, "enter", KeyList{"enter"}, keyContextMessageView),
+	keyDef(keyMessageViewDownload, "d", KeyList{"d"}, keyContextMessageView),
 	keyDef(keyMessageViewScrollDown, "J", KeyList{"J", "shift+down", "pgdown"}, keyContextMessageView),
 	keyDef(keyMessageViewScrollUp, "K", KeyList{"K", "shift+up", "pgup"}, keyContextMessageView),
 

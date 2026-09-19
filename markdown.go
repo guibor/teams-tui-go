@@ -263,6 +263,7 @@ func HTMLToMarkdown(htmlContent string) string {
 	var codeSpanBuf strings.Builder
 
 	lastChar := rune(0)
+	tagAddedNewline := false
 	ensureNewline := func() {
 		if lastChar != '\n' && sb.Len() > 0 {
 			sb.WriteRune('\n')
@@ -344,6 +345,7 @@ func HTMLToMarkdown(htmlContent string) string {
 				} else {
 					write("\n")
 					lastChar = '\n'
+					tagAddedNewline = true
 				}
 			case "p", "div":
 				// handled on close
@@ -371,6 +373,7 @@ func HTMLToMarkdown(htmlContent string) string {
 						ensureNewline()
 						write("```")
 						ensureNewline()
+						tagAddedNewline = true
 					} else {
 						// Single-line → inline code span.
 						write("`" + content + "`")
@@ -382,14 +385,17 @@ func HTMLToMarkdown(htmlContent string) string {
 				ensureNewline()
 				write("```")
 				ensureNewline()
+				tagAddedNewline = true
 			case "ul", "ol":
 				if len(listStack) > 0 {
 					listStack = listStack[:len(listStack)-1]
 				}
 			case "li":
 				ensureNewline()
+				tagAddedNewline = true
 			case "p", "div":
 				ensureNewline()
+				tagAddedNewline = true
 			}
 
 		case golanghtml.TextToken:
@@ -402,10 +408,24 @@ func HTMLToMarkdown(htmlContent string) string {
 				write(text)
 				continue
 			}
+			if tagAddedNewline {
+				// Consume exactly one leading newline emitted by a closing block
+				// tag so inter-element formatting whitespace is not treated as a
+				// blank line (mirrors HTMLToText behaviour).
+				if strings.HasPrefix(text, "\n") {
+					text = text[1:]
+				} else if strings.HasPrefix(text, "\r\n") {
+					text = text[2:]
+				}
+				tagAddedNewline = false
+			}
 			// Outside code/pre: treat any whitespace-only text node as a
 			// blank-line placeholder (Teams uses both &nbsp; and plain spaces
 			// for empty paragraphs depending on context).
 			if strings.TrimSpace(strings.ReplaceAll(text, "\u00A0", "")) == "" {
+				if text == "" {
+					continue
+				}
 				ensureNewline()
 				sb.WriteRune('\n') // blank line
 				lastChar = '\n'

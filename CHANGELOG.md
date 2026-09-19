@@ -4,6 +4,13 @@
 
 ### Added
 
+- Merge upstream through v1.2.9 (`969f60b`): idle render caching, tenant
+  configuration, hidden-file toggle, forwarded previews, download-only action,
+  longer streamed downloads, and formatting/composer fixes.
+- Adapt the merge to configurable keys, RTL, readable system events, and
+  identity-based chat navigation. Invalidate cached frames on snooze/bell
+  expiry and publish downloads atomically to avoid cached partial files.
+
 - Configurable `thread_analysis_destinations` for external analysis bridges,
   with existing destination choices retained when the setting is omitted.
 - A fork comparison and dated upstream status report in `FORK.md`.
@@ -46,6 +53,159 @@
   character subsequences. Global
   and forward search now rank chat names first, participants second, and loaded
   message content third.
+## [1.2.9] - 2026-09-11
+
+### Features
+
+- *(message-popup)* **Add download-only shortcut and in-popup attachment status** - ([a7c79c3](https://github.com/nospor/teams-tui-go/commit/a7c79c3f2438a3758419928bd47b22247c064374))
+
+
+> Press d in attachment cursor mode to save files without opening them,
+> while Enter keeps download-and-open behavior. Show download progress and
+> result inside the message view popup so feedback is visible above the
+> modal footer.
+
+
+
+### Bug Fixes
+
+- *(markdown)* **Prevent spurious blank lines in message edit round-trip** - ([ae9a585](https://github.com/nospor/teams-tui-go/commit/ae9a585a7af8830159f0879160dd8a1130f19f77))
+
+
+- *(downloads)* **Avoid 15s timeout when downloading large attachments** - ([ff923ab](https://github.com/nospor/teams-tui-go/commit/ff923ab1a282e79ffb5d2e439eeaacdcd74e23da))
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.8 [skip ci]** - ([07eba4c](https://github.com/nospor/teams-tui-go/commit/07eba4c28f10848feeaf0f61a561928b669ae021))
+
+
+
+## [1.2.8] - 2026-09-03
+
+### Features
+
+- *(messages)* **Show previews for forwarded message attachments** - ([2d05325](https://github.com/nospor/teams-tui-go/commit/2d05325ae2a246cbf887ca53faa0c1fbe9c85a15))
+
+
+> Render forwardedMessageReference attachments as inline quote blocks with
+> sender, timestamp, and message text, resolving source chat names from
+> the loaded chat list. Hide these from the attachment popup since they
+> are shown inline like reply quotes.
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.7 [skip ci]** - ([b4d573c](https://github.com/nospor/teams-tui-go/commit/b4d573c6520dc96a0c46e0a0b46d2826ae618166))
+
+
+
+## [1.2.7] - 2026-08-28
+
+### Features
+
+- *(auth)* **Support single-tenant app registrations via TENANT_ID env var** - ([6a366f6](https://github.com/nospor/teams-tui-go/commit/6a366f63be71fdf5b43fa26d0db1cbd6a2b02611))
+
+
+
+### Other
+
+- **Merge pull request #2 from photuris/feat/configurable-tenant-id
+
+feat(auth): support single-tenant app registrations via TENANT_ID env var** - ([43ba753](https://github.com/nospor/teams-tui-go/commit/43ba753774040f835875ce607e7a33349c9ad929))
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.6 [skip ci]** - ([c8a9aa1](https://github.com/nospor/teams-tui-go/commit/c8a9aa1f7bbe7e7f4a9fc20a00b33b0891be0a3f))
+
+
+
+## [1.2.6] - 2026-08-19
+
+### Bug Fixes
+
+- **Render strikethrough as a single SGR sequence** - ([08c89f0](https://github.com/nospor/teams-tui-go/commit/08c89f067737e779566870996eceb550b78fc11e))
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.5 [skip ci]** - ([d3b0d95](https://github.com/nospor/teams-tui-go/commit/d3b0d959197a5249725c7dc60b6719d7cca534dd))
+
+
+
+## [1.2.5] - 2026-08-18
+
+### Features
+
+- *(filepicker)* **Add "." to toggle hidden files and folders** - ([ab1ffdf](https://github.com/nospor/teams-tui-go/commit/ab1ffdf47f4cb12c3fad2c23f88a63666b33cdd4))
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.4 [skip ci]** - ([aaa8e12](https://github.com/nospor/teams-tui-go/commit/aaa8e129fee94e6bde02c992fa8ccf7c81407c3e))
+
+
+
+## [1.2.4] - 2026-08-07
+
+### Bug Fixes
+
+- *(compose)* **Enter key blocked when composing message containing an email address** - ([35627cd](https://github.com/nospor/teams-tui-go/commit/35627cd6dd1a75c18d69472918f2d7df824b69bf))
+
+
+
+### Other
+
+- **Merge pull request #1 from carun/perf/idle-cpu-usage
+
+perf(tui): eliminate idle CPU usage from the 100ms heartbeat tick** - ([dbf6d3b](https://github.com/nospor/teams-tui-go/commit/dbf6d3b5fc886d186cae14f8061c4492596f4491))
+
+
+
+### Performance
+
+- *(tui)* **Eliminate idle CPU usage from the 100ms heartbeat tick** - ([64e31bb](https://github.com/nospor/teams-tui-go/commit/64e31bbb86679a63f7cd028c04bd0c76f059ebd4))
+
+
+> The app consumed several percent of a CPU core while completely idle.
+> Two independent sinks, both driven by the 100ms heartbeat tick that
+> Bubble Tea turns into an Update+View cycle ten times a second:
+>
+> 1. View() rebuilt the entire UI on every tick. Bubble Tea skips the
+>    terminal write when output is unchanged, but only after calling
+>    View(), so the full render cost (~1-3ms, scaling with history size)
+>    was paid regardless.
+>
+> 2. writeAppState() ran on every Update, scanning every chat via
+>    isUnread/hasUnreadReactions to compute badge counts — ~166us per
+>    call. It already skipped the file write when nothing changed, but
+>    the scan itself ran unconditionally, costing more than the render.
+>
+> Both are now skipped when a tick did no work. The tick handler sets
+> tickDidWork when it changes something visible (e.g. expiring a status
+> message); otherwise Update reuses the memoized view and skips the scan.
+>
+> The logic defaults to doing the work, so message types added later
+> repaint correctly without opting in. A width/height check catches
+> resizes even if the dirty flag were stale.
+>
+> Measured over 100 idle ticks (10s idle, 100 chats / 500 messages):
+>   before:            ~3.1% of one core
+>   render cache:       0.161%
+>   + writeAppState:    0.014%
+> Cached render path: 837us -> 1.08us.
+
+
+
+### Miscellaneous Tasks
+
+- **Update CHANGELOG.md for v1.2.3 [skip ci]** - ([6187c59](https://github.com/nospor/teams-tui-go/commit/6187c592b5142182e223bf2b8fff643ae67c75e9))
 
 ## [1.2.3] - 2026-07-24
 

@@ -83,6 +83,64 @@ fmt.Println(&#34;ok&#34;)</code></pre>`,
 	}
 }
 
+func TestHTMLToMarkdownConsecutiveURLs(t *testing.T) {
+	// Teams HTML often contains formatting newlines between block elements.
+	html := `<p>Hi Dana, some questions in tickets</p>
+<p>&nbsp;</p>
+<p><a href="https://adwanted.youtrack.cloud/issue/SRDS-332">https://adwanted.youtrack.cloud/issue/SRDS-332</a></p>
+<p><a href="https://adwanted.youtrack.cloud/issue/SRDS-338">https://adwanted.youtrack.cloud/issue/SRDS-338</a></p>
+<p><a href="https://adwanted.youtrack.cloud/issue/SRDS-340">https://adwanted.youtrack.cloud/issue/SRDS-340</a></p>`
+
+	expected := "Hi Dana, some questions in tickets\n\nhttps://adwanted.youtrack.cloud/issue/SRDS-332\nhttps://adwanted.youtrack.cloud/issue/SRDS-338\nhttps://adwanted.youtrack.cloud/issue/SRDS-340"
+
+	got := HTMLToMarkdown(html)
+	if got != expected {
+		t.Errorf("\nExpected:\n%s\n\nGot:\n%s", expected, got)
+	}
+}
+
+func TestHTMLToMarkdownPreservesIntentionalBlankLines(t *testing.T) {
+	tests := []struct {
+		name     string
+		html     string
+		expected string
+	}{
+		{
+			name:     "nbsp empty paragraph",
+			html:     `<p>line above</p><p>&nbsp;</p><p>line below</p>`,
+			expected: "line above\n\nline below",
+		},
+		{
+			name:     "plain-space empty paragraph",
+			html:     `<p>line above</p><p> </p><p>line below</p>`,
+			expected: "line above\n\nline below",
+		},
+		{
+			name:     "bold and blank line",
+			html:     `<p><b>Title</b></p><p>&nbsp;</p><p>Body text</p>`,
+			expected: "**Title**\n\nBody text",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := HTMLToMarkdown(tc.html)
+			if got != tc.expected {
+				t.Errorf("\nExpected:\n%s\n\nGot:\n%s", tc.expected, got)
+			}
+		})
+	}
+}
+
+func TestHTMLToMarkdownURLRoundTrip(t *testing.T) {
+	input := "Hi Dana, ticket links\n\nhttps://adwanted.youtrack.cloud/issue/SRDS-332\nhttps://adwanted.youtrack.cloud/issue/SRDS-338\nhttps://adwanted.youtrack.cloud/issue/SRDS-340"
+
+	got := HTMLToMarkdown(markdownToHTML(input))
+	if got != input {
+		t.Errorf("\nRound-trip changed content.\nExpected:\n%s\n\nGot:\n%s", input, got)
+	}
+}
+
 func TestContainsURL(t *testing.T) {
 	tests := []struct {
 		input    string

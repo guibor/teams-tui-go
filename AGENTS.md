@@ -23,6 +23,9 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - `-X main.authMode=external-only` prohibits both the device endpoint and cached device tokens when no external provider is configured
 - Built-in device-flow tokens are stored in `~/.cache/teams-tui-go/token.json`
 - Both providers resolve through `GetValidTokenSilent(clientID)`
+- Built-in device and refresh endpoints resolve `TENANT_ID` from environment
+  or `.env` at call time, defaulting to `common`; external provider behavior
+  and external-only builds must remain independent of this setting.
 - Client ID loaded in order: `.env` → `config.json` → built-in default
 - **All background API calls must use `GetValidTokenSilent()`**, never the cached `accessToken` from startup
 - **Dynamic scopes**: `StartDeviceFlow(clientID, scopes string)` and `RefreshAccessToken(clientID, refreshToken, scopes string)` accept an explicit scope string. Both callers pass `BuildScopes()` so that any enabled feature flags are included in the token request. The old `scopes` constant has been removed.
@@ -61,6 +64,15 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
 - **Teams Channels**: `TeamsData` is `[]TeamWithChannels` (loaded once at startup via `loadTeamsChannelsCmd` fired from `Init()`). The sidebar shows a `── Teams ──` divider below chats; `Model.channelSelectedIndex` (-1 = chat mode, ≥0 = channel index into `allChannels()`) drives navigation. Pressing `j` at the last chat enters channel mode; `k` at index 0 exits back to chats. Selecting a channel fires `loadChannelMessagesCmd` and displays messages in the right panel; `MsgChannelMessagesLoaded` populates `app.Messages`. `SelectedChannelTeamID`/`SelectedChannelID` track the active channel (`""` = chat mode).
 
 ### UI (`ui.go`)
+- `viewCache` reuses the frame on idle heartbeat ticks. Keep transcript
+  ownership reconciliation before the idle decision. Any tick that changes
+  visible state (including snooze expiry, popup status, or the visual bell)
+  must set `tickDidWork`; non-tick messages invalidate the frame automatically.
+- Forwarded-reference previews resolve source names from the full chat cache,
+  not just the filtered sidebar; system events retain `SystemEventSummary()`.
+- Attachment popup `Enter` downloads/opens; configurable
+  `message_view.download_attachment` (`d`) downloads only. Downloads stream
+  through a temporary file and publish only on success.
 - Bubble Tea `Model` struct implementing `Init()`, `Update()`, `View()`
 - Layout: 30% chat list (left) | 70% messages (right) | status bar (3 lines, bottom)
 - Uses `CachedDisplayName` from `Chat` struct — **do not compute display names here**

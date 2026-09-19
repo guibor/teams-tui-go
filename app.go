@@ -231,6 +231,8 @@ type App struct {
 	ChatIconTheme                    string
 	CustomChatIcons                  map[string]string
 	Features                         FeatureFlags
+	MessagePopupStatus               string
+	MessagePopupStatusUntil          *time.Time
 
 	// ── Presence popup (Feature: presence_enabled) ───────────────────────
 	PresencePopupMode    bool
@@ -564,6 +566,17 @@ func (a *App) SetSelectedChatID(chatID string) bool {
 func (a *App) ClearSelectedChat() {
 	a.SelectedChatID = ""
 	a.SelectedIndex = -1
+}
+
+// SetMessagePopupStatus sets the message view popup status text, optionally clearing it after duration.
+func (a *App) SetMessagePopupStatus(msg string, duration time.Duration) {
+	a.MessagePopupStatus = msg
+	if duration > 0 {
+		t := time.Now().Add(duration)
+		a.MessagePopupStatusUntil = &t
+	} else {
+		a.MessagePopupStatusUntil = nil
+	}
 }
 
 // GetSelectedChat returns the currently highlighted chat, or nil.

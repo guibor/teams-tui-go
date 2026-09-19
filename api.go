@@ -30,6 +30,13 @@ const graphAPIBeta = "https://graph.microsoft.com/beta"
 
 var graphHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
+// downloadClient is used for attachment downloads. Large files can take much
+// longer than API calls, so this client has a generous timeout instead of the
+// 15s limit set on http.DefaultClient in main.
+var downloadClient = &http.Client{
+	Timeout: 30 * time.Minute,
+}
+
 // ---------------------------------------------------------------------------
 // Data models
 // ---------------------------------------------------------------------------
@@ -126,7 +133,7 @@ func (msg *Message) GetPlainText() string {
 		msg.PlainTextCached = &empty
 		return empty
 	}
-	text := HTMLToText(*msg.Body.Content, msg.Attachments, msg.Mentions)
+	text := HTMLToText(*msg.Body.Content, msg.Attachments, msg.Mentions, nil)
 	msg.PlainTextCached = &text
 	return text
 }
@@ -2066,7 +2073,8 @@ var urlRegex = regexp.MustCompile(`https?://[^\s<>"]+`)
 // HTMLToText converts a Teams message HTML body to plain text suitable for
 // terminal display. It returns the rendered text and a lipgloss-compatible
 // styled string (where special elements are coloured).
-func HTMLToText(htmlContent string, attachments []MessageAttachment, mentions []MessageMention) string {
+// chatNames maps conversation IDs to display names for forwarded-message quotes.
+func HTMLToText(htmlContent string, attachments []MessageAttachment, mentions []MessageMention, chatNames map[string]string) string {
 	if htmlContent == "" {
 		return ""
 	}
@@ -2124,32 +2132,33 @@ func HTMLToText(htmlContent string, attachments []MessageAttachment, mentions []
 		if inCode && inPre {
 			return preCodeStyle.Render(text)
 		}
-		s := lipgloss.NewStyle()
-		anySet := false
-		if inBold {
-			s = s.Bold(true)
-			anySet = true
+		// Build a single SGR sequence manually. lipgloss's Strikethrough(true)
+		// and Underline(true) render per-character escape pairs, which corrupt
+		// embedded ANSI sequences when styles are nested (e.g. a struck ticket
+		// inside a hyperlink). Emitting one combined sequence keeps the output
+		// compact and corruption-free.
+		var params []string
+		if inBold || inMention {
+			params = append(params, "1")
 		}
 		if inItalic {
-			s = s.Italic(true)
-			anySet = true
+			params = append(params, "3")
 		}
 		if inStrike {
-			s = s.Strikethrough(true)
-			anySet = true
+			params = append(params, "9")
 		}
-		if inCode {
-			s = s.Foreground(lipgloss.Color("#E5C07B"))
-			anySet = true
+		switch {
+		case inLink:
+			params = append(params, "4", "38;2;0;175;255")
+		case inMention:
+			params = append(params, "38;2;95;135;255")
+		case inCode:
+			params = append(params, "38;2;229;192;123")
 		}
-		if inMention {
-			s = s.Foreground(lipgloss.Color("#5F87FF")).Bold(true)
-			anySet = true
-		}
-		if !anySet {
+		if len(params) == 0 {
 			return text
 		}
-		return s.Render(text)
+		return "\x1b[" + strings.Join(params, ";") + "m" + text + "\x1b[0m"
 	}
 
 	for {
@@ -2264,20 +2273,23 @@ func HTMLToText(htmlContent string, attachments []MessageAttachment, mentions []
 					}
 				}
 				if att, ok := attByID[attID]; ok {
-					if att.ContentType != nil && *att.ContentType == "messageReference" {
-						// Render a quoted-message block: ▎ Sender: preview text
-						if att.Content != nil {
-							quote := renderMessageReference(*att.Content)
-							if quote != "" {
-								if sb.Len() > 0 && lastChar != '\n' {
-									sb.WriteRune('\n')
-								}
-								sb.WriteString(quote)
+					if att.Content != nil {
+						quote := attachmentQuoteLine(att, chatNames)
+						if quote != "" {
+							if sb.Len() > 0 && lastChar != '\n' {
 								sb.WriteRune('\n')
-								lastChar = '\n'
 							}
+							sb.WriteString(quote)
+							sb.WriteRune('\n')
+							lastChar = '\n'
+							continue
 						}
-						continue
+					}
+					if att.ContentType != nil {
+						ct := strings.ToLower(*att.ContentType)
+						if ct == "messagereference" || ct == "forwardedmessagereference" {
+							continue
+						}
 					}
 					orangeText := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8700")).Render("Attachment")
 					sb.WriteString("📎 " + orangeText)
@@ -2406,18 +2418,14 @@ func HTMLToText(htmlContent string, attachments []MessageAttachment, mentions []
 
 				if inLink && currentLinkURL != "" {
 					linkText.WriteString(text)
-					linkStyled := lipgloss.NewStyle().
-						Foreground(lipgloss.Color("#00AFFF")).
-						Underline(true).
-						Render(styledText)
-					styledText = fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", currentLinkURL, linkStyled)
+					// Link colour/underline are applied inside applyInlineStyles;
+					// here we only wrap the (already styled) text in an OSC 8
+					// hyperlink so no ANSI sequences get re-wrapped.
+					styledText = fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", currentLinkURL, styledText)
 				} else if !inBold && !inItalic && !inStrike && !inCode && !inMention {
 					// Plain text: detect and style bare URLs.
 					styledText = urlRegex.ReplaceAllStringFunc(text, func(u string) string {
-						styled := lipgloss.NewStyle().
-							Foreground(lipgloss.Color("#00AFFF")).
-							Underline(true).
-							Render(u)
+						styled := "\x1b[4;38;2;0;175;255m" + u + "\x1b[0m"
 						return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", u, styled)
 					})
 				}
@@ -2577,6 +2585,68 @@ func SearchUsers(accessToken, query string) ([]User, error) {
 	return r.Value, nil
 }
 
+// attachmentQuoteLine renders a messageReference or forwardedMessageReference
+// attachment as a styled quote block. Returns empty for other attachment types.
+func attachmentQuoteLine(att MessageAttachment, chatNames map[string]string) string {
+	if att.Content == nil || att.ContentType == nil {
+		return ""
+	}
+	switch strings.ToLower(*att.ContentType) {
+	case "messagereference":
+		return renderMessageReference(*att.Content)
+	case "forwardedmessagereference":
+		return renderForwardedMessageReference(*att.Content, chatNames)
+	default:
+		return ""
+	}
+}
+
+// formatQuoteBlock renders a styled terminal quote: "▎ [Chat] Sender [date]: preview".
+func formatQuoteBlock(sender, timeStr, chatLabel, preview string) string {
+	preview = strings.TrimSpace(preview)
+	if preview == "" {
+		return ""
+	}
+
+	const maxPreview = 120
+	if len([]rune(preview)) > maxPreview {
+		runes := []rune(preview)
+		preview = string(runes[:maxPreview]) + "…"
+	}
+
+	quoteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6C7A89"))
+	barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4A90D9")).Bold(true)
+	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7EC8E3")).Bold(true)
+	timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4A5568"))
+	chatStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#A0B4C8")).Bold(true)
+
+	bar := barStyle.Render("▎")
+
+	var meta string
+	if chatLabel != "" {
+		meta += chatStyle.Render("[" + chatLabel + "] ")
+	}
+	if sender != "" {
+		meta += nameStyle.Render(sender)
+	}
+	if timeStr != "" {
+		meta += timeStyle.Render(" [" + timeStr + "]")
+	}
+
+	if meta != "" {
+		return bar + " " + meta + quoteStyle.Render(": "+preview)
+	}
+	return bar + " " + quoteStyle.Render(preview)
+}
+
+func formatQuoteTime(t time.Time) string {
+	now := time.Now()
+	if t.Year() == now.Year() {
+		return t.Format("2 Jan 15:04")
+	}
+	return t.Format("2 Jan 2006 15:04")
+}
+
 // renderMessageReference parses a messageReference attachment content JSON and
 // returns a styled terminal quote block: "▎ SenderName [2 Jan 15:04]: message preview".
 // Returns an empty string if the content cannot be parsed.
@@ -2594,49 +2664,59 @@ func renderMessageReference(content string) string {
 		return ""
 	}
 
-	preview := strings.TrimSpace(ref.MessagePreview)
-	if preview == "" {
+	var timeStr string
+	// Teams message IDs are Unix timestamps in milliseconds.
+	if ms, err := strconv.ParseInt(ref.MessageID, 10, 64); err == nil && ms > 0 {
+		timeStr = formatQuoteTime(time.UnixMilli(ms).Local())
+	}
+
+	sender := ""
+	if ref.MessageSender.User != nil {
+		sender = ref.MessageSender.User.DisplayName
+	}
+	return formatQuoteBlock(sender, timeStr, "", ref.MessagePreview)
+}
+
+// renderForwardedMessageReference parses a forwardedMessageReference attachment
+// and returns a styled quote with optional source-chat name from chatNames.
+func renderForwardedMessageReference(content string, chatNames map[string]string) string {
+	var ref struct {
+		OriginalMessageContent string `json:"originalMessageContent"`
+		OriginalConversationID string `json:"originalConversationId"`
+		OriginalSentDateTime   string `json:"originalSentDateTime"`
+		OriginalMessageSender  struct {
+			User *struct {
+				DisplayName string `json:"displayName"`
+			} `json:"user"`
+		} `json:"originalMessageSender"`
+	}
+	if err := json.Unmarshal([]byte(content), &ref); err != nil {
 		return ""
 	}
 
-	// Truncate very long previews.
-	const maxPreview = 120
-	if len([]rune(preview)) > maxPreview {
-		runes := []rune(preview)
-		preview = string(runes[:maxPreview]) + "…"
-	}
+	preview := stripBasicHTML(ref.OriginalMessageContent)
 
-	// Teams message IDs are Unix timestamps in milliseconds.
 	var timeStr string
-	if ms, err := strconv.ParseInt(ref.MessageID, 10, 64); err == nil && ms > 0 {
-		t := time.UnixMilli(ms).Local()
-		now := time.Now()
-		if t.Year() == now.Year() {
-			timeStr = t.Format("2 Jan 15:04")
-		} else {
-			timeStr = t.Format("2 Jan 2006 15:04")
+	if ref.OriginalSentDateTime != "" {
+		if t, err := time.Parse(time.RFC3339Nano, ref.OriginalSentDateTime); err == nil {
+			timeStr = formatQuoteTime(t.Local())
+		} else if t, err := time.Parse(time.RFC3339, ref.OriginalSentDateTime); err == nil {
+			timeStr = formatQuoteTime(t.Local())
 		}
 	}
 
-	quoteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6C7A89"))
-	barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4A90D9")).Bold(true)
-	nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7EC8E3")).Bold(true)
-	timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#4A5568"))
-
-	bar := barStyle.Render("▎")
-
-	var meta string
-	if ref.MessageSender.User != nil && ref.MessageSender.User.DisplayName != "" {
-		meta = nameStyle.Render(ref.MessageSender.User.DisplayName)
-	}
-	if timeStr != "" {
-		meta += timeStyle.Render(" [" + timeStr + "]")
+	chatLabel := ""
+	if chatNames != nil && ref.OriginalConversationID != "" {
+		if name, ok := chatNames[ref.OriginalConversationID]; ok && name != "" {
+			chatLabel = name
+		}
 	}
 
-	if meta != "" {
-		return bar + " " + meta + quoteStyle.Render(": "+preview)
+	sender := ""
+	if ref.OriginalMessageSender.User != nil {
+		sender = ref.OriginalMessageSender.User.DisplayName
 	}
-	return bar + " " + quoteStyle.Render(preview)
+	return formatQuoteBlock(sender, timeStr, chatLabel, preview)
 }
 
 func userDirectoryIdentity(user User) string {
@@ -2986,7 +3066,7 @@ func DownloadFile(accessToken, fileURL, destPath string) error {
 		req.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 
-	resp, err := graphHTTPClient.Do(req)
+	resp, err := downloadClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("DownloadFile: request: %w", err)
 	}
@@ -2996,14 +3076,27 @@ func DownloadFile(accessToken, fileURL, destPath string) error {
 		return fmt.Errorf("DownloadFile: HTTP %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("DownloadFile: read body: %w", err)
-	}
 	if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
 		return fmt.Errorf("DownloadFile: create directories: %w", err)
 	}
-	return os.WriteFile(destPath, data, 0o600)
+	// Publish only complete downloads: image caches reuse files that exist.
+	f, err := os.CreateTemp(filepath.Dir(destPath), ".teams-download-*")
+	if err != nil {
+		return fmt.Errorf("DownloadFile: create file: %w", err)
+	}
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return fmt.Errorf("DownloadFile: write file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("DownloadFile: close file: %w", err)
+	}
+	if err := os.Rename(f.Name(), destPath); err != nil {
+		return fmt.Errorf("DownloadFile: publish file: %w", err)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
