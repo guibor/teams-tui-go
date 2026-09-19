@@ -1,68 +1,61 @@
 # teams-tui-go
 
-A standalone, keyboard-driven terminal client for Microsoft Teams.
+A keyboard-driven Microsoft Teams client for your terminal, with an inbox
+workflow for reading, replying, filtering, and returning to conversations.
 
-It runs in any normal terminal on macOS, Linux, or Windows. No companion
-editor, backend package, or private configuration repository is required.
-Authentication uses the built-in OAuth2 device flow by default,
-or an optional external short-lived token command when another application
-already owns Microsoft sign-in.
+This is an independent fork of
+[nospor/teams-tui-go](https://github.com/nospor/teams-tui-go), released under the
+same MIT license. The original project supplies the Teams client and Bubble Tea
+foundation; this fork extends its daily conversation workflow.
+See [Fork changes and upstream status](FORK.md) for attribution and differences.
 
-This maintained fork builds on
-[nospor/teams-tui-go](https://github.com/nospor/teams-tui-go) and adds a larger
-conversation workflow, robust read-state navigation, complete exports,
-bidirectional text rendering, configurable keybindings, component search,
-new-chat creation, and external authentication support.
+## What This Fork Adds
 
----
+- **Inbox control:** explicit read/unread actions, configurable bookmarks,
+  an unread overlay on any view, today/last-24-hours/last-week filters, and
+  persistent local snoozing with a quick three-hour action and a duration menu.
+- **Finding conversations:** component-based literal/regexp search, chat-name
+  matches before participant and loaded-message matches, a session inventory
+  beyond the sidebar limit, and a participant picker for new direct/group chats.
+- **Reading and writing:** mixed Hebrew/English rendering in messages and drafts,
+  readable system events, day separators, quoted replies, editable forwarding,
+  and selection tracking across filtering and asynchronous refreshes.
+- **Taking work elsewhere:** complete paginated Markdown exports, dated Markdown
+  or Org capture lists, recording/transcript links, browser/desktop chat links,
+  and an optional configurable external analysis command.
+- **Your setup:** configurable action keys, separate browser/editor/viewer
+  commands, optional external token authentication, and terminal image previews
+  using Kitty graphics or Sixel.
 
-## Features
+The upstream foundation includes direct/group/meeting chats, optional channels,
+Markdown composition, reactions, mentions, editing/deletion, favourites,
+notifications, history search, attachments, external editing, and SQLite
+history. These are not all new features of this fork.
 
-- 🔐 External token command or OAuth2 Device Code Flow — integrate with an existing credential owner without copying refresh tokens
-- 💬 List all your Teams chats (1:1, group, meetings) with computed display names
-- 📨 View messages in any chat with HTML-to-text rendering (images, attachments, emoji, **bold**, *italic*, ~~strikethrough~~, `code`, lists)
-- 🛠️ Readable Teams system events — meeting/call starts and endings, durations, recordings, transcripts, membership changes, renames, and future Graph event types are shown as meaningful messages rather than a generic placeholder
-- 🔤 Mixed Hebrew/English rendering for grid terminals, with ANSI styles and hyperlinks preserved and Hebrew-first lines aligned right
-- ❤️ Message Interactions — view and add reactions (Heart, Like, Laugh, etc.) to any message
-- 🔗 Clickable, Extractable & Openable URLs — links are clickable in supported terminals, can be extracted/copied via the `u` key, and opened in your browser/app via the `o` key
-- ✏️ Message Management — send, edit, and delete messages (includes multi-line support)
-- **✍️ Markdown Formatting** — compose messages with `**bold**`, `*italic*`, ~~`~~strike~~`~~, `` `code` ``, fenced code blocks, and bullet/ordered lists; formatting is sent as rich HTML to all Teams clients and rendered with ANSI styles in the TUI
-- 📋 **Clipboard Image Pasting** — paste images from your system clipboard directly into the compose text field using **Ctrl+V** (automatically base64 encoded and sent as inline HTML attachments)
-- 🗣️ **@Mentions & Autocomplete** — mention users in your messages. Typing `@` displays a dropdown list of chat/channel members. Navigate with Up/Down/Tab/Shift+Tab and press Enter to autocomplete the name. Mentions are sent as native Microsoft Teams mentions.
-- 🔔 Notification modes: None / Console (BEL + visual bell) / System (desktop) / Both
-- 🔄 Smart Background Polling & Sleep Mode — active chat messages poll every 3 s and chat list updates every 15 s. Polling auto-pauses when the terminal window is unfocused (blurred) or when you manually enter sleep mode via the `Esc` key.
-- 😊 Emoticon Auto-replacement — popular text emoticons (like `:)`, `:D`, `<3`) are automatically converted to Unicode emojis
-- 🔍 Search History — search messages in any chat, recursively loading and indexing all conversation history in the background
-- 🔍 Chat and Message Search — literal/regexp components search a complete session inventory, with chat-name hits before participants and loaded message hits
-- ➕ New Chats — press `N` to choose one or more participants, create/reuse a 1:1 or create a group, and open an empty composer without sending anything
-- 🧭 Chat List Filters — press `v` or `V` to combine unread/read state, today's activity, chat type, favorites, and name/member text without making another Graph request
-- 🔖 Chat Bookmarks — use quick two-key presets such as `bu` (unread), `bi` (inbox/all), `bt` (today), `bf` (favorites), `bd` (direct), `bg` (groups), and `bm` (meetings); `U` independently narrows any current view to unread
-- ⭐ Favourites — pin any chat to the top of the sidebar with `*`; favourites are sorted alphabetically and stay anchored regardless of activity
-- ↗️ Open in Teams — press `o` in normal mode to open the selected chat using Graph's native Teams URL and your configured browser/app command
-- ❓ Help Popup — press `?` at any time to show a keyboard shortcuts reference with optional feature status
+## Requirements And Limits
 
-- 🔵 Read-State Styling — unread chats use a cyan dot with bright bold text; read chats are deliberately muted
-- 📬 Explicit Read State — press `r` to mark a chat read or `u` to mark it unread (`i` remains a compatibility alias), then continue on the next visible chat; merely moving over a chat does not mark it read by default
-- ✉️ Message Actions — use `c`/`C` to compose, uppercase `R` to reply with a quote, and `f`/`F` to forward an editable readable copy through the local chat chooser
-- 📥 Full Markdown Export — press `E` to fetch every page of the selected chat and save a chronological Markdown transcript
-- 🤖 External Thread Analysis — press `A` to make the same complete export and pass it to a configured analysis command
-- ⌨️ Configurable Keys — override nearly every application action by stable name in `config.json`; defaults preserve the documented keyboard workflow and in-app help shows active bindings
-- 😊 Reaction Indicators — chats with new reactions from other users are marked with their corresponding emoji (e.g. ❤️, 👍, 😆) and bold text
-- ⬆️ New messages bubble chats to the top of the list
-- 📌 Stable chat ordering — order only changes when new messages arrive
-- 🧷 Selection-safe transcripts — filter and read-state refreshes reconcile the highlighted chat ID, transcript owner, and message conversation metadata; stale background responses cannot merge messages from different chats
-- ↔️ RTL-safe compose — Hebrew and mixed-direction drafts use the same visual bidi renderer as messages while retaining logical Unicode order for editing and sending
-- 🗓️ Clear conversation reading — day separators, explicit headers for each channel reply, concise conversation metadata, and one-for-one system events
-- 🎥 Meeting resources — press `T` (or `a t`) to choose any loaded recording/transcript event, open its best available link, or copy the link
-- 💾 Provider-aware refresh — external credentials stay with their owner; built-in device-flow tokens refresh from the application cache
+Builds target macOS, Linux, and Windows. A normal terminal and a Microsoft Teams
+account with the required Graph permissions are sufficient; no particular
+editor, terminal emulator, companion backend, or private repository is required.
+Optional image previews depend on terminal graphics support.
 
-**Optional features** (enable per-feature in `config.json`; see [AZURE_SETUP.md](AZURE_SETUP.md)):
-- 📎 **File Preview & Download** (`file_preview_enabled`) — Tab through attachments and Teams-hosted inline images in the message popup and press Enter to download them to `~/Downloads/`
-  - **Terminal Image Preview** (`file_preview_in_terminal`) — Displays the highlighted image inside the details popup using Kitty graphics or Sixel in compatible terminals (requires `file_preview_enabled: true`)
-- ⬆️ **File Browsing & Uploading** (`file_upload_enabled`) — Press `Ctrl+f` in compose mode to open a file browser and attach small files (up to 50MB) from your computer. Files are uploaded to OneDrive/SharePoint and attached to your message.
-- 🟢 **User Presence** (`presence_enabled`) — press `p` in message selection mode to see real-time availability of the message sender
-- 👤 **User Profile** (`user_profile_enabled`) — press `I` in message selection mode to view extended profile info (name, email, job title, department)
-- 🏢 **Teams Channels** (`teams_channels_enabled`) — Teams channels appear in the main sidebar below your chats; navigate with `j`/`k` and read messages just like chats. Supports background polling, global activity sorting (most active unhidden channels on top), unread indicators, and user-toggleable hidden channels (press `h` to toggle).
+The standard build uses Microsoft device login. Organizations may require
+administrator consent or block third-party clients. An optional external token
+command can reuse an existing authentication provider; it does not bypass tenant
+policy. See [authentication and permissions](AZURE_SETUP.md).
+
+Calls and screen sharing remain in the official Teams app/browser. The TUI can
+open meeting/call links. Local snoozes do not snooze chats in other Teams clients.
+Global message matches cover loaded content and previews; conversation history
+search can fetch older pages. Read-state behavior depends on Graph and any
+configured read-state provider.
+
+File preview/upload, presence, extended profiles, channels, and SQLite history
+are opt-in in `config.json`. Some request additional Graph scopes.
+External analysis is also optional: configure a bridge before using it.
+
+[Install](#installation) | [Configure](#configuration) |
+[Keyboard shortcuts](#keyboard-controls) | [Fork history](FORK.md)
 
 ---
 
@@ -349,7 +342,8 @@ set it to a local bridge that accepts those arguments and starts the desired
 analysis tool. A bridge can, for example, submit a first prompt such as:
 
 ```text
-$thread-analysis of this thread: /absolute/path/to/export.md
+Summarize this conversation and identify decisions and follow-up actions:
+/absolute/path/to/export.md
 ```
 
 Set `thread_analysis_agent` to `codex`, `agent`/`cursor`, `claude`/
@@ -362,16 +356,22 @@ status line retains the saved Markdown path for manual recovery.
   "export_directory": "~/Downloads",
   "thread_analysis_agent": "codex",
 	"thread_analysis_destination": "terminal",
-	"thread_analysis_model": "gpt-5.6-luna",
-	"thread_analysis_models": ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "default"],
+  "thread_analysis_destinations": ["terminal"],
+  "thread_analysis_model": "default",
+  "thread_analysis_models": ["default"],
   "thread_analysis_command": "/usr/local/bin/thread-analysis-bridge"
 }
 ```
 
 The configured action (`A`) shows its command, destination, agent, and model in
 the thread-actions window. The interactive action (`X`) asks for a destination
-(`terminal`, `emacs`, or `codex-app`) and then a model from
-`thread_analysis_models`. Destination and model are exposed to the bridge as
+from `thread_analysis_destinations` and then a model from
+`thread_analysis_models`. These identifiers are interpreted by your bridge;
+the TUI does not install or launch a particular terminal/editor itself. Use
+model names that your tool actually supports. If the destinations setting is
+omitted, the compatibility choices are `terminal`, `emacs`, and `codex-app`.
+The last successfully launched destination/model is saved for both `A` and `X`.
+Destination and model are exposed to the bridge as
 `TEAMS_THREAD_ANALYSIS_DESTINATION` and `TEAMS_THREAD_ANALYSIS_MODEL`; the
 existing `--agent AGENT PATH` command contract remains unchanged. Commands may
 also contain `{destination}`, `{model}`, and `{agent}` placeholders when the
@@ -846,10 +846,10 @@ navigate with `j`/`k` and run it with `Enter`.
 | `y`        | Copy the Teams web link                     |
 | `t`        | Choose a recording or transcript            |
 
-Completed actions advance to the next visible chat, wrapping at the end. The
-next chat is chosen before read/favorite filters can remove or reorder the
-current row. Compose, reply, forward, and the recording/transcript chooser stay
-on the current chat until their interactive workflow is complete.
+Read/unread and snooze actions advance to the next visible chat, wrapping at
+the end. The next chat is chosen by identity before filters remove or reorder
+the current row. Export, capture, analysis, copying/opening links, and viewing
+recordings/transcripts keep the current selection.
 
 ---
 
@@ -879,6 +879,9 @@ go build -o teams-tui-go .
 
 # Lint
 go vet ./...
+
+# Tests (includes local HTTP fixtures; no Teams account required)
+go test ./...
 ```
 
 ---

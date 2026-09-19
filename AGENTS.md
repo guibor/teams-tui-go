@@ -207,6 +207,12 @@ Go-based terminal UI application for Microsoft Teams. Authenticates through an e
     and ordinary terminal use must work without an editor, private repository,
     or external token broker. External-only builds remain an optional packaging
     mode and must continue to fail closed.
+13. **Portable Configuration**: Keep personal model aliases, terminal/editor
+    commands, account-specific authentication helpers, and note paths in user
+    config or external deployment profiles. Analysis destination IDs come from
+    `thread_analysis_destinations` and are interpreted by the configured bridge.
+    Examples must use neutral paths and `default` or clearly fictional models.
+    Do not commit compiled executables or local configuration/credential files.
 
 ---
 

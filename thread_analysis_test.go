@@ -13,7 +13,7 @@ func TestBuildThreadAnalysisCommandKeepsExportPathAsOneArgument(t *testing.T) {
 		"/usr/local/bin/thread-analysis-bridge --profile default",
 		"claude",
 		"terminal",
-		"gpt-5.6-luna",
+		"example-model",
 		"/tmp/Team thread with spaces.md",
 	)
 	if err != nil {
@@ -32,7 +32,7 @@ func TestBuildThreadAnalysisCommandKeepsExportPathAsOneArgument(t *testing.T) {
 	}
 	environment := strings.Join(cmd.Env, "\n")
 	if !strings.Contains(environment, "TEAMS_THREAD_ANALYSIS_DESTINATION=terminal") ||
-		!strings.Contains(environment, "TEAMS_THREAD_ANALYSIS_MODEL=gpt-5.6-luna") {
+		!strings.Contains(environment, "TEAMS_THREAD_ANALYSIS_MODEL=example-model") {
 		t.Fatalf("command environment omitted analysis selection: %s", environment)
 	}
 }
@@ -40,8 +40,8 @@ func TestBuildThreadAnalysisCommandKeepsExportPathAsOneArgument(t *testing.T) {
 func TestAnalysisChooserSelectsDestinationThenModel(t *testing.T) {
 	model := newWorkflowChatListModel("chat-1", "chat-2")
 	model.app.ThreadAnalysisDestination = "codex-app"
-	model.app.ThreadAnalysisModels = []string{"gpt-5.6-sol", "gpt-5.6-luna"}
-	model.app.ThreadAnalysisModel = "gpt-5.6-luna"
+	model.app.ThreadAnalysisModels = []string{"other-model", "example-model"}
+	model.app.ThreadAnalysisModel = "example-model"
 	model, _ = model.executeThreadAction(threadActionAnalyzeChoose)
 	if !model.app.ThreadAnalysisPopupMode || model.app.ThreadAnalysisStage != 0 {
 		t.Fatal("chooser did not open on destination stage")
@@ -61,14 +61,29 @@ func TestBuildThreadAnalysisCommandRejectsEmptyCommand(t *testing.T) {
 	}
 }
 
+func TestAnalysisChooserUsesCustomDestinations(t *testing.T) {
+	m := newWorkflowChatListModel("chat-1")
+	m.app.ThreadAnalysisDestinations = []string{"local-tool", "remote-tool"}
+	m.app.ThreadAnalysisDestination = "remote-tool"
+	m.app.ThreadAnalysisModels = []string{"default"}
+	m, _ = m.executeThreadAction(threadActionAnalyzeChoose)
+	if !reflect.DeepEqual(m.threadAnalysisChoices(), []string{"local-tool", "remote-tool"}) || m.app.ThreadAnalysisSelectedIndex != 1 {
+		t.Fatal("chooser did not use custom routes and remembered selection")
+	}
+	m, _ = m.handleThreadAnalysisPopupKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.app.ThreadAnalysisPendingDestination != "remote-tool" || m.app.ThreadAnalysisStage != 1 {
+		t.Fatal("custom route was not retained for model selection")
+	}
+}
+
 func TestBuildThreadAnalysisCommandExpandsRoutingPlaceholders(t *testing.T) {
 	cmd, err := buildThreadAnalysisCommand(
 		"/bridge --destination {destination} --model={model}",
-		"codex", "codex-app", "gpt-5.6-luna", "/tmp/thread.md")
+		"codex", "codex-app", "example-model", "/tmp/thread.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/bridge", "--destination", "codex-app", "--model=gpt-5.6-luna", "--agent", "codex", "/tmp/thread.md"}
+	want := []string{"/bridge", "--destination", "codex-app", "--model=example-model", "--agent", "codex", "/tmp/thread.md"}
 	if !reflect.DeepEqual(cmd.Args, want) {
 		t.Fatalf("command args = %#v, want %#v", cmd.Args, want)
 	}

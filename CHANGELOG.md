@@ -4,6 +4,17 @@
 
 ### Added
 
+- Configurable `thread_analysis_destinations` for external analysis bridges,
+  with existing destination choices retained when the setting is omitted.
+- A fork comparison and dated upstream status report in `FORK.md`.
+
+### Changed
+
+- Generalize the README, analysis examples, and terminal label; remove a
+  compiled development executable from source control.
+
+### Earlier Fork Additions
+
 - Add mode-aware `keybindings` configuration for application actions,
   navigation, composing, search, filters, message operations, and popups.
   Existing keys remain the defaults, configured keys replace rather than

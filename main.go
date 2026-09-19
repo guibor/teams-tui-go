@@ -969,6 +969,7 @@ func main() {
 	app.ThreadAnalysisAgent = ResolveThreadAnalysisAgent()
 	app.ThreadAnalysisCommand = ResolveThreadAnalysisCommand()
 	app.ThreadAnalysisDestination = ResolveThreadAnalysisDestination()
+	app.ThreadAnalysisDestinations = ResolveThreadAnalysisDestinations()
 	app.ThreadAnalysisModel = ResolveThreadAnalysisModel()
 	app.ThreadAnalysisModels = ResolveThreadAnalysisModels()
 	app.ThreadCaptureFormat = ResolveThreadCaptureFormat()

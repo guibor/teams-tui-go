@@ -83,14 +83,30 @@ func TestResolveThreadCaptureSettings(t *testing.T) {
 func TestSaveThreadAnalysisSelection(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	InitConfig()
-	if err := SaveThreadAnalysisSelection(" codex-app ", " gpt-5.6-luna "); err != nil {
+	if err := SaveThreadAnalysisSelection(" codex-app ", " example-model "); err != nil {
 		t.Fatalf("SaveThreadAnalysisSelection: %v", err)
 	}
 	if got := ResolveThreadAnalysisDestination(); got != "codex-app" {
 		t.Fatalf("destination = %q, want codex-app", got)
 	}
-	if got := ResolveThreadAnalysisModel(); got != "gpt-5.6-luna" {
-		t.Fatalf("model = %q, want gpt-5.6-luna", got)
+	if got := ResolveThreadAnalysisModel(); got != "example-model" {
+		t.Fatalf("model = %q, want example-model", got)
+	}
+}
+
+func TestAnalysisDestinationConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	InitConfig()
+	if got := ResolveThreadAnalysisDestinations(); len(got) != 3 || got[1] != "emacs" {
+		t.Fatalf("compatibility choices changed: %v", got)
+	}
+	cfg := LoadConfig()
+	cfg.ThreadAnalysisDestinations = []string{" remote-tool ", "", "remote-tool", "local-tool"}
+	if err := SaveConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := ResolveThreadAnalysisDestinations(); len(got) != 2 || got[0] != "remote-tool" || got[1] != "local-tool" {
+		t.Fatalf("custom choices not normalized: %v", got)
 	}
 }
 

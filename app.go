@@ -152,6 +152,7 @@ type App struct {
 	ThreadAnalysisAgent              string
 	ThreadAnalysisCommand            string
 	ThreadAnalysisDestination        string
+	ThreadAnalysisDestinations       []string
 	ThreadAnalysisModel              string
 	ThreadAnalysisModels             []string
 	ThreadAnalysisPopupMode          bool

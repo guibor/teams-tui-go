@@ -13,7 +13,7 @@ var threadAnalysisDestinations = []string{"terminal", "emacs", "codex-app"}
 func analysisDisplayName(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case "terminal":
-		return "Ghostty terminal"
+		return "Terminal"
 	case "emacs":
 		return "Emacs agent-shell"
 	case "codex-app":
@@ -40,6 +40,9 @@ func (m Model) launchThreadAnalysis(chat Chat, destination, model string) (Model
 
 func (m Model) threadAnalysisChoices() []string {
 	if m.app.ThreadAnalysisStage == 0 {
+		if len(m.app.ThreadAnalysisDestinations) > 0 {
+			return m.app.ThreadAnalysisDestinations
+		}
 		return threadAnalysisDestinations
 	}
 	if len(m.app.ThreadAnalysisModels) == 0 {
